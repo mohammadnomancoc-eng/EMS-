@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Mulish:wght@400;500;600;700&family=Share+Tech+Mono&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-red: #CC0000;
+  --brand-teal: #00B8B8;
+  --brand-gold: #C9922A;
+  --sidebar-bg: #050505;
+  --sidebar-border: #1A1A1A;
+}
+
+.dark {
+  --page-bg: #0A0A0A;
+  --surface: #111111;
+  --surface-border: #1E1E1E;
+  --surface-high: #161616;
+  --surface-high-border: #252525;
+  --text-primary: #F0F0F0;
+  --text-secondary: #A0A0A0;
+  --text-muted: #4A4A4A;
+  --border: #1E1E1E;
+  --hover-bg: #141414;
+}
+
+.light {
+  --page-bg: #EFEFEF;
+  --surface: #FFFFFF;
+  --surface-border: #E0E0E0;
+  --surface-high: #F8F8F8;
+  --surface-high-border: #E8E8E8;
+  --text-primary: #111111;
+  --text-secondary: #444444;
+  --text-muted: #888888;
+  --border: #E0E0E0;
+  --hover-bg: #F5F5F5;
+}
+
+* {
+  transition: background-color 250ms ease, border-color 250ms ease, color 250ms ease;
+}
+
+body {
+  background-color: var(--page-bg);
+  color: var(--text-primary);
+  font-family: "Mulish", sans-serif;
+}
+
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1E1E1E; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #CC0000; }

@@ -10,9 +10,8 @@ import MyProfile from "./pages/employee/MyProfile";
 import Announcements from "./pages/employee/Announcements";
 import Employees from "./pages/Employees";
 import LeaveManagement from "./pages/LeaveManagement";
-// import Attendance from "./pages/Attendance";
-// import Payroll from "./pages/Payroll";
-// import Departments from "./pages/Departments";
+import Attendance from "./pages/Attendance";
+import Departments from "./pages/Departments";
 // import Settings from "./pages/Settings";
 
 export const ThemeContext = createContext();
@@ -49,10 +48,10 @@ function App() {
           <Route path="/" element={<Layout />}>
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="employees" element={<Employees />} />
-            {/* <Route path="attendance" element={<Attendance />} /> */}
+            <Route path="attendance" element={<Attendance />} />
             <Route path="leave" element={<LeaveManagement />} />
-            {/* <Route path="payroll" element={<Payroll />} /> */}
-            {/* <Route path="departments" element={<Departments />} /> */}
+            
+             <Route path="departments" element={<Departments />} />
             {/* <Route path="settings" element={<Settings />} /> */}
           </Route>
 

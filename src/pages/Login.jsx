@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import logo from "../assets/logo.png";
+import { loginUser } from "../firebase/authService";
 
 function Login() {
   const navigate = useNavigate();
@@ -11,31 +12,44 @@ function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
- const handleLogin = (e) => {
-  e.preventDefault();
-  setError("");
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError("");
 
-  if (!email || !password) {
-    setError("Please fill in all fields.");
-    return;
-  }
+    if (!email || !password) {
+      setError("Please fill in all fields.");
+      return;
+    }
 
-  setLoading(true);
-  setTimeout(() => {
-    if (email === "admin@royals.com" && password === "123456") {
-      localStorage.setItem("rwt-role", "admin");
-      localStorage.setItem("rwt-user", JSON.stringify({ name: "Admin", role: "Super Admin", initials: "AD" }));
-      navigate("/dashboard");
-    } else if (email === "employee@royals.com" && password === "123456") {
-      localStorage.setItem("rwt-role", "employee");
-      localStorage.setItem("rwt-user", JSON.stringify({ name: "Arjun Sharma", role: "Frontend Developer", initials: "AS" }));
-      navigate("/my-attendance");
-    } else {
-      setError("Invalid credentials.");
+    setLoading(true);
+    try {
+      const user = await loginUser(email, password);
+      // Persist role + profile for layout components
+      localStorage.setItem("rwt-role", user.role);
+      localStorage.setItem(
+        "rwt-user",
+        JSON.stringify({
+          name: user.name,
+          role: user.role,
+          initials: user.initials,
+          empId: user.empId ?? null,
+          uid: user.uid,
+        })
+      );
+      navigate(user.role === "admin" ? "/dashboard" : "/my-attendance");
+    } catch (err) {
+      // Firebase error codes → friendly messages
+      const code = err.code ?? "";
+      if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
+        setError("Invalid email or password.");
+      } else if (code.includes("too-many-requests")) {
+        setError("Too many attempts. Please try again later.");
+      } else {
+        setError(err.message || "Login failed. Please try again.");
+      }
       setLoading(false);
     }
-  }, 1000);
-};
+  };
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center relative overflow-hidden">

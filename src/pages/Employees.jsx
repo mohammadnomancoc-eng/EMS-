@@ -1,11 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../App";
 import {
   Search, Plus, Filter, Download, Edit2, Trash2,
   Mail, Phone, X, Check, ChevronDown, Users,
   UserCheck, UserX, Clock
 } from "lucide-react";
-import { employees, departments } from "../data/mockData";
+import { departments as mockDepartments } from "../data/mockData";
+import {
+  subscribeEmployees,
+  addEmployee,
+  updateEmployee,
+  deleteEmployee,
+  getDepartments,
+} from "../firebase/firestoreService";
 
 function getInitials(name) {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase();
@@ -231,13 +238,27 @@ export default function Employees() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
-  const [data, setData] = useState(employees);
+  const [data, setData] = useState([]);
+  const [departments, setDepartments] = useState(mockDepartments);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [showModal, setShowModal] = useState(false);
   const [editEmp, setEditEmp] = useState(null);
   const [drawer, setDrawer] = useState(null);
+
+  // Subscribe to real-time employee updates from Firestore
+  useEffect(() => {
+    const unsub = subscribeEmployees((list) => setData(list));
+    return unsub;
+  }, []);
+
+  // Load departments (less volatile — one-time fetch is fine)
+  useEffect(() => {
+    getDepartments().then((list) => {
+      if (list.length > 0) setDepartments(list);
+    });
+  }, []);
 
   const bg = isDark ? "#0A0A0A" : "#F4F4F4";
   const cardBg = isDark ? "#111111" : "#FFFFFF";
@@ -263,20 +284,19 @@ export default function Employees() {
     { label: "ON LEAVE / WFH", value: data.filter(e => e.status === "Leave" || e.status === "WFH").length, icon: Clock, color: "#C9922A" },
   ];
 
-  const handleAdd = (form) => {
-    const newId = `RWT${String(data.length + 1).padStart(3, "0")}`;
-    setData(d => [...d, { ...form, id: newId }]);
+  const handleAdd = async (form) => {
+    await addEmployee({ ...form, salary: Number(form.salary) });
     setShowModal(false);
   };
 
-  const handleEdit = (form) => {
-    setData(d => d.map(e => e.id === form.id ? form : e));
+  const handleEdit = async (form) => {
+    await updateEmployee(form.id, form);
     setEditEmp(null);
     setDrawer(null);
   };
 
-  const handleDelete = (id) => {
-    setData(d => d.filter(e => e.id !== id));
+  const handleDelete = async (id) => {
+    await deleteEmployee(id);
     setDrawer(null);
   };
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../App";
 import {
   CalendarOff, Check, X, Search, Filter,
@@ -6,6 +6,10 @@ import {
   ChevronDown, Eye
 } from "lucide-react";
 import { employees, leaveRequests } from "../data/mockData";
+import {
+  subscribeLeaveRequests,
+  updateLeaveStatus,
+} from "../firebase/firestoreService";
 
 // ── Extended Mock Data ────────────────────────────────
 const allLeaveRequests = [
@@ -234,11 +238,17 @@ function DetailModal({ req, onClose, onApprove, onReject, theme }) {
 // ── Main Page ─────────────────────────────────────────
 function LeaveManagement() {
   const { theme } = useTheme();
-  const [requests, setRequests] = useState(allLeaveRequests);
+  const [requests, setRequests] = useState([]);
   const [search, setSearch]     = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
   const [filterType, setFilterType]     = useState("All");
   const [selectedReq, setSelectedReq]   = useState(null);
+
+  // Real-time listener from Firestore
+  useEffect(() => {
+    const unsub = subscribeLeaveRequests((list) => setRequests(list));
+    return unsub;
+  }, []);
 
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
@@ -265,14 +275,14 @@ function LeaveManagement() {
     return matchSearch && matchStatus && matchType;
   });
 
-  const handleApprove = (id) => {
-    setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "Approved" } : r));
+  const handleApprove = async (id) => {
+    await updateLeaveStatus(id, "Approved");
     if (selectedReq?.id === id) setSelectedReq((r) => ({ ...r, status: "Approved" }));
     setSelectedReq(null);
   };
 
-  const handleReject = (id) => {
-    setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "Rejected" } : r));
+  const handleReject = async (id) => {
+    await updateLeaveStatus(id, "Rejected");
     if (selectedReq?.id === id) setSelectedReq((r) => ({ ...r, status: "Rejected" }));
     setSelectedReq(null);
   };

@@ -1,0 +1,71 @@
+// ─────────────────────────────────────────────────────────────
+//  firestore.rules
+//  Deploy with:  firebase deploy --only firestore:rules
+//
+//  Logic:
+//   - Authenticated users can read employees, departments.
+//   - Only admins (role == "admin" in /users/{uid}) can write.
+//   - Employees can read/write their own leaveRequests.
+//   - Employees can read/write their own attendance records.
+// ─────────────────────────────────────────────────────────────
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isAuthed() && userRole() == "admin";
+    }
+
+    function isEmployee() {
+      return isAuthed() && userRole() == "employee";
+    }
+
+    function ownEmpId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.empId;
+    }
+
+    // ── /users ────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if isAuthed() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // ── /employees ────────────────────────────────────────
+    match /employees/{empId} {
+      allow read: if isAuthed();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── /departments ──────────────────────────────────────
+    match /departments/{deptId} {
+      allow read: if isAuthed();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── /leaveRequests ────────────────────────────────────
+    match /leaveRequests/{reqId} {
+      // Admins can do everything; employees can read their own and create new
+      allow read: if isAdmin() || (isEmployee() && resource.data.empId == ownEmpId());
+      allow create: if isEmployee() && request.resource.data.empId == ownEmpId();
+      // Only admins can approve / reject
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── /attendance ───────────────────────────────────────
+    match /attendance/{recordId} {
+      allow read: if isAdmin() || (isEmployee() && resource.data.empId == ownEmpId());
+      allow write: if isAdmin();
+    }
+  }
+}

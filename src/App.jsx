@@ -12,12 +12,13 @@ import Employees from "./pages/Employees";
 import LeaveManagement from "./pages/LeaveManagement";
 import Attendance from "./pages/Attendance";
 import Departments from "./pages/Departments";
-// import Settings from "./pages/Settings";
+import Settings from "./pages/Settings";
+import { subscribeAuthState } from "./firebase/authService";
 
 export const ThemeContext = createContext();
 export function useTheme() { return useContext(ThemeContext); }
 
-// Role-based redirect
+// Role-based redirect — reads from localStorage (set on login)
 function RoleRedirect() {
   const role = localStorage.getItem("rwt-role");
   if (role === "admin") return <Navigate to="/dashboard" replace />;
@@ -34,6 +35,19 @@ function App() {
     root.classList.add(theme);
     localStorage.setItem("rwt-theme", theme);
   }, [theme]);
+
+  // Keep localStorage in sync with Firebase auth state.
+  // If the token expires or the user signs out from another tab,
+  // the stored role is cleared so protected routes redirect to login.
+  useEffect(() => {
+    const unsub = subscribeAuthState((user) => {
+      if (!user) {
+        localStorage.removeItem("rwt-role");
+        localStorage.removeItem("rwt-user");
+      }
+    });
+    return unsub;
+  }, []);
 
   const toggleTheme = () => setTheme((prev) => (prev === "dark" ? "light" : "dark"));
 
@@ -52,7 +66,7 @@ function App() {
             <Route path="leave" element={<LeaveManagement />} />
             
              <Route path="departments" element={<Departments />} />
-            {/* <Route path="settings" element={<Settings />} /> */}
+            <Route path="settings" element={<Settings />} /> 
           </Route>
 
           {/* Employee Routes */}

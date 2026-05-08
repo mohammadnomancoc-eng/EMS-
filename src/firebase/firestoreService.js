@@ -4,9 +4,11 @@
 //
 //  Collections:
 //    employees       – employee master records
+//                      NEW: photoUrl, photoPublicId fields
 //    departments     – department records
 //    leaveRequests   – leave / WFH requests
 //    attendance      – daily attendance records
+//    media           – NEW: company images & videos uploaded via Cloudinary
 // ─────────────────────────────────────────────────────────────
 import {
   collection,
@@ -45,7 +47,12 @@ export function subscribeEmployees(callback) {
   });
 }
 
-/** Add a new employee with a generated RWT-style ID */
+/** Add a new employee with a generated RWT-style ID.
+ *
+ *  Accepted fields (in addition to existing ones):
+ *    photoUrl      {string}  – Cloudinary secure_url for profile photo
+ *    photoPublicId {string}  – Cloudinary public_id (for future transforms/deletes)
+ */
 export async function addEmployee(data) {
   // Find the next available RWT number
   const snap = await getDocs(col("employees"));
@@ -53,20 +60,36 @@ export async function addEmployee(data) {
     .map((d) => parseInt(d.id.replace("RWT", "")) || 0)
     .filter((n) => !isNaN(n));
   const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
-  const newId = `RWT${String(nextNum).padStart(3, "0")}`;
+  const newId   = `RWT${String(nextNum).padStart(3, "0")}`;
 
   await setDoc(doc(db, "employees", newId), {
     id: newId,
     ...data,
+    // Ensure these fields are always present (null if not provided)
+    photoUrl:      data.photoUrl      ?? null,
+    photoPublicId: data.photoPublicId ?? null,
     createdAt: serverTimestamp(),
   });
   return newId;
 }
 
-/** Update fields on an existing employee */
+/** Update fields on an existing employee.
+ *
+ *  To update the profile photo pass:
+ *    { photoUrl: "https://res.cloudinary.com/...", photoPublicId: "ems/employees/RWT001_profile" }
+ */
 export async function updateEmployee(id, data) {
   await updateDoc(doc(db, "employees", id), {
     ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Update only the employee's profile photo (Cloudinary URL). */
+export async function updateEmployeePhoto(id, photoUrl, photoPublicId) {
+  await updateDoc(doc(db, "employees", id), {
+    photoUrl,
+    photoPublicId,
     updatedAt: serverTimestamp(),
   });
 }
@@ -134,7 +157,7 @@ export function subscribeLeaveRequests(callback) {
 
 /** Fetch leave requests for a specific employee */
 export async function getLeaveRequestsByEmployee(empId) {
-  const q = query(col("leaveRequests"), where("empId", "==", empId));
+  const q    = query(col("leaveRequests"), where("empId", "==", empId));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
@@ -171,7 +194,7 @@ export async function deleteLeaveRequest(id) {
  * Each document id = "{empId}_{date}"
  */
 export async function getAttendanceByDate(date) {
-  const q = query(col("attendance"), where("date", "==", date));
+  const q    = query(col("attendance"), where("date", "==", date));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
@@ -206,4 +229,92 @@ export function subscribeAttendanceByDate(date, callback) {
   return onSnapshot(q, (snap) => {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
   });
+}
+
+// ════════════════════════════════════════════════════════════
+//  MEDIA  (NEW — Cloudinary-backed)
+//
+//  Each document stores metadata about a Cloudinary asset.
+//  The actual file lives on Cloudinary; Firestore holds the URL.
+//
+//  Document shape:
+//    {
+//      type        : "image" | "video"
+//      secureUrl   : string   – Cloudinary HTTPS URL
+//      publicId    : string   – Cloudinary public_id
+//      uploadedBy  : string   – empId of uploader
+//      label       : string   – human-readable name
+//      folder      : string   – e.g. "ems/employees/RWT001"
+//      bytes       : number
+//      format      : string   – "jpg" | "mp4" etc.
+//      createdAt   : Timestamp
+//    }
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Save a Cloudinary upload result to the /media collection in Firestore.
+ *
+ * @param {Object} params
+ * @param {"image"|"video"} params.type
+ * @param {string} params.secureUrl    – from Cloudinary upload result
+ * @param {string} params.publicId     – from Cloudinary upload result
+ * @param {string} params.uploadedBy   – empId
+ * @param {string} [params.label]      – optional human label
+ * @param {number} [params.bytes]
+ * @param {string} [params.format]
+ * @returns {Promise<string>} Firestore document id
+ */
+export async function saveMediaRecord({ type, secureUrl, publicId, uploadedBy, label = "", bytes = 0, format = "" }) {
+  const ref = await addDoc(col("media"), {
+    type,
+    secureUrl,
+    publicId,
+    uploadedBy,
+    label,
+    bytes,
+    format,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+/**
+ * Fetch all media records, newest first.
+ * @returns {Promise<Array>}
+ */
+export async function getMediaRecords() {
+  const snap = await getDocs(query(col("media"), orderBy("createdAt", "desc")));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/**
+ * Fetch media records uploaded by a specific employee.
+ * @param {string} empId
+ * @returns {Promise<Array>}
+ */
+export async function getMediaByEmployee(empId) {
+  const q    = query(col("media"), where("uploadedBy", "==", empId), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/**
+ * Real-time listener for all media records.
+ * @param {Function} callback  – receives array of media docs
+ * @returns {Function} unsubscribe
+ */
+export function subscribeMedia(callback) {
+  return onSnapshot(
+    query(col("media"), orderBy("createdAt", "desc")),
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+  );
+}
+
+/**
+ * Delete a media record from Firestore.
+ * Note: this does NOT delete the asset from Cloudinary (that requires the Admin API + server).
+ * @param {string} id – Firestore document id
+ */
+export async function deleteMediaRecord(id) {
+  await deleteDoc(doc(db, "media", id));
 }

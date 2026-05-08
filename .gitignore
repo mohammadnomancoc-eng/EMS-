@@ -13,6 +13,7 @@ dist-ssr
 *.local
 package-lock.json
 FIREBASE_SETUP.md
+.env
 
 # Editor directories and files
 .vscode/*

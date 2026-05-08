@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
+import AdminSetup from "./pages/AdminSetup";
 import Layout from "./components/Layout";
 import EmployeeLayout from "./components/EmployeeLayout";
 import Dashboard from "./pages/Dashboard";
@@ -57,6 +58,7 @@ function App() {
         <Routes>
           <Route path="/" element={<RoleRedirect />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/setup" element={<AdminSetup />} />
 
           {/* Admin Routes */}
           <Route path="/" element={<Layout />}>

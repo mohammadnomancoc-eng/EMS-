@@ -8,14 +8,14 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID",
+  apiKey: "AIzaSyDtxe0BEtHTehAFMIp-7ocDgGTaVNgYzJw",
+  authDomain: "ems-royalswebtech.firebaseapp.com",
+  projectId: "ems-royalswebtech",
+  storageBucket: "ems-royalswebtech.firebasestorage.app",
+  messagingSenderId: "843105626057",
+  appId: "1:843105626057:web:3e2f4ca9124ab74961ea18",
+  measurementId: "G-6KFM43C6FZ"
 };
-
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);

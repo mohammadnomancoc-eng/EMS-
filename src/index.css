@@ -52,3 +52,6 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #1E1E1E; border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: #CC0000; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

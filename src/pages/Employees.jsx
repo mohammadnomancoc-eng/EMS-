@@ -55,13 +55,15 @@ function StatusBadge({ status, theme }) {
 }
 
 // ── Add/Edit Employee Modal ────────────────────────────
-function EmployeeModal({ theme, onClose, onSave, initial }) {
+function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
   const isEdit = !!initial;
   const [form, setForm] = useState(initial || {
     name: "", role: "", department: "Engineering",
     email: "", phone: "", joinDate: "", status: "Present", salary: "",
   });
   const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const isDark = theme === "dark";
   const bg = isDark ? "#111111" : "#FFFFFF";
@@ -82,9 +84,16 @@ function EmployeeModal({ theme, onClose, onSave, initial }) {
     return Object.keys(e).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validate()) return;
-    onSave({ ...form, salary: Number(form.salary) });
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onSave({ ...form, salary: Number(form.salary) });
+    } catch (err) {
+      setSaveError(err.message || "Failed to save. Please try again.");
+      setSaving(false);
+    }
   };
 
   const field = (label, key, type = "text", opts) => (
@@ -138,19 +147,37 @@ function EmployeeModal({ theme, onClose, onSave, initial }) {
         </div>
 
         <div style={{ display: "flex", gap: "10px", marginTop: "24px" }}>
-          <button onClick={onClose} style={{
+          <button onClick={onClose} disabled={saving} style={{
             flex: 1, padding: "10px", background: "transparent",
             border: `1px solid ${border}`, borderRadius: "6px",
             color: labelColor, fontFamily: "Rajdhani, sans-serif", fontWeight: 600,
-            fontSize: "13px", cursor: "pointer", letterSpacing: "0.05em"
+            fontSize: "13px", cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.05em"
           }}>CANCEL</button>
-          <button onClick={handleSave} style={{
-            flex: 2, padding: "10px", background: "#CC0000",
+          <button onClick={handleSave} disabled={saving} style={{
+            flex: 2, padding: "10px", background: saving ? "#880000" : "#CC0000",
             border: "none", borderRadius: "6px",
             color: "#FFFFFF", fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
-            fontSize: "13px", cursor: "pointer", letterSpacing: "0.1em"
-          }}>{isEdit ? "SAVE CHANGES" : "ADD EMPLOYEE"}</button>
+            fontSize: "13px", cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.1em",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+          }}>
+            {saving ? (
+              <>
+                <div style={{ width: "14px", height: "14px", borderRadius: "50%",
+                  border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff",
+                  animation: "spin 0.7s linear infinite" }} />
+                SAVING...
+              </>
+            ) : (isEdit ? "SAVE CHANGES" : "ADD EMPLOYEE")}
+          </button>
         </div>
+        {saveError && (
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#CC0000",
+            marginTop: "10px", textAlign: "center",
+            background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.2)",
+            borderRadius: "6px", padding: "8px" }}>
+            ⚠ {saveError}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -294,7 +321,6 @@ export default function Employees() {
     setEditEmp(null);
     setDrawer(null);
   };
-
   const handleDelete = async (id) => {
     await deleteEmployee(id);
     setDrawer(null);
@@ -483,10 +509,10 @@ export default function Employees() {
 
       {/* Modals */}
       {showModal && (
-        <EmployeeModal theme={theme} onClose={() => setShowModal(false)} onSave={handleAdd} />
+        <EmployeeModal theme={theme} onClose={() => setShowModal(false)} onSave={handleAdd} departments={departments} />
       )}
       {editEmp && (
-        <EmployeeModal theme={theme} onClose={() => setEditEmp(null)} onSave={handleEdit} initial={editEmp} />
+        <EmployeeModal theme={theme} onClose={() => setEditEmp(null)} onSave={handleEdit} initial={editEmp} departments={departments} />
       )}
       {drawer && (
         <EmployeeDrawer emp={drawer} theme={theme}

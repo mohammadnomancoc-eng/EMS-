@@ -1,3 +1,4 @@
+import { seedDatabase } from "../firebase/seed";
 import { useState, useEffect } from "react";
 import { useTheme } from "../App";
 import {
@@ -13,6 +14,7 @@ import {
   employees, weeklyAttendance,
   recentJoinings, leaveRequests
 } from "../data/mockdata";
+
 
 // ── helpers ──────────────────────────────────────────
 function getInitials(name) {

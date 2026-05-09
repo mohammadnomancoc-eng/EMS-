@@ -1,26 +1,44 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../../App";
 import { CalendarOff, Home, Plus, X, Calendar, AlertCircle } from "lucide-react";
+import {
+  getLeaveRequestsByEmployee,
+  submitLeaveRequest,
+} from "../../firebase/firestoreService";
 
-// ── Mock Data ─────────────────────────────────────────
-const mockLeaveHistory = [
-  { id: 1, type: "Annual Leave", from: "2026-04-10", to: "2026-04-10", days: 1, reason: "Personal work", status: "Approved" },
-  { id: 2, type: "Sick Leave",   from: "2026-03-22", to: "2026-03-23", days: 2, reason: "Fever and cold", status: "Approved" },
-  { id: 3, type: "Casual Leave", from: "2026-05-09", to: "2026-05-09", days: 1, reason: "Family function", status: "Pending" },
-];
+// ── FIX (Bug 2 - MyLeave): Removed all hardcoded mock data. ──────────────────
+// Leave history and WFH history are now fetched from Firestore via
+// getLeaveRequestsByEmployee(empId). New requests are written via
+// submitLeaveRequest() so they persist across sessions.
+// empId is read from localStorage (set at login by authService).
 
-const mockWFHHistory = [
-  { id: 1, from: "2026-05-03", to: "2026-05-03", days: 1, reason: "Internet maintenance at office", status: "Approved" },
-  { id: 2, from: "2026-05-04", to: "2026-05-04", days: 1, reason: "Personal convenience",          status: "Approved" },
-];
+function getProfile() {
+  try {
+    const raw = localStorage.getItem("rwt-user");
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { name: "Employee", role: "", initials: "?", empId: null };
+}
 
-const leaveQuota  = { taken: 1, total: 2 };
-const wfhQuota    = { taken: 2, total: 2 };
+// Leave/WFH monthly quotas (configurable here)
+const LEAVE_QUOTA = 2;
+const WFH_QUOTA   = 2;
+
+// Count how many leave/WFH records fall in the current calendar month
+function countThisMonth(records, type) {
+  const now   = new Date();
+  const y     = now.getFullYear();
+  const m     = now.getMonth();
+  return records.filter((r) => {
+    const d = new Date(r.from);
+    return d.getFullYear() === y && d.getMonth() === m && r.requestType === type;
+  }).length;
+}
 
 // ── Quota Card ────────────────────────────────────────
 function QuotaCard({ label, taken, total, color, icon: Icon, theme }) {
   const remaining = total - taken;
-  const pct = Math.round((taken / total) * 100);
+  const pct = total > 0 ? Math.round((taken / total) * 100) : 0;
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
   const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
@@ -92,7 +110,7 @@ function StatusBadge({ status, theme }) {
       Rejected: { bg: "#FDECEA", border: "#CC0000", color: "#990000" },
     },
   };
-  const s = styles[theme][status] || styles[theme].Pending;
+  const s = styles[theme]?.[status] || styles[theme].Pending;
   return (
     <span style={{
       background: s.bg, border: `1px solid ${s.border}`, color: s.color,
@@ -105,12 +123,12 @@ function StatusBadge({ status, theme }) {
 }
 
 // ── Apply Modal ───────────────────────────────────────
-function ApplyModal({ type, onClose, onSubmit, quota, theme }) {
-  const [from, setFrom]     = useState("");
-  const [to, setTo]         = useState("");
-  const [reason, setReason] = useState("");
+function ApplyModal({ type, onClose, onSubmit, quota, theme, submitting }) {
+  const [from, setFrom]           = useState("");
+  const [to, setTo]               = useState("");
+  const [reason, setReason]       = useState("");
   const [leaveType, setLeaveType] = useState("Annual Leave");
-  const [error, setError]   = useState("");
+  const [error, setError]         = useState("");
 
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
@@ -145,7 +163,7 @@ function ApplyModal({ type, onClose, onSubmit, quota, theme }) {
     if (quota.taken >= quota.total) {
       setError(`You have exhausted your ${type} quota for this month.`); return;
     }
-    onSubmit({ from, to, reason, leaveType });
+    onSubmit({ from, to, reason, leaveType, requestType: type });
   };
 
   return (
@@ -266,15 +284,16 @@ function ApplyModal({ type, onClose, onSubmit, quota, theme }) {
             onMouseLeave={(e) => e.currentTarget.style.borderColor = border}>
             Cancel
           </button>
-          <button onClick={handleSubmit}
+          <button onClick={handleSubmit} disabled={submitting}
             className="px-5 py-2 rounded-md"
             style={{
               fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px",
-              background: "#CC0000", color: "#FFFFFF", border: "none",
+              background: submitting ? "#880000" : "#CC0000", color: "#FFFFFF", border: "none",
+              cursor: submitting ? "not-allowed" : "pointer",
             }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "#AA0000"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "#CC0000"}>
-            Submit Request
+            onMouseEnter={(e) => { if (!submitting) e.currentTarget.style.background = "#AA0000"; }}
+            onMouseLeave={(e) => { if (!submitting) e.currentTarget.style.background = "#CC0000"; }}>
+            {submitting ? "Submitting…" : "Submit Request"}
           </button>
         </div>
       </div>
@@ -350,7 +369,7 @@ function HistoryTable({ data, type, theme }) {
             </span>
             {type === "Leave" && (
               <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
-                {row.type}
+                {row.leaveType || row.type || "—"}
               </span>
             )}
             <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
@@ -367,36 +386,91 @@ function HistoryTable({ data, type, theme }) {
 // ── Main Page ─────────────────────────────────────────
 function MyLeave() {
   const { theme } = useTheme();
-  const [activeTab, setActiveTab]   = useState("Leave");
-  const [showModal, setShowModal]   = useState(false);
-  const [leaveHistory, setLeaveHistory] = useState(mockLeaveHistory);
-  const [wfhHistory, setWFHHistory]     = useState(mockWFHHistory);
-  const [leaveQuotaState, setLeaveQuota] = useState(leaveQuota);
-  const [wfhQuotaState, setWFHQuota]     = useState(wfhQuota);
+
+  // FIX: read empId from localStorage instead of using hardcoded mock data
+  const profile = getProfile();
+  const empId   = profile.empId;
+
+  const [activeTab,    setActiveTab]   = useState("Leave");
+  const [showModal,    setShowModal]   = useState(false);
+  const [allRequests,  setAllRequests] = useState([]);
+  const [loading,      setLoading]     = useState(true);
+  const [submitting,   setSubmitting]  = useState(false);
+  const [fetchError,   setFetchError]  = useState("");
 
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
   const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
   const textMuted = theme === "dark" ? "#A0A0A0" : "#888888";
 
-  const handleSubmit = ({ from, to, reason, leaveType }) => {
-    const newEntry = {
-      id: Date.now(), from, to,
-      days: Math.max(1, Math.ceil((new Date(to) - new Date(from)) / 86400000) + 1),
-      reason, status: "Pending",
-      ...(activeTab === "Leave" && { type: leaveType }),
-    };
-    if (activeTab === "Leave") {
-      setLeaveHistory((prev) => [newEntry, ...prev]);
-      setLeaveQuota((prev) => ({ ...prev, taken: prev.taken + 1 }));
-    } else {
-      setWFHHistory((prev) => [newEntry, ...prev]);
-      setWFHQuota((prev) => ({ ...prev, taken: prev.taken + 1 }));
+  // Load all leave/WFH requests for this employee from Firestore
+  useEffect(() => {
+    if (!empId) {
+      setLoading(false);
+      setFetchError("Employee ID not found. Please log in again.");
+      return;
     }
-    setShowModal(false);
-  };
+    setLoading(true);
+    getLeaveRequestsByEmployee(empId)
+      .then((records) => {
+        setAllRequests(records);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load leave requests:", err);
+        setFetchError("Failed to load requests. Please refresh.");
+        setLoading(false);
+      });
+  }, [empId]);
 
+  // Derive filtered lists from real data
+  const leaveHistory = allRequests.filter((r) => r.requestType === "Leave");
+  const wfhHistory   = allRequests.filter((r) => r.requestType === "WFH");
+
+  // Compute month quota usage from real data
+  const leaveThisMonth = countThisMonth(allRequests, "Leave");
+  const wfhThisMonth   = countThisMonth(allRequests, "WFH");
+
+  const leaveQuotaState = { taken: leaveThisMonth, total: LEAVE_QUOTA };
+  const wfhQuotaState   = { taken: wfhThisMonth,   total: WFH_QUOTA   };
   const quota = activeTab === "Leave" ? leaveQuotaState : wfhQuotaState;
+
+  // Submit to Firestore and optimistically update local state
+  const handleSubmit = async ({ from, to, reason, leaveType, requestType }) => {
+    if (!empId) return;
+    setSubmitting(true);
+    try {
+      const days = Math.max(1, Math.ceil((new Date(to) - new Date(from)) / 86400000) + 1);
+      const id   = await submitLeaveRequest({
+        empId,
+        from,
+        to,
+        days,
+        reason,
+        leaveType: requestType === "Leave" ? leaveType : null,
+        requestType,   // "Leave" | "WFH"
+      });
+      // Optimistic update — add new pending entry to local state immediately
+      setAllRequests((prev) => [{
+        id,
+        empId,
+        from,
+        to,
+        days,
+        reason,
+        leaveType: requestType === "Leave" ? leaveType : null,
+        requestType,
+        status: "Pending",
+      }, ...prev]);
+      setShowModal(false);
+      setActiveTab(requestType === "Leave" ? "Leave" : "WFH");
+    } catch (err) {
+      console.error("Failed to submit request:", err);
+      alert("Failed to submit request: " + (err.message || "Unknown error"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -404,9 +478,10 @@ function MyLeave() {
       {/* Modal */}
       {showModal && (
         <ApplyModal
-          type={activeTab}
-          quota={quota}
+          type={activeTab === "Apply" ? "Leave" : activeTab}
+          quota={activeTab === "WFH" ? wfhQuotaState : leaveQuotaState}
           theme={theme}
+          submitting={submitting}
           onClose={() => setShowModal(false)}
           onSubmit={handleSubmit}
         />
@@ -436,9 +511,17 @@ function MyLeave() {
           onMouseEnter={(e) => e.currentTarget.style.background = "#AA0000"}
           onMouseLeave={(e) => e.currentTarget.style.background = "#CC0000"}>
           <Plus size={15} />
-          Apply {activeTab}
+          Apply {activeTab === "Apply" ? "Request" : activeTab}
         </button>
       </div>
+
+      {/* Error banner */}
+      {fetchError && (
+        <div className="rounded-xl px-5 py-4"
+          style={{ background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.25)" }}>
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: "#CC0000" }}>{fetchError}</p>
+        </div>
+      )}
 
       {/* ── Quota Cards ── */}
       <div className="grid grid-cols-2 gap-4">
@@ -456,7 +539,7 @@ function MyLeave() {
 
         {/* Tab Bar */}
         <div className="flex" style={{ borderBottom: `1px solid ${border}` }}>
-          {["Leave", "WFH", "Apply"].map((tab) => (
+          {["Leave", "WFH"].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -465,14 +548,10 @@ function MyLeave() {
                 fontFamily: "Rajdhani, sans-serif",
                 fontWeight: 700,
                 fontSize: "14px",
-                color: activeTab === tab
-                  ? tab === "Apply" ? "#CC0000" : "#00B8B8"
-                  : textMuted,
+                color: activeTab === tab ? "#00B8B8" : textMuted,
                 background: "transparent",
                 border: "none",
-                borderBottom: activeTab === tab
-                  ? `2px solid ${tab === "Apply" ? "#CC0000" : "#00B8B8"}`
-                  : "2px solid transparent",
+                borderBottom: activeTab === tab ? "2px solid #00B8B8" : "2px solid transparent",
                 cursor: "pointer",
                 transition: "all 200ms",
                 marginBottom: "-1px",
@@ -480,52 +559,28 @@ function MyLeave() {
             >
               {tab === "Leave" && <CalendarOff size={15} />}
               {tab === "WFH"   && <Home size={15} />}
-              {tab === "Apply" && <Plus size={15} />}
-              {tab === "Leave" ? "Leave History" : tab === "WFH" ? "WFH History" : "Apply Request"}
-              {tab !== "Apply" && (
-                <span style={{
-                  fontFamily: "Rajdhani, sans-serif",
-                  fontSize: "11px",
-                  background: activeTab === tab ? "rgba(0,184,184,0.1)" : (theme === "dark" ? "#1A1A1A" : "#F0F0F0"),
-                  color: activeTab === tab ? "#00B8B8" : textMuted,
-                  border: `1px solid ${activeTab === tab ? "rgba(0,184,184,0.3)" : "transparent"}`,
-                  borderRadius: "4px",
-                  padding: "1px 6px",
-                }}>
-                  {tab === "Leave" ? leaveHistory.length : wfhHistory.length}
-                </span>
-              )}
+              {tab === "Leave" ? "Leave History" : "WFH History"}
+              <span style={{
+                fontFamily: "Rajdhani, sans-serif",
+                fontSize: "11px",
+                background: activeTab === tab ? "rgba(0,184,184,0.1)" : (theme === "dark" ? "#1A1A1A" : "#F0F0F0"),
+                color: activeTab === tab ? "#00B8B8" : textMuted,
+                border: `1px solid ${activeTab === tab ? "rgba(0,184,184,0.3)" : "transparent"}`,
+                borderRadius: "4px",
+                padding: "1px 6px",
+              }}>
+                {tab === "Leave" ? leaveHistory.length : wfhHistory.length}
+              </span>
             </button>
           ))}
         </div>
 
         {/* Tab Content */}
         <div className="p-5">
-          {activeTab === "Apply" ? (
-            <ApplyInline
-              leaveQuota={leaveQuotaState}
-              wfhQuota={wfhQuotaState}
-              theme={theme}
-              onSubmit={(data) => {
-                const newEntry = {
-                  id: Date.now(),
-                  from: data.from,
-                  to: data.to,
-                  days: Math.max(1, Math.ceil((new Date(data.to) - new Date(data.from)) / 86400000) + 1),
-                  reason: data.reason,
-                  status: "Pending",
-                  ...(data.type === "Leave" && { type: data.leaveType }),
-                };
-                if (data.type === "Leave") {
-                  setLeaveHistory((prev) => [newEntry, ...prev]);
-                  setLeaveQuota((prev) => ({ ...prev, taken: prev.taken + 1 }));
-                } else {
-                  setWFHHistory((prev) => [newEntry, ...prev]);
-                  setWFHQuota((prev) => ({ ...prev, taken: prev.taken + 1 }));
-                }
-                setActiveTab(data.type === "Leave" ? "Leave" : "WFH");
-              }}
-            />
+          {loading ? (
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted, textAlign: "center", padding: "32px 0" }}>
+              Loading requests…
+            </p>
           ) : (
             <HistoryTable
               data={activeTab === "Leave" ? leaveHistory : wfhHistory}

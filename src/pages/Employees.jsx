@@ -548,13 +548,46 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
         </div>
 
         {/* ── Photo Upload ── */}
-        <PhotoUploader
-          theme={theme}
-          currentUrl={form.photoUrl}
-          empName={form.name}
-          empId={form.id || null}
-          onUploaded={(url, publicId) => setForm(f => ({ ...f, photoUrl: url, photoPublicId: publicId }))}
-        />
+        {/* FIX (Bug 1 - Photo/null empId): For new employees the Firestore
+            empId does not exist yet, so uploading here would put the photo
+            in the wrong Cloudinary folder (ems/employees/temp_<ts>).
+            We only render the uploader for existing employees (isEdit).
+            For new employees a reminder is shown; the photo can be added
+            from the employee drawer after the record is saved. */}
+        {isEdit ? (
+          <PhotoUploader
+            theme={theme}
+            currentUrl={form.photoUrl}
+            empName={form.name}
+            empId={form.id}
+            onUploaded={(url, publicId) => setForm(f => ({ ...f, photoUrl: url, photoPublicId: publicId }))}
+          />
+        ) : (
+          <div style={{
+            display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px",
+            padding: "12px 14px", borderRadius: "8px",
+            background: isDark ? "#0A0A0A" : "#F8F8F8",
+            border: `1px solid ${border}`,
+          }}>
+            <div style={{
+              width: "44px", height: "44px", borderRadius: "50%", flexShrink: 0,
+              background: "rgba(0,184,184,0.1)", border: "2px dashed rgba(0,184,184,0.4)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <span style={{ fontSize: "18px" }}>📷</span>
+            </div>
+            <div>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "12px",
+                color: isDark ? "#A0A0A0" : "#888888", letterSpacing: "0.05em" }}>
+                PHOTO UPLOAD
+              </p>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px",
+                color: isDark ? "#666666" : "#AAAAAA", marginTop: "2px" }}>
+                Photo can be added after the employee record is saved.
+              </p>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: "grid", gap: "14px" }}>
           {field("Full Name", "name")}
@@ -858,7 +891,11 @@ export default function Employees() {
     setDeleting(true);
     try {
       await deleteEmployeeAccount(confirmDelete.id, firebaseConfig);
+      // FIX (Bug 1): Optimistically remove the employee from local state for
+      // instant UI feedback without waiting for the Firestore listener.
+      setData((prev) => prev.filter((e) => e.id !== confirmDelete.id));
       setConfirmDelete(null);
+      setDrawer(null);
     } catch (err) {
       console.error("Delete failed:", err);
       alert("Delete failed: " + (err.message || "Unknown error"));

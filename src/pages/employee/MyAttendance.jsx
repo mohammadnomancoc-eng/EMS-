@@ -4,6 +4,7 @@ import {
   CalendarCheck, CalendarX, CalendarOff,
   Home, TrendingUp, TrendingDown
 } from "lucide-react";
+import { getAttendanceByEmployee } from "../../firebase/firestoreService";
 
 // ── Count-up hook ─────────────────────────────────────
 function useCountUp(target, duration = 800) {
@@ -21,48 +22,57 @@ function useCountUp(target, duration = 800) {
   return val;
 }
 
-// ── Mock data for logged-in employee ─────────────────
-const employeeData = {
-  name: "Arjun Sharma",
-  role: "Frontend Developer",
-  department: "Engineering",
-  month: "May 2026",
-  workingDays: 22,
-  present: 18,
-  absent: 2,
-  leave: { taken: 1, total: 2 },
-  wfh: { taken: 2, total: 2 },
-  attendanceLog: [
-    { date: "2026-05-01", status: "Present" },
-    { date: "2026-05-02", status: "Present" },
-    { date: "2026-05-03", status: "WFH" },
-    { date: "2026-05-04", status: "WFH" },
-    { date: "2026-05-05", status: "Present" },
-    { date: "2026-05-06", status: "Present" },
-    { date: "2026-05-07", status: "Absent" },
-    { date: "2026-05-08", status: "Present" },
-    { date: "2026-05-09", status: "Leave" },
-    { date: "2026-05-10", status: "Present" },
-    { date: "2026-05-11", status: "Present" },
-    { date: "2026-05-12", status: "Present" },
-    { date: "2026-05-13", status: "Absent" },
-    { date: "2026-05-14", status: "Present" },
-    { date: "2026-05-15", status: "Present" },
-    { date: "2026-05-16", status: "Present" },
-    { date: "2026-05-17", status: "Present" },
-    { date: "2026-05-18", status: "Present" },
-  ],
-};
+// ── Helpers ───────────────────────────────────────────
+// FIX (Bug 2 - MyAttendance): Removed all hardcoded mock data.
+// Profile and empId are now read from localStorage (set at login).
+// Attendance records are loaded from Firestore via getAttendanceByEmployee().
+
+function getProfile() {
+  try {
+    const raw = localStorage.getItem("rwt-user");
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { name: "Employee", role: "", initials: "?", empId: null };
+}
+
+function currentMonthLabel() {
+  return new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
+
+// Count working days in the current calendar month (Mon–Sat, excluding Sun)
+function workingDaysThisMonth() {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth();
+  const days  = new Date(year, month + 1, 0).getDate();
+  let count   = 0;
+  for (let d = 1; d <= days; d++) {
+    const dow = new Date(year, month, d).getDay();
+    if (dow !== 0) count++; // exclude Sunday
+  }
+  return count;
+}
+
+// Filter records to the current calendar month
+function filterThisMonth(records) {
+  const now   = new Date();
+  const y     = now.getFullYear();
+  const m     = now.getMonth();
+  return records.filter((r) => {
+    const d = new Date(r.date);
+    return d.getFullYear() === y && d.getMonth() === m;
+  });
+}
 
 // ── Stat Card ─────────────────────────────────────────
-function StatCard({ label, value, suffix, subValue, subLabel, icon: Icon, valueColor, trendUp, trendText, theme, isQuota, taken, total, quotaColor }) {
+function StatCard({ label, value, suffix, icon: Icon, valueColor, trendUp, trendText, theme, isQuota, taken, total, quotaColor }) {
   const displayed = useCountUp(typeof value === "number" ? value : 0);
 
-  const surface = theme === "dark" ? "#111111" : "#FFFFFF";
-  const border  = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
-  const textPri = theme === "dark" ? "#F0F0F0" : "#111111";
+  const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
+  const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
+  const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
   const textMuted = theme === "dark" ? "#A0A0A0" : "#888888";
-  const iconBg  = theme === "dark" ? "#1A1A1A" : "#F5F5F5";
+  const iconBg    = theme === "dark" ? "#1A1A1A" : "#F5F5F5";
 
   return (
     <div
@@ -123,7 +133,7 @@ function StatCard({ label, value, suffix, subValue, subLabel, icon: Icon, valueC
             <div
               className="h-full rounded-full"
               style={{
-                width: `${Math.round((taken / total) * 100)}%`,
+                width: `${total > 0 ? Math.round((taken / total) * 100) : 0}%`,
                 background: quotaColor,
                 transition: "width 800ms ease",
               }}
@@ -177,7 +187,7 @@ function StatusBadge({ status, theme }) {
       WFH:     { bg: "#F0F0F0", border: "#888888", color: "#444444" },
     },
   };
-  const s = styles[theme][status] || styles[theme].WFH;
+  const s = styles[theme]?.[status] || styles[theme].WFH;
   return (
     <span style={{
       background: s.bg,
@@ -194,6 +204,18 @@ function StatusBadge({ status, theme }) {
   );
 }
 
+// ── Loading / Error state ─────────────────────────────
+function LoadingRow({ theme }) {
+  const textMuted = theme === "dark" ? "#A0A0A0" : "#888888";
+  return (
+    <div className="px-5 py-8 text-center">
+      <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>
+        Loading attendance data…
+      </p>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────
 function MyAttendance() {
   const { theme } = useTheme();
@@ -204,12 +226,50 @@ function MyAttendance() {
   const headerBg  = theme === "dark" ? "#0D0D0D" : "#F5F5F5";
   const divider   = theme === "dark" ? "#1A1A1A" : "#EEEEEE";
 
-  const attendancePct = Math.round((employeeData.present / employeeData.workingDays) * 100);
+  // FIX: read profile from localStorage instead of hardcoded mock
+  const profile  = getProfile();
+  const empId    = profile.empId;
+
+  // Real Firestore data
+  const [allRecords, setAllRecords] = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [fetchError, setFetchError] = useState("");
+
+  useEffect(() => {
+    if (!empId) {
+      setLoading(false);
+      setFetchError("Employee ID not found. Please log in again.");
+      return;
+    }
+    setLoading(true);
+    getAttendanceByEmployee(empId)
+      .then((records) => {
+        setAllRecords(records);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load attendance:", err);
+        setFetchError("Failed to load attendance. Please refresh.");
+        setLoading(false);
+      });
+  }, [empId]);
+
+  // Derive stats from real data for the current month
+  const monthRecords  = filterThisMonth(allRecords);
+  const workingDays   = workingDaysThisMonth();
+  const presentCount  = monthRecords.filter((r) => r.status === "Present").length;
+  const absentCount   = monthRecords.filter((r) => r.status === "Absent").length;
+  const leaveCount    = monthRecords.filter((r) => r.status === "Leave").length;
+  const wfhCount      = monthRecords.filter((r) => r.status === "WFH").length;
+  const attendancePct = workingDays > 0 ? Math.round((presentCount / workingDays) * 100) : 0;
+
+  // Leave / WFH quotas — month caps (configurable here)
+  const LEAVE_QUOTA = 2;
+  const WFH_QUOTA   = 2;
 
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
-
   const getHour = new Date().getHours();
   const greeting = getHour < 12 ? "Good morning" : getHour < 17 ? "Good afternoon" : "Good evening";
 
@@ -243,10 +303,10 @@ function MyAttendance() {
             color: textPri,
             lineHeight: 1.1,
           }}>
-            {greeting}, {employeeData.name} 👋
+            {greeting}, {profile.name} 👋
           </h2>
           <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", color: textMuted, marginTop: "4px" }}>
-            Here's your attendance summary for <span style={{ color: "#00B8B8" }}>{employeeData.month}</span>.
+            Here's your attendance summary for <span style={{ color: "#00B8B8" }}>{currentMonthLabel()}</span>.
           </p>
         </div>
 
@@ -279,12 +339,12 @@ function MyAttendance() {
       <div className="grid grid-cols-5 gap-4">
         <StatCard
           theme={theme} label="Days Present"
-          value={employeeData.present} icon={CalendarCheck}
-          valueColor="#00B8B8" trendUp trendText={`out of ${employeeData.workingDays} working days`}
+          value={presentCount} icon={CalendarCheck}
+          valueColor="#00B8B8" trendUp trendText={`out of ${workingDays} working days`}
         />
         <StatCard
           theme={theme} label="Days Absent"
-          value={employeeData.absent} icon={CalendarX}
+          value={absentCount} icon={CalendarX}
           valueColor="#CC0000" trendUp={false} trendText="this month"
         />
         <StatCard
@@ -296,13 +356,13 @@ function MyAttendance() {
         <StatCard
           theme={theme} label="Leave This Month"
           icon={CalendarOff} isQuota
-          taken={employeeData.leave.taken} total={employeeData.leave.total}
+          taken={leaveCount} total={LEAVE_QUOTA}
           quotaColor="#C9922A"
         />
         <StatCard
           theme={theme} label="WFH This Month"
           icon={Home} isQuota
-          taken={employeeData.wfh.taken} total={employeeData.wfh.total}
+          taken={wfhCount} total={WFH_QUOTA}
           quotaColor="#00B8B8"
         />
       </div>
@@ -319,7 +379,7 @@ function MyAttendance() {
               ATTENDANCE
             </p>
             <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textPri }}>
-              Daily Log — {employeeData.month}
+              Daily Log — {currentMonthLabel()}
             </h3>
           </div>
           <div className="flex items-center gap-3">
@@ -345,41 +405,56 @@ function MyAttendance() {
           ))}
         </div>
 
-        {employeeData.attendanceLog.map((entry, i) => {
-          const dateObj = new Date(entry.date);
-          const day = dateObj.toLocaleDateString("en-IN", { weekday: "long" });
-          return (
-            <div
-              key={entry.date}
-              className="grid px-5 items-center"
-              style={{
-                gridTemplateColumns: "1fr 1fr 1fr",
-                height: "52px",
-                borderBottom: i < employeeData.attendanceLog.length - 1 ? `1px solid ${divider}` : "none",
-                borderLeft: "3px solid transparent",
-                transition: "all 150ms",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = theme === "dark" ? "#161616" : "#F9F9F9";
-                e.currentTarget.style.borderLeftColor = "#00B8B8";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.borderLeftColor = "transparent";
-              }}
-            >
-              <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: textPri }}>
-                {entry.date}
-              </span>
-              <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
-                {day}
-              </span>
-              <div>
-                <StatusBadge status={entry.status} theme={theme} />
+        {/* Rows */}
+        {loading ? (
+          <LoadingRow theme={theme} />
+        ) : fetchError ? (
+          <div className="px-5 py-8 text-center">
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: "#CC0000" }}>{fetchError}</p>
+          </div>
+        ) : monthRecords.length === 0 ? (
+          <div className="px-5 py-8 text-center">
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>
+              No attendance records found for this month.
+            </p>
+          </div>
+        ) : (
+          monthRecords.map((entry, i) => {
+            const dateObj = new Date(entry.date);
+            const day = dateObj.toLocaleDateString("en-IN", { weekday: "long" });
+            return (
+              <div
+                key={entry.id || entry.date}
+                className="grid px-5 items-center"
+                style={{
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  height: "52px",
+                  borderBottom: i < monthRecords.length - 1 ? `1px solid ${divider}` : "none",
+                  borderLeft: "3px solid transparent",
+                  transition: "all 150ms",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = theme === "dark" ? "#161616" : "#F9F9F9";
+                  e.currentTarget.style.borderLeftColor = "#00B8B8";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.borderLeftColor = "transparent";
+                }}
+              >
+                <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: textPri }}>
+                  {entry.date}
+                </span>
+                <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
+                  {day}
+                </span>
+                <div>
+                  <StatusBadge status={entry.status} theme={theme} />
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
     </div>
   );

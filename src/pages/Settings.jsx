@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTheme } from "../App";
+import { getCompanySettings, saveCompanySettings } from "../firebase/firestoreService";
 import {
   Settings, User, Bell, Shield, Palette,
   Building2, Clock, Mail, Phone, Globe,
@@ -7,7 +8,7 @@ import {
   Sun, Moon, Monitor, ChevronRight, ToggleLeft,
   ToggleRight, Download, Trash2, RefreshCw, Save,
   Key, Database, Wifi, HardDrive, LogOut
-} from "lucide-react";
+, MapPin } from "lucide-react";
 
 // ── Section Tab ────────────────────────────────────────
 function Tab({ label, icon: Icon, active, onClick, theme }) {
@@ -616,6 +617,7 @@ function CompanySection({ theme }) {
   const isDark  = theme === "dark";
   const surface = isDark ? "#111111" : "#FFFFFF";
   const border  = isDark ? "#1E1E1E" : "#E0E0E0";
+  const textMuted = isDark ? "#666666" : "#999999";
   const [form, setForm] = useState({
     company: "Royals Webtech Pvt. Ltd.",
     gstin: "27AAACR1234A1Z5",
@@ -627,10 +629,70 @@ function CompanySection({ theme }) {
     leaveYear: "april",
     payDay: "last-working",
     currency: "INR",
+    officeLat: "",
+    officeLng: "",
+    geoFenceRadius: "100",
   });
   const [saved, setSaved] = useState(false);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoError, setGeoError] = useState("");
+  const [settingsLoading, setSettingsLoading] = useState(true);
   const set = (key) => (val) => setForm(f => ({ ...f, [key]: val }));
-  const handleSave = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+  // Load existing settings from Firestore on mount
+  useEffect(() => {
+    getCompanySettings().then((data) => {
+      if (data) {
+        setForm(f => ({
+          ...f,
+          officeLat: data.officeLat != null ? String(data.officeLat) : "",
+          officeLng: data.officeLng != null ? String(data.officeLng) : "",
+          geoFenceRadius: data.geoFenceRadius != null ? String(data.geoFenceRadius) : "100",
+          company: data.name || f.company,
+          address: data.address || f.address,
+        }));
+      }
+      setSettingsLoading(false);
+    }).catch(() => setSettingsLoading(false));
+  }, []);
+
+  // Use admin's current GPS as office location
+  const handleUseMyLocation = () => {
+    setGeoError("");
+    setGeoLoading(true);
+    if (!navigator.geolocation) {
+      setGeoError("Geolocation is not supported by your browser.");
+      setGeoLoading(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm(f => ({
+          ...f,
+          officeLat: pos.coords.latitude.toFixed(6),
+          officeLng: pos.coords.longitude.toFixed(6),
+        }));
+        setGeoLoading(false);
+      },
+      (err) => {
+        setGeoError("Could not get location: " + err.message);
+        setGeoLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleSave = async () => {
+    await saveCompanySettings({
+      name: form.company,
+      address: form.address,
+      officeLat: form.officeLat ? parseFloat(form.officeLat) : null,
+      officeLng: form.officeLng ? parseFloat(form.officeLng) : null,
+      geoFenceRadius: form.geoFenceRadius ? parseInt(form.geoFenceRadius) : 100,
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
 
   return (
     <div>
@@ -681,6 +743,54 @@ function CompanySection({ theme }) {
             ]} />
           <SelectField label="Currency" value={form.currency} onChange={set("currency")} theme={theme}
             options={["INR", "USD", "EUR", "GBP", "AED"]} />
+        </div>
+        <SaveBtn onClick={handleSave} saved={saved} theme={theme} />
+      </div>
+
+      {/* ── Office Location & Geo-fence ── */}
+      <div className="p-5 rounded-xl mt-4" style={{ background: surface, border: `1px solid ${border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
+          <MapPin size={14} style={{ color: "#CC0000" }} />
+          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.18em" }}>
+            OFFICE LOCATION & GEO-FENCE
+          </p>
+        </div>
+        <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted, marginBottom: "16px" }}>
+          Set the office GPS coordinates. WFO employees must be within the geo-fence radius to mark webcam attendance.
+        </p>
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Office Latitude"  value={form.officeLat} onChange={set("officeLat")}  theme={theme} placeholder="e.g. 21.146633" />
+            <Field label="Office Longitude" value={form.officeLng} onChange={set("officeLng")} theme={theme} placeholder="e.g. 79.088860" />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <button
+              onClick={handleUseMyLocation}
+              disabled={geoLoading}
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                padding: "8px 16px", borderRadius: "7px",
+                background: "rgba(0,184,184,0.08)", border: "1px solid rgba(0,184,184,0.3)",
+                color: "#00B8B8", fontFamily: "Rajdhani, sans-serif", fontSize: "12px", fontWeight: 700,
+                cursor: geoLoading ? "not-allowed" : "pointer", letterSpacing: "0.05em",
+                opacity: geoLoading ? 0.6 : 1,
+              }}
+            >
+              <MapPin size={13} />
+              {geoLoading ? "Detecting…" : "Use My Current Location"}
+            </button>
+            {form.officeLat && form.officeLng && (
+              <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: isDark ? "#555555" : "#AAAAAA" }}>
+                {parseFloat(form.officeLat).toFixed(5)}, {parseFloat(form.officeLng).toFixed(5)}
+              </span>
+            )}
+          </div>
+          {geoError && (
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#CC0000" }}>{geoError}</p>
+          )}
+          <div style={{ maxWidth: "200px" }}>
+            <Field label="Geo-fence Radius (metres)" value={form.geoFenceRadius} onChange={set("geoFenceRadius")} theme={theme} type="number" placeholder="100" />
+          </div>
         </div>
         <SaveBtn onClick={handleSave} saved={saved} theme={theme} />
       </div>

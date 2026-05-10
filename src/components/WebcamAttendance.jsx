@@ -25,8 +25,8 @@
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "../App";
-import { Camera, X, CheckCircle, Clock, AlertCircle, RefreshCw, Video, VideoOff } from "lucide-react";
-import { upsertAttendance } from "../firebase/firestoreService";
+import { Camera, X, CheckCircle, AlertCircle, RefreshCw, Video, VideoOff, MapPin, Navigation, ShieldCheck } from "lucide-react";
+import { upsertAttendance, getCompanySettings, getEmployee } from "../firebase/firestoreService";
 import { uploadToCloudinary } from "../cloudinary/cloudinaryService";
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -71,6 +71,18 @@ function calcHoursWorked(checkIn, checkOut) {
   } catch {
     return "--";
   }
+}
+
+// ── Haversine distance (metres) between two GPS coords ───────────
+function haversineMetres(lat1, lng1, lat2, lng2) {
+  const R = 6371000; // Earth radius in metres
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // ── Live Clock Component ───────────────────────────────────────
@@ -120,9 +132,9 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   const streamRef = useRef(null);
 
   const [camStatus, setCamStatus] = useState("idle"); // idle | loading | active | error | denied
-  const [snapshot, setSnapshot] = useState(null);     // base64 data URL for local preview only
-  const [snapshotBlob, setSnapshotBlob] = useState(null); // Blob for Cloudinary upload
-  const [uploadProgress, setUploadProgress] = useState(0); // 0-100
+  const [snapshotObjectUrl, setSnapshotObjectUrl] = useState(null); // ObjectURL for preview (revoked after use)
+  const [snapshotBlob, setSnapshotBlob] = useState(null);           // Blob for Cloudinary upload
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [action, setAction] = useState(null);         // "checkin" | "checkout"
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -130,14 +142,67 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   const [errorMsg, setErrorMsg] = useState("");
   const [todayRecord, setTodayRecord] = useState(null); // existing attendance for today
 
-  // ── Load today's existing attendance record ───────────────
+  // ── Geo-fence state ───────────────────────────────────────────
+  const [geoStatus, setGeoStatus]       = useState("idle");   // idle | checking | allowed | blocked | error | wfh_skip
+  const [geoDistance, setGeoDistance]   = useState(null);     // metres from office
+  const [geoRequired, setGeoRequired]   = useState(false);    // true for WFO employees
+  const [companySettings, setCompanySettings] = useState(null);
+
+  // ── Load today's record + company settings + employee workType ───
   useEffect(() => {
     if (!empId) return;
-    import("../firebase/firestoreService").then(({ getAttendanceByDate }) => {
-      getAttendanceByDate(todayString()).then((records) => {
-        const mine = records.find((r) => r.empId === empId);
-        if (mine) setTodayRecord(mine);
-      }).catch(() => {});
+
+    // Load attendance record and company settings in parallel
+    Promise.all([
+      import("../firebase/firestoreService").then(({ getAttendanceByDate }) =>
+        getAttendanceByDate(todayString())
+      ),
+      getCompanySettings(),
+      getEmployee(empId),
+    ]).then(([records, settings, empData]) => {
+      const mine = records.find((r) => r.empId === empId);
+      if (mine) setTodayRecord(mine);
+      if (settings) setCompanySettings(settings);
+
+      // Determine if geo-fence applies: WFO employees only
+      const wt = (empData?.workType || "WFO").toUpperCase();
+      const isWFO = wt === "WFO";
+      setGeoRequired(isWFO);
+
+      if (!isWFO) {
+        // WFH / Hybrid → no location check needed
+        setGeoStatus("wfh_skip");
+        return;
+      }
+
+      if (!settings?.officeLat || !settings?.officeLng) {
+        // Admin hasn't configured office location yet → allow with a warning
+        setGeoStatus("allowed");
+        return;
+      }
+
+      // Run geo-fence check for WFO employee
+      setGeoStatus("checking");
+      if (!navigator.geolocation) {
+        setGeoStatus("error");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const dist = haversineMetres(
+            pos.coords.latitude, pos.coords.longitude,
+            settings.officeLat, settings.officeLng
+          );
+          const radius = settings.geoFenceRadius ?? 100;
+          setGeoDistance(Math.round(dist));
+          setGeoStatus(dist <= radius ? "allowed" : "blocked");
+        },
+        () => setGeoStatus("error"),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }).catch(() => {
+      // On error, allow attendance (fail-open)
+      setGeoStatus("allowed");
     });
   }, [empId]);
 
@@ -196,46 +261,50 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
     setCamStatus("idle");
   }, []);
 
-  // Cleanup on unmount
+  // Cleanup on unmount: stop camera and revoke any ObjectURL to free memory
   useEffect(() => {
-    return () => stopCamera();
-  }, [stopCamera]);
+    return () => {
+      stopCamera();
+      if (snapshotObjectUrl) URL.revokeObjectURL(snapshotObjectUrl);
+    };
+  }, [stopCamera]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Capture snapshot ──────────────────────────────────────
+  // Uses ONLY canvas.toBlob() — no toDataURL(), no base64 string ever created.
+  // An ObjectURL (blob: URI) is created for the preview <img> and revoked on retake/unmount.
   const captureSnapshot = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth || 640;
+    canvas.width  = video.videoWidth  || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext("2d");
-    // Mirror the image (since webcam is mirrored in preview)
     ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
+    ctx.scale(-1, 1); // mirror so it feels like a natural selfie
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    // Keep base64 for local preview only — never stored in Firestore
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-    setSnapshot(dataUrl);
-    // Also get a Blob for Cloudinary upload (avoids large base64 strings)
-    canvas.toBlob(
-      (blob) => setSnapshotBlob(blob),
-      "image/jpeg",
-      0.85
-    );
     stopCamera();
+    // toBlob gives us a binary Blob — no base64 encoding at all
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      setSnapshotBlob(blob);
+      // ObjectURL is a lightweight blob: URI for local display only
+      const objUrl = URL.createObjectURL(blob);
+      setSnapshotObjectUrl(objUrl);
+    }, "image/jpeg", 0.85);
   }, [stopCamera]);
 
   // ── Retake photo ──────────────────────────────────────────
   const retake = useCallback(() => {
-    setSnapshot(null);
+    if (snapshotObjectUrl) URL.revokeObjectURL(snapshotObjectUrl);
+    setSnapshotObjectUrl(null);
     setSnapshotBlob(null);
     setUploadProgress(0);
     startCamera();
-  }, [startCamera]);
+  }, [startCamera, snapshotObjectUrl]);
 
   // ── Save attendance record to Firestore ──────────────────
   const handleSave = useCallback(async () => {
-    if (!snapshot || !snapshotBlob || !empId || !action) return;
+    if (!snapshotObjectUrl || !snapshotBlob || !empId || !action) return;
     setSaving(true);
     setUploadProgress(0);
     setErrorMsg("");
@@ -288,6 +357,8 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
         webcamSnapshotUrl,       // Cloudinary HTTPS URL (not base64)
         webcamSnapshotPublicId,  // for future deletion / transforms
         webcamTimestamp:         now.toISOString(),
+        geoDistance:            geoDistance,   // metres from office at time of marking
+        geoVerified:            geoStatus === "allowed",
       });
 
       const record = { empId, date, status, checkIn, checkOut, hoursWorked, action, time: timeStr };
@@ -299,7 +370,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
       setSaving(false);
       setUploadProgress(0);
     }
-  }, [snapshot, snapshotBlob, empId, action, todayRecord, onSuccess]);
+  }, [snapshotObjectUrl, snapshotBlob, empId, action, todayRecord, onSuccess, geoStatus, geoDistance]);
 
   // ── Colors ────────────────────────────────────────────────
   const bg = isDark ? "#0A0A0A" : "#F8F8F8";
@@ -534,7 +605,63 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             </div>
           </div>
 
-          {/* Camera area */}
+          {/* ── Geo-fence status banner ── */}
+          {geoRequired && geoStatus === "checking" && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px",
+              borderRadius: "8px", background: "rgba(201,146,42,0.08)", border: "1px solid rgba(201,146,42,0.3)",
+            }}>
+              <Navigation size={14} style={{ color: "#C9922A", flexShrink: 0 }} />
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#C9922A" }}>
+                Verifying your location…
+              </p>
+            </div>
+          )}
+          {geoRequired && geoStatus === "blocked" && (
+            <div style={{
+              padding: "14px 16px", borderRadius: "8px",
+              background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.3)",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                <MapPin size={14} style={{ color: "#CC0000", flexShrink: 0 }} />
+                <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 700, color: "#CC0000" }}>
+                  Outside Office Premises
+                </p>
+              </div>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#888888" : "#666666", lineHeight: 1.5 }}>
+                You are <strong style={{ color: "#CC0000" }}>{geoDistance}m</strong> away from the office.
+                WFO employees must be within <strong>{companySettings?.geoFenceRadius ?? 100}m</strong> to mark attendance.
+              </p>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#555555" : "#AAAAAA", marginTop: "8px" }}>
+                Please come to the office or contact your admin if this is incorrect.
+              </p>
+            </div>
+          )}
+          {geoRequired && geoStatus === "allowed" && geoDistance !== null && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px",
+              borderRadius: "8px", background: "rgba(0,184,184,0.07)", border: "1px solid rgba(0,184,184,0.25)",
+            }}>
+              <ShieldCheck size={14} style={{ color: "#00B8B8", flexShrink: 0 }} />
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#00B8B8" }}>
+                Location verified — you are <strong>{geoDistance}m</strong> from the office ✓
+              </p>
+            </div>
+          )}
+          {geoRequired && geoStatus === "error" && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px",
+              borderRadius: "8px", background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.3)",
+            }}>
+              <AlertCircle size={14} style={{ color: "#CC0000", flexShrink: 0 }} />
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#CC0000" }}>
+                Could not access your location. Please enable GPS and try again.
+              </p>
+            </div>
+          )}
+
+          {/* Camera area — hidden if geo is blocked */}
+          {geoStatus !== "blocked" && geoStatus !== "checking" && (
           <div style={{
             position: "relative",
             borderRadius: "10px",
@@ -565,16 +692,16 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             />
 
             {/* Snapshot preview */}
-            {snapshot && (
+            {snapshotObjectUrl && (
               <img
-                src={snapshot}
+                src={snapshotObjectUrl}
                 alt="Captured"
                 style={{ width: "100%", height: "100%", objectFit: "cover" }}
               />
             )}
 
             {/* Idle / loading / error overlays */}
-            {!snapshot && camStatus !== "active" && (
+            {!snapshotObjectUrl && camStatus !== "active" && (
               <div style={{
                 display: "flex", flexDirection: "column", alignItems: "center",
                 gap: "12px", padding: "24px", textAlign: "center",
@@ -639,7 +766,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             )}
 
             {/* Corner clock overlay on live feed */}
-            {camStatus === "active" && !snapshot && (
+            {camStatus === "active" && !snapshotObjectUrl && (
               <div style={{
                 position: "absolute", bottom: "10px", left: "10px",
                 background: "rgba(0,0,0,0.65)", borderRadius: "6px",
@@ -650,7 +777,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             )}
 
             {/* Snapshot overlay: retake button */}
-            {snapshot && (
+            {snapshotObjectUrl && (
               <button
                 onClick={retake}
                 style={{
@@ -666,6 +793,8 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
               </button>
             )}
           </div>
+
+          )} {/* end geo gated camera area */}
 
           {/* Error message */}
           {errorMsg && camStatus !== "error" && camStatus !== "denied" && (
@@ -739,7 +868,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
           <div style={{ display: "flex", gap: "8px" }}>
             {/* Capture button — only shown when camera is active */}
-            {camStatus === "active" && !snapshot && (
+            {camStatus === "active" && !snapshotObjectUrl && (
               <button
                 onClick={captureSnapshot}
                 style={{
@@ -757,14 +886,14 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             {/* Confirm & Save button */}
             <button
               onClick={handleSave}
-              disabled={!snapshot || !snapshotBlob || saving}
+              disabled={!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking"}
               style={{
                 padding: "9px 24px", borderRadius: "7px",
-                background: !snapshot || !snapshotBlob || saving ? (isDark ? "#1A1A1A" : "#E8E8E8") : "#CC0000",
-                border: !snapshot || !snapshotBlob || saving ? `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}` : "1px solid #CC0000",
-                color: !snapshot || !snapshotBlob || saving ? (isDark ? "#444444" : "#BBBBBB") : "#FFFFFF",
+                background: (!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking") ? (isDark ? "#1A1A1A" : "#E8E8E8") : "#CC0000",
+                border: (!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking") ? `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}` : "1px solid #CC0000",
+                color: (!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking") ? (isDark ? "#444444" : "#BBBBBB") : "#FFFFFF",
                 fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 700,
-                cursor: !snapshot || !snapshotBlob || saving ? "not-allowed" : "pointer",
+                cursor: (!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking") ? "not-allowed" : "pointer",
                 letterSpacing: "0.05em",
                 transition: "all 150ms",
               }}

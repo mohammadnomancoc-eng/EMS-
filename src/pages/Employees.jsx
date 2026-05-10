@@ -467,6 +467,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
   const [form, setForm] = useState(initial || {
     name: "", role: "", department: "Engineering",
     email: "", phone: "", joinDate: "", status: "Present", salary: "",
+    workType: "WFO",
     photoUrl: "", photoPublicId: "",
   });
   const [errors,    setErrors]    = useState({});
@@ -597,6 +598,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
           {field("Phone", "phone")}
           {field("Join Date", "joinDate", "date")}
           {field("Status", "status", "text", ["Present", "Absent", "Leave", "WFH"])}
+          {field("Work Type", "workType", "text", ["WFO", "WFH", "Hybrid"])}
           {field("Monthly Salary (₹)", "salary", "number")}
         </div>
 

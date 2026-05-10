@@ -221,12 +221,13 @@ export async function getAttendanceByEmployee(empId) {
  * Upsert a single attendance record.
  * id = "{empId}_{date}" ensures one record per employee per day.
  *
- * WEBCAM FIELDS (optional — only written when provided so manual
- * admin edits never overwrite webcam data):
- *   markedBy               {string} – "webcam" | "manual" (default "manual")
- *   webcamSnapshotUrl      {string} – Cloudinary secure_url (HTTPS image URL)
- *   webcamSnapshotPublicId {string} – Cloudinary public_id (for transforms/deletion)
- *   webcamTimestamp        {string} – ISO timestamp of the webcam capture
+ * Optional webcam / geo fields (only written when provided):
+ *   markedBy               {string}  – "webcam" | "manual" (default "manual")
+ *   webcamSnapshotUrl      {string}  – Cloudinary secure_url (NOT base64)
+ *   webcamSnapshotPublicId {string}  – Cloudinary public_id
+ *   webcamTimestamp        {string}  – ISO timestamp of the capture
+ *   geoDistance            {number}  – metres from office at time of marking
+ *   geoVerified            {boolean} – employee was within geo-fence
  */
 export async function upsertAttendance({
   empId,
@@ -239,23 +240,20 @@ export async function upsertAttendance({
   webcamSnapshotUrl = null,
   webcamSnapshotPublicId = null,
   webcamTimestamp = null,
+  geoDistance = null,
+  geoVerified = null,
 }) {
   const id = `${empId}_${date}`;
   const payload = {
-    empId,
-    date,
-    status,
-    checkIn,
-    checkOut,
-    hoursWorked,
-    markedBy,
+    empId, date, status, checkIn, checkOut, hoursWorked, markedBy,
     updatedAt: serverTimestamp(),
   };
-  // Only persist webcam fields when they are provided.
-  // This ensures manual admin edits (EditModal) never wipe out the Cloudinary URL.
+  // Only store optional fields when provided — manual admin edits never wipe webcam/geo data
   if (webcamSnapshotUrl)      payload.webcamSnapshotUrl      = webcamSnapshotUrl;
   if (webcamSnapshotPublicId) payload.webcamSnapshotPublicId = webcamSnapshotPublicId;
   if (webcamTimestamp)        payload.webcamTimestamp        = webcamTimestamp;
+  if (geoDistance !== null)   payload.geoDistance            = geoDistance;
+  if (geoVerified !== null)   payload.geoVerified            = geoVerified;
 
   await setDoc(doc(db, "attendance", id), payload, { merge: true });
 }
@@ -354,4 +352,30 @@ export function subscribeMedia(callback) {
  */
 export async function deleteMediaRecord(id) {
   await deleteDoc(doc(db, "media", id));
+}
+
+// ════════════════════════════════════════════════════════════
+//  COMPANY SETTINGS  (/settings/company)
+//
+//  Shape: { name, address, officeLat, officeLng, geoFenceRadius, updatedAt }
+// ════════════════════════════════════════════════════════════
+
+const SETTINGS_DOC = doc(db, "settings", "company");
+
+/** Fetch company settings once. Returns null if not configured yet. */
+export async function getCompanySettings() {
+  const snap = await getDoc(SETTINGS_DOC);
+  return snap.exists() ? snap.data() : null;
+}
+
+/** Save / merge company settings. */
+export async function saveCompanySettings(data) {
+  await setDoc(SETTINGS_DOC, { ...data, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+/** Real-time listener for company settings. */
+export function subscribeCompanySettings(callback) {
+  return onSnapshot(SETTINGS_DOC, (snap) => {
+    callback(snap.exists() ? snap.data() : null);
+  });
 }

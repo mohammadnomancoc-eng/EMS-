@@ -29,7 +29,7 @@ import {
   Search, Filter, Download, CalendarCheck,
   UserCheck, UserX, Home, Clock,
   ChevronDown, ChevronLeft, ChevronRight,
-  Edit2, X,
+  Edit2, X, Camera,
 } from "lucide-react";
 import {
   subscribeEmployees,
@@ -255,6 +255,7 @@ export default function Attendance() {
   const [dateFilter,   setDateFilter]   = useState(todayString);
   const [editRecord,   setEditRecord]   = useState(null);
   const [page,         setPage]         = useState(1);
+  const [viewSnapshotUrl, setViewSnapshotUrl] = useState(null); // webcam snapshot viewer
 
   // BUG-04 FIX: real Firestore data instead of mock arrays
   const [employees,        setEmployees]        = useState([]);
@@ -315,6 +316,8 @@ export default function Attendance() {
       hoursWorked: att?.hoursWorked || "--",
       isLate:      att?.checkIn  ? att.checkIn > "09:30 AM" : false,
       hasRecord:   !!att,
+      markedBy:    att?.markedBy || "manual",
+      webcamSnapshotUrl: att?.webcamSnapshotUrl || null,
     };
   });
 
@@ -620,6 +623,18 @@ export default function Attendance() {
                               LATE ARRIVAL
                             </span>
                           )}
+                          {rec.markedBy === "webcam" && (
+                            <span style={{
+                              display: "inline-flex", alignItems: "center", gap: "3px",
+                              fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                              color: "#00B8B8", letterSpacing: "0.08em",
+                            }}
+                              title={rec.webcamSnapshotUrl ? "Click to view photo" : "Webcam verified"}
+                            >
+                              <Camera size={9} style={{ color: "#00B8B8" }} />
+                              WEBCAM
+                            </span>
+                          )}
                         </div>
                       </td>
 
@@ -655,31 +670,57 @@ export default function Attendance() {
 
                       {/* Action */}
                       <td style={{ padding: "11px 14px" }}>
-                        <button
-                          onClick={() => setEditRecord(rec)}
-                          style={{
-                            width: "30px", height: "30px", borderRadius: "6px",
-                            border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
-                            background: "transparent",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            cursor: "pointer",
-                            color: isDark ? "#555555" : "#888888",
-                            transition: "all 150ms",
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.borderColor = "#CC0000";
-                            e.currentTarget.style.color = "#CC0000";
-                            e.currentTarget.style.background = "rgba(204,0,0,0.06)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.borderColor = isDark ? "#2A2A2A" : "#E0E0E0";
-                            e.currentTarget.style.color = isDark ? "#555555" : "#888888";
-                            e.currentTarget.style.background = "transparent";
-                          }}
-                          title="Edit attendance"
-                        >
-                          <Edit2 size={13} />
-                        </button>
+                        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                          {rec.webcamSnapshotUrl && (
+                            <button
+                              onClick={() => setViewSnapshotUrl(rec.webcamSnapshotUrl)}
+                              style={{
+                                width: "30px", height: "30px", borderRadius: "6px",
+                                border: "1px solid rgba(0,184,184,0.35)",
+                                background: "rgba(0,184,184,0.08)",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                cursor: "pointer",
+                                color: "#00B8B8",
+                                transition: "all 150ms",
+                                flexShrink: 0,
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = "rgba(0,184,184,0.18)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = "rgba(0,184,184,0.08)";
+                              }}
+                              title="View webcam snapshot"
+                            >
+                              <Camera size={13} />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setEditRecord(rec)}
+                            style={{
+                              width: "30px", height: "30px", borderRadius: "6px",
+                              border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
+                              background: "transparent",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              cursor: "pointer",
+                              color: isDark ? "#555555" : "#888888",
+                              transition: "all 150ms",
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.borderColor = "#CC0000";
+                              e.currentTarget.style.color = "#CC0000";
+                              e.currentTarget.style.background = "rgba(204,0,0,0.06)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.borderColor = isDark ? "#2A2A2A" : "#E0E0E0";
+                              e.currentTarget.style.color = isDark ? "#555555" : "#888888";
+                              e.currentTarget.style.background = "transparent";
+                            }}
+                            title="Edit attendance"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -752,6 +793,55 @@ export default function Attendance() {
           </div>
         )}
       </div>
+
+      {/* ── Webcam Snapshot Viewer Modal ── */}
+      {viewSnapshotUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}
+          onClick={() => setViewSnapshotUrl(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: isDark ? "#111111" : "#FFFFFF",
+              border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
+              borderRadius: "14px",
+              overflow: "hidden",
+              maxWidth: "480px",
+              width: "90vw",
+            }}
+          >
+            <div style={{
+              padding: "14px 18px",
+              borderBottom: `1px solid ${isDark ? "#1A1A1A" : "#F0F0F0"}`,
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Camera size={15} style={{ color: "#00B8B8" }} />
+                <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "15px", color: isDark ? "#F0F0F0" : "#111111" }}>
+                  Webcam Snapshot
+                </span>
+              </div>
+              <button onClick={() => setViewSnapshotUrl(null)} style={{ color: "#555555", background: "none", border: "none", cursor: "pointer" }}>
+                <X size={17} />
+              </button>
+            </div>
+            <div style={{ padding: "16px" }}>
+              <img
+                src={viewSnapshotUrl}
+                alt="Webcam attendance snapshot"
+                style={{ width: "100%", borderRadius: "8px", display: "block" }}
+              />
+            </div>
+            <div style={{ padding: "10px 16px 16px", textAlign: "center" }}>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#555555" : "#999999" }}>
+                Photo captured automatically at time of webcam check-in / check-out
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Edit Modal ── */}
       {editRecord && (

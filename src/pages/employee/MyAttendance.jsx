@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useTheme } from "../../App";
 import {
   CalendarCheck, CalendarX, CalendarOff,
-  Home, TrendingUp, TrendingDown
+  Home, TrendingUp, TrendingDown, Camera
 } from "lucide-react";
+import WebcamAttendance from "../../components/WebcamAttendance";
 import { getAttendanceByEmployee } from "../../firebase/firestoreService";
 
 // ── Count-up hook ─────────────────────────────────────
@@ -230,6 +231,9 @@ function MyAttendance() {
   const profile  = getProfile();
   const empId    = profile.empId;
 
+  // Webcam modal state
+  const [showWebcam, setShowWebcam] = useState(false);
+
   // Real Firestore data
   const [allRecords, setAllRecords] = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -253,6 +257,17 @@ function MyAttendance() {
         setLoading(false);
       });
   }, [empId]);
+
+  // Refresh attendance records (called after webcam check-in/out)
+  const refreshRecords = () => {
+    if (!empId) return;
+    setLoading(true);
+    import("../../firebase/firestoreService").then(({ getAttendanceByEmployee }) => {
+      getAttendanceByEmployee(empId)
+        .then((records) => { setAllRecords(records); setLoading(false); })
+        .catch(() => setLoading(false));
+    });
+  };
 
   // Derive stats from real data for the current month
   const monthRecords  = filterThisMonth(allRecords);
@@ -333,6 +348,61 @@ function MyAttendance() {
             Attendance
           </span>
         </div>
+      </div>
+
+      {/* ── Webcam Attendance Button ── */}
+      <div
+        style={{
+          background: surface,
+          border: `1px solid ${border}`,
+          borderRadius: "12px",
+          padding: "20px 24px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "16px",
+        }}
+      >
+        <div>
+          <p style={{
+            fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+            color: "#CC0000", letterSpacing: "0.2em", marginBottom: "4px",
+          }}>
+            WEBCAM ATTENDANCE
+          </p>
+          <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textPri, lineHeight: 1.2 }}>
+            Mark Today's Attendance
+          </p>
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted, marginTop: "3px" }}>
+            Use your webcam to check in or check out. Your record goes directly to the admin panel.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowWebcam(true)}
+          style={{
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            padding: "11px 22px",
+            borderRadius: "8px",
+            background: "#CC0000",
+            border: "1px solid #CC0000",
+            color: "#FFFFFF",
+            fontFamily: "Rajdhani, sans-serif",
+            fontSize: "14px",
+            fontWeight: 700,
+            cursor: "pointer",
+            letterSpacing: "0.05em",
+            transition: "all 150ms",
+            whiteSpace: "nowrap",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#AA0000"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "#CC0000"; }}
+        >
+          <Camera size={16} />
+          Open Webcam
+        </button>
       </div>
 
       {/* ── Stat Cards ── */}
@@ -456,6 +526,19 @@ function MyAttendance() {
           })
         )}
       </div>
+      {/* ── Webcam Attendance Modal ── */}
+      {showWebcam && (
+        <WebcamAttendance
+          empId={empId}
+          empName={profile.name}
+          onClose={() => setShowWebcam(false)}
+          onSuccess={(record) => {
+            setShowWebcam(false);
+            // Refresh attendance data after successful webcam mark
+            setTimeout(() => refreshRecords(), 800);
+          }}
+        />
+      )}
     </div>
   );
 }

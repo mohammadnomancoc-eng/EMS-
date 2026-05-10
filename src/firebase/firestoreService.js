@@ -220,14 +220,44 @@ export async function getAttendanceByEmployee(empId) {
 /**
  * Upsert a single attendance record.
  * id = "{empId}_{date}" ensures one record per employee per day.
+ *
+ * WEBCAM FIELDS (optional — only written when provided so manual
+ * admin edits never overwrite webcam data):
+ *   markedBy               {string} – "webcam" | "manual" (default "manual")
+ *   webcamSnapshotUrl      {string} – Cloudinary secure_url (HTTPS image URL)
+ *   webcamSnapshotPublicId {string} – Cloudinary public_id (for transforms/deletion)
+ *   webcamTimestamp        {string} – ISO timestamp of the webcam capture
  */
-export async function upsertAttendance({ empId, date, status, checkIn, checkOut, hoursWorked }) {
+export async function upsertAttendance({
+  empId,
+  date,
+  status,
+  checkIn,
+  checkOut,
+  hoursWorked,
+  markedBy = "manual",
+  webcamSnapshotUrl = null,
+  webcamSnapshotPublicId = null,
+  webcamTimestamp = null,
+}) {
   const id = `${empId}_${date}`;
-  await setDoc(
-    doc(db, "attendance", id),
-    { empId, date, status, checkIn, checkOut, hoursWorked, updatedAt: serverTimestamp() },
-    { merge: true }
-  );
+  const payload = {
+    empId,
+    date,
+    status,
+    checkIn,
+    checkOut,
+    hoursWorked,
+    markedBy,
+    updatedAt: serverTimestamp(),
+  };
+  // Only persist webcam fields when they are provided.
+  // This ensures manual admin edits (EditModal) never wipe out the Cloudinary URL.
+  if (webcamSnapshotUrl)      payload.webcamSnapshotUrl      = webcamSnapshotUrl;
+  if (webcamSnapshotPublicId) payload.webcamSnapshotPublicId = webcamSnapshotPublicId;
+  if (webcamTimestamp)        payload.webcamTimestamp        = webcamTimestamp;
+
+  await setDoc(doc(db, "attendance", id), payload, { merge: true });
 }
 
 /** Real-time attendance listener for a specific date */

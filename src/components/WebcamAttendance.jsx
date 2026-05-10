@@ -26,7 +26,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "../App";
 import { Camera, X, CheckCircle, AlertCircle, RefreshCw, Video, VideoOff, MapPin, Navigation, ShieldCheck } from "lucide-react";
-import { upsertAttendance, getCompanySettings, getEmployee } from "../firebase/firestoreService";
+import { upsertAttendance, getCompanySettings, getEmployee, getOwnAttendanceRecord } from "../firebase/firestoreService";
 import { uploadToCloudinary } from "../cloudinary/cloudinaryService";
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -152,16 +152,15 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   useEffect(() => {
     if (!empId) return;
 
-    // Load attendance record and company settings in parallel
+    // Load attendance record and company settings in parallel.
+    // getOwnAttendanceRecord uses getDoc() on the known doc ID — safe under employee rules.
+    // getAttendanceByDate() is a collection query that Firestore denies for non-admin users.
     Promise.all([
-      import("../firebase/firestoreService").then(({ getAttendanceByDate }) =>
-        getAttendanceByDate(todayString())
-      ),
+      getOwnAttendanceRecord(empId, todayString()),
       getCompanySettings(),
       getEmployee(empId),
-    ]).then(([records, settings, empData]) => {
-      const mine = records.find((r) => r.empId === empId);
-      if (mine) setTodayRecord(mine);
+    ]).then(([ownRecord, settings, empData]) => {
+      if (ownRecord) setTodayRecord(ownRecord);
       if (settings) setCompanySettings(settings);
 
       // Determine if geo-fence applies: WFO employees only
@@ -226,7 +225,8 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   const startCamera = useCallback(async () => {
     setCamStatus("loading");
     setErrorMsg("");
-    setSnapshot(null);
+    setSnapshotObjectUrl(null);
+    setSnapshotBlob(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
@@ -561,10 +561,12 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             <div style={{ display: "flex", gap: "8px" }}>
               {["checkin", "checkout"].map((a) => {
                 const label = a === "checkin" ? "Check In" : "Check Out";
-                const disabled = a === "checkin" && alreadyCheckedIn && !alreadyCheckedOut ? false
-                  : a === "checkout" && !alreadyCheckedIn ? true
-                  : a === "checkin" && alreadyCheckedIn && alreadyCheckedOut ? true
-                  : false;
+                // Check In  disabled when: already checked in (with or without checkout)
+                // Check Out disabled when: not yet checked in, OR already checked out
+                const disabled =
+                  a === "checkin"
+                    ? alreadyCheckedIn                              // can't check-in twice
+                    : !alreadyCheckedIn || alreadyCheckedOut;       // must have checked in, and not yet checked out
                 const isSelected = action === a;
                 return (
                   <button

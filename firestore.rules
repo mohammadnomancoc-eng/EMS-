@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -31,6 +30,8 @@ service cloud.firestore {
     }
 
     // ── /employees ────────────────────────────────────────
+    // workType field ("WFO" | "WFH" | "Hybrid") is stored here.
+    // Employees can read their own profile; admins manage all.
     match /employees/{empId} {
       allow read: if isAuthed();
       allow create, update, delete: if isAdmin();
@@ -44,32 +45,41 @@ service cloud.firestore {
 
     // ── /leaveRequests ────────────────────────────────────
     match /leaveRequests/{reqId} {
-      // Admins can do everything; employees can read their own and create new
       allow read: if isAdmin() || (isEmployee() && resource.data.empId == ownEmpId());
       allow create: if isEmployee() && request.resource.data.empId == ownEmpId();
-      // Only admins can approve / reject
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
     // ── /attendance ───────────────────────────────────────
+    // Employees can read, create and update their OWN attendance records.
+    // IMPORTANT: The read rule uses resource.data.empId — this works correctly
+    // for single-document reads (getDoc) but Firestore DENIES collection queries
+    // for employees because it can't guarantee all docs pass the rule.
+    // Therefore the webcam attendance modal uses getOwnAttendanceRecord(empId, date)
+    // which calls getDoc("attendance/{empId}_{date}") — always safe for employees.
     match /attendance/{recordId} {
       allow read: if isAdmin() || (isEmployee() && resource.data.empId == ownEmpId());
-    allow create, update, delete: if isAdmin();
-      allow create, update: if isEmployee()
-                             && request.resource.data.empId == ownEmpId();
+      allow create, update: if isAdmin()
+                            || (isEmployee() && request.resource.data.empId == ownEmpId());
+      allow delete: if isAdmin();
     }
 
     // ── /media ────────────────────────────────────────────
-    // FIX (Bug 2): Collection had no rules → Firestore denied all access.
-    // Admins can do everything.
-    // Employees can read all media and create new records (uploadedBy must
-    // match their own empId to prevent spoofing).
-    // Only admins can update or delete media records.
     match /media/{mediaId} {
       allow read: if isAuthed();
       allow create: if isEmployee() && request.resource.data.uploadedBy == ownEmpId();
       allow update, delete: if isAdmin();
     }
+
+    // ── /settings ────────────────────────────────────────
+    // Company-wide settings (office GPS coords, geo-fence radius, etc.).
+    // Admins write; all authenticated users read
+    // (employees need to read office coords for the geo-fence check).
+    match /settings/{docId} {
+      allow read: if isAuthed();
+      allow write: if isAdmin();
+    }
+
   }
 }

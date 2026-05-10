@@ -199,11 +199,26 @@ export async function deleteLeaveRequest(id) {
 /**
  * Fetch attendance records for a given date (YYYY-MM-DD).
  * Each document id = "{empId}_{date}"
+ * NOTE: This query requires admin-level Firestore access.
+ * Employees must use getOwnAttendanceRecord() instead.
  */
 export async function getAttendanceByDate(date) {
   const q    = query(col("attendance"), where("date", "==", date));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/**
+ * Fetch a single employee's own attendance record for a specific date.
+ * Uses getDoc() on the known document ID "{empId}_{date}" so it works
+ * under employee Firestore rules (no collection-level query needed).
+ * Returns null if no record exists yet.
+ */
+export async function getOwnAttendanceRecord(empId, date) {
+  const id   = `${empId}_${date}`;
+  const snap = await getDoc(doc(db, "attendance", id));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() };
 }
 
 /** Fetch all attendance for a specific employee */

@@ -6,7 +6,7 @@ import {
   UserCheck, UserX, Clock, Copy, CheckCheck, KeyRound, ShieldCheck,
   Camera, Upload, Image as ImageIcon,
 } from "lucide-react";
-import { departments as mockDepartments } from "../data/mockData";
+
 import {
   subscribeEmployees,
   addEmployee,
@@ -809,7 +809,7 @@ export default function Employees() {
   const isDark = theme === "dark";
 
   const [data,         setData]         = useState([]);
-  const [departments,  setDepartments]  = useState(mockDepartments);
+  const [departments,  setDepartments]  = useState([]);
   const [search,       setSearch]       = useState("");
   const [deptFilter,   setDeptFilter]   = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");

@@ -1,47 +1,70 @@
+// ─────────────────────────────────────────────────────────────
+//  src/pages/LeaveManagement.jsx
+//
+//  BUG-03 FIX: Removed the hardcoded `allLeaveRequests` constant (12 fake
+//  records) and the `employees` / `leaveRequests` imports from mockData.
+//  The component is now driven entirely by the Firestore real-time listener
+//  `subscribeLeaveRequests`, which was already wired up but ignored because
+//  the display logic still read from the local constant.
+//
+//  BUG-05 FIX: `getEmpRole` and `getDeptColor` previously looked up the
+//  mock employees array. They now look up the `employees` state fetched from
+//  Firestore via `subscribeEmployees`, so real employees get the right role
+//  and department colour in the leave table and detail modal.
+//
+//  Data shape differences handled:
+//  • Firestore docs written by MyLeave.jsx store `requestType` ("Leave"|"WFH")
+//    and `leaveType` (e.g. "Annual Leave"), not `type`.
+//  • The admin panel normalises both field names in `normalise()` so the table
+//    and filters work regardless of which field is present.
+//  • Employee name is stored as `name` in the /employees collection;
+//    leave requests written by employees don't embed the employee name.
+//    `getEmpName()` looks it up from the Firestore employees list.
+// ─────────────────────────────────────────────────────────────
 import { useState, useEffect } from "react";
 import { useTheme } from "../App";
 import {
-  CalendarOff, Check, X, Search, Filter,
-  Clock, CheckCircle, XCircle, Users, Home,
+  CalendarOff, Check, X, Search,
+  Clock, CheckCircle, XCircle, Home,
   ChevronDown, Eye
 } from "lucide-react";
-import { employees, leaveRequests } from "../data/mockData";
 import {
   subscribeLeaveRequests,
   updateLeaveStatus,
+  subscribeEmployees,
 } from "../firebase/firestoreService";
 
-// ── Extended Mock Data ────────────────────────────────
-const allLeaveRequests = [
-  { id: 1,  empId: "RWT004", employee: "Sneha Patil",    type: "Annual Leave",  from: "2026-05-05", to: "2026-05-07", days: 3, reason: "Family function",        status: "Pending"  },
-  { id: 2,  empId: "RWT012", employee: "Ananya Bose",    type: "Sick Leave",    from: "2026-05-05", to: "2026-05-06", days: 2, reason: "Fever",                   status: "Pending"  },
-  { id: 3,  empId: "RWT009", employee: "Rohan Desai",    type: "Casual Leave",  from: "2026-05-08", to: "2026-05-08", days: 1, reason: "Personal work",           status: "Pending"  },
-  { id: 4,  empId: "RWT001", employee: "Arjun Sharma",   type: "Annual Leave",  from: "2026-04-15", to: "2026-04-17", days: 3, reason: "Vacation",                status: "Approved" },
-  { id: 5,  empId: "RWT002", employee: "Priya Mehta",    type: "Sick Leave",    from: "2026-04-20", to: "2026-04-20", days: 1, reason: "Doctor appointment",      status: "Approved" },
-  { id: 6,  empId: "RWT005", employee: "Vikram Singh",   type: "Casual Leave",  from: "2026-04-22", to: "2026-04-22", days: 1, reason: "Personal errand",        status: "Rejected" },
-  { id: 7,  empId: "RWT006", employee: "Neha Joshi",     type: "WFH",           from: "2026-05-03", to: "2026-05-04", days: 2, reason: "ISP maintenance",         status: "Approved" },
-  { id: 8,  empId: "RWT007", employee: "Amit Kulkarni",  type: "Annual Leave",  from: "2026-05-12", to: "2026-05-14", days: 3, reason: "Religious holiday",       status: "Pending"  },
-  { id: 9,  empId: "RWT008", employee: "Kavya Reddy",    type: "Sick Leave",    from: "2026-04-28", to: "2026-04-29", days: 2, reason: "Medical treatment",       status: "Approved" },
-  { id: 10, empId: "RWT010", employee: "Pooja Nair",     type: "Casual Leave",  from: "2026-05-02", to: "2026-05-02", days: 1, reason: "Child school function",   status: "Approved" },
-  { id: 11, empId: "RWT003", employee: "Rahul Verma",    type: "WFH",           from: "2026-05-06", to: "2026-05-06", days: 1, reason: "Working from home",      status: "Pending"  },
-  { id: 12, empId: "RWT011", employee: "Suresh Iyer",    type: "Annual Leave",  from: "2026-05-19", to: "2026-05-21", days: 3, reason: "Family trip",             status: "Pending"  },
-];
-
 // ── Helpers ───────────────────────────────────────────
-function getInitials(name) {
-  return name.split(" ").map((n) => n[0]).join("").toUpperCase();
+function getInitials(name = "") {
+  return name.split(" ").filter(Boolean).map((n) => n[0]).join("").toUpperCase() || "?";
 }
 
-function getEmpRole(empId) {
-  const emp = employees.find((e) => e.id === empId);
-  return emp ? emp.role : "Employee";
+// Normalise a Firestore leave doc so the table always has consistent fields.
+// MyLeave.jsx writes: { requestType, leaveType, empId, from, to, days, reason, status }
+// Legacy/mock docs may have: { type, employee }
+function normalise(doc, employeesMap) {
+  const type     = doc.type || doc.leaveType || doc.requestType || "Leave";
+  const employee = doc.employee || employeesMap[doc.empId]?.name || doc.empId || "Unknown";
+  return { ...doc, type, employee };
 }
 
-function getDeptColor(empId) {
-  const emp = employees.find((e) => e.id === empId);
-  if (!emp) return "#00B8B8";
-  const map = { Engineering: "#00B8B8", Design: "#CC0000", Management: "#C9922A", QA: "#00B8B8", HR: "#CC0000", Marketing: "#C9922A" };
-  return map[emp.department] || "#00B8B8";
+// Look up real employee role from Firestore employees map
+function getEmpRole(empId, employeesMap) {
+  return employeesMap[empId]?.role || employeesMap[empId]?.jobRole || "Employee";
+}
+
+// Look up department colour from Firestore employees map
+function getDeptColor(empId, employeesMap) {
+  const dept = employeesMap[empId]?.department || "";
+  const map = {
+    Engineering: "#00B8B8",
+    Design:      "#CC0000",
+    Management:  "#C9922A",
+    QA:          "#00B8B8",
+    HR:          "#CC0000",
+    Marketing:   "#C9922A",
+  };
+  return map[dept] || "#00B8B8";
 }
 
 // ── Status Badge ──────────────────────────────────────
@@ -58,7 +81,7 @@ function StatusBadge({ status, theme }) {
       Rejected: { bg: "#FDECEA", border: "#CC0000", color: "#990000" },
     },
   };
-  const s = styles[theme][status] || styles[theme].Pending;
+  const s = (styles[theme] || styles.dark)[status] || (styles[theme] || styles.dark).Pending;
   return (
     <span style={{
       background: s.bg, border: `1px solid ${s.border}`, color: s.color,
@@ -77,6 +100,7 @@ function TypeBadge({ type, theme }) {
     "Sick Leave":   "#CC0000",
     "Casual Leave": "#00B8B8",
     "WFH":          theme === "dark" ? "#888888" : "#555555",
+    "Leave":        "#C9922A",
   };
   const color = map[type] || "#888888";
   return (
@@ -96,7 +120,6 @@ function TypeBadge({ type, theme }) {
 function StatCard({ label, value, icon: Icon, color, theme }) {
   const surface = theme === "dark" ? "#111111" : "#FFFFFF";
   const border  = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
-  const textPri = theme === "dark" ? "#F0F0F0" : "#111111";
   return (
     <div className="rounded-xl p-5 flex flex-col gap-3"
       style={{
@@ -125,14 +148,15 @@ function StatCard({ label, value, icon: Icon, color, theme }) {
 }
 
 // ── Detail Modal ──────────────────────────────────────
-function DetailModal({ req, onClose, onApprove, onReject, theme }) {
+function DetailModal({ req, employeesMap, onClose, onApprove, onReject, theme }) {
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
   const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
   const textMuted = theme === "dark" ? "#A0A0A0" : "#666666";
   const divider   = theme === "dark" ? "#1A1A1A" : "#EEEEEE";
 
-  const color = getDeptColor(req.empId);
+  const color = getDeptColor(req.empId, employeesMap);
+  const days  = req.days ?? 1;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center"
@@ -163,11 +187,17 @@ function DetailModal({ req, onClose, onApprove, onReject, theme }) {
         <div className="px-6 py-4 flex items-center gap-4" style={{ borderBottom: `1px solid ${divider}` }}>
           <div className="rounded-full flex items-center justify-center flex-shrink-0"
             style={{ width: "48px", height: "48px", background: `${color}22`, border: `2px solid ${color}55` }}>
-            <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "15px", color }}>{getInitials(req.employee)}</span>
+            <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "15px", color }}>
+              {getInitials(req.employee)}
+            </span>
           </div>
           <div>
-            <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "17px", color: textPri }}>{req.employee}</p>
-            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>{getEmpRole(req.empId)} · {req.empId}</p>
+            <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "17px", color: textPri }}>
+              {req.employee}
+            </p>
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
+              {getEmpRole(req.empId, employeesMap)} · {req.empId}
+            </p>
           </div>
           <div className="ml-auto">
             <StatusBadge status={req.status} theme={theme} />
@@ -178,7 +208,7 @@ function DetailModal({ req, onClose, onApprove, onReject, theme }) {
         <div className="px-6 py-5 grid grid-cols-2 gap-4">
           {[
             { label: "LEAVE TYPE", value: req.type },
-            { label: "DURATION",   value: `${req.days} day${req.days > 1 ? "s" : ""}` },
+            { label: "DURATION",   value: `${days} day${days !== 1 ? "s" : ""}` },
             { label: "FROM",       value: req.from },
             { label: "TO",         value: req.to },
           ].map(({ label, value }) => (
@@ -189,7 +219,7 @@ function DetailModal({ req, onClose, onApprove, onReject, theme }) {
           ))}
           <div className="col-span-2">
             <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "4px" }}>REASON</p>
-            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>{req.reason}</p>
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>{req.reason || "—"}</p>
           </div>
         </div>
 
@@ -238,17 +268,32 @@ function DetailModal({ req, onClose, onApprove, onReject, theme }) {
 // ── Main Page ─────────────────────────────────────────
 function LeaveManagement() {
   const { theme } = useTheme();
-  const [requests, setRequests] = useState([]);
-  const [search, setSearch]     = useState("");
-  const [filterStatus, setFilterStatus] = useState("All");
-  const [filterType, setFilterType]     = useState("All");
-  const [selectedReq, setSelectedReq]   = useState(null);
 
-  // Real-time listener from Firestore
+  // BUG-03 FIX: use Firestore real-time data, not the hardcoded constant
+  const [rawRequests,  setRawRequests]  = useState([]);
+  const [employeeList, setEmployeeList] = useState([]);
+  const [search,       setSearch]       = useState("");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [filterType,   setFilterType]   = useState("All");
+  const [selectedReq,  setSelectedReq]  = useState(null);
+
+  // Build an empId → employee object map for O(1) look-ups
+  const employeesMap = Object.fromEntries(employeeList.map((e) => [e.id, e]));
+
+  // Real-time listener: leave requests from Firestore
   useEffect(() => {
-    const unsub = subscribeLeaveRequests((list) => setRequests(list));
+    const unsub = subscribeLeaveRequests((list) => setRawRequests(list));
     return unsub;
   }, []);
+
+  // BUG-05 FIX: real-time listener for employees (used by getEmpRole / getDeptColor)
+  useEffect(() => {
+    const unsub = subscribeEmployees((list) => setEmployeeList(list));
+    return unsub;
+  }, []);
+
+  // Normalise field names (requestType/leaveType → type, look up employee name)
+  const requests = rawRequests.map((doc) => normalise(doc, employeesMap));
 
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
@@ -259,19 +304,20 @@ function LeaveManagement() {
   const inputBg   = theme === "dark" ? "#0A0A0A" : "#FFFFFF";
   const inputBd   = theme === "dark" ? "#1E1E1E" : "#D0D0D0";
 
-  // Stats
+  // Stats — derived from real Firestore data
   const pending  = requests.filter((r) => r.status === "Pending").length;
   const approved = requests.filter((r) => r.status === "Approved").length;
   const rejected = requests.filter((r) => r.status === "Rejected").length;
-  const wfhCount = requests.filter((r) => r.type === "WFH" && r.status === "Approved").length;
+  const wfhCount = requests.filter((r) => (r.type === "WFH" || r.requestType === "WFH") && r.status === "Approved").length;
 
   // Filter
   const filtered = requests.filter((r) => {
-    const matchSearch = r.employee.toLowerCase().includes(search.toLowerCase()) ||
-                        r.empId.toLowerCase().includes(search.toLowerCase()) ||
-                        r.type.toLowerCase().includes(search.toLowerCase());
+    const empName = (r.employee || "").toLowerCase();
+    const matchSearch = empName.includes(search.toLowerCase()) ||
+                        (r.empId  || "").toLowerCase().includes(search.toLowerCase()) ||
+                        (r.type   || "").toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === "All" || r.status === filterStatus;
-    const matchType   = filterType === "All" || r.type === filterType;
+    const matchType   = filterType   === "All" || r.type   === filterType;
     return matchSearch && matchStatus && matchType;
   });
 
@@ -308,6 +354,7 @@ function LeaveManagement() {
       {selectedReq && (
         <DetailModal
           req={selectedReq}
+          employeesMap={employeesMap}
           theme={theme}
           onClose={() => setSelectedReq(null)}
           onApprove={handleApprove}
@@ -340,10 +387,10 @@ function LeaveManagement() {
 
       {/* ── Stat Cards ── */}
       <div className="grid grid-cols-4 gap-4">
-        <StatCard theme={theme} label="PENDING"  value={pending}  icon={Clock}        color="#C9922A" />
-        <StatCard theme={theme} label="APPROVED" value={approved} icon={CheckCircle}  color="#00B8B8" />
-        <StatCard theme={theme} label="REJECTED" value={rejected} icon={XCircle}      color="#CC0000" />
-        <StatCard theme={theme} label="WFH ACTIVE" value={wfhCount} icon={Home}       color="#888888" />
+        <StatCard theme={theme} label="PENDING"    value={pending}  icon={Clock}       color="#C9922A" />
+        <StatCard theme={theme} label="APPROVED"   value={approved} icon={CheckCircle} color="#00B8B8" />
+        <StatCard theme={theme} label="REJECTED"   value={rejected} icon={XCircle}     color="#CC0000" />
+        <StatCard theme={theme} label="WFH ACTIVE" value={wfhCount} icon={Home}        color="#888888" />
       </div>
 
       {/* ── Table Panel ── */}
@@ -414,14 +461,22 @@ function LeaveManagement() {
         </div>
 
         {/* Table Rows */}
-        {filtered.length === 0 ? (
+        {requests.length === 0 ? (
+          <div className="px-5 py-12 text-center">
+            <CalendarOff size={32} style={{ color: textMuted, margin: "0 auto 12px" }} />
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", color: textMuted }}>
+              No leave requests yet. They will appear here once employees submit them.
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="px-5 py-12 text-center">
             <CalendarOff size={32} style={{ color: textMuted, margin: "0 auto 12px" }} />
             <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", color: textMuted }}>No requests match your filters.</p>
           </div>
         ) : (
           filtered.map((req, i) => {
-            const color = getDeptColor(req.empId);
+            const color = getDeptColor(req.empId, employeesMap);
+            const days  = req.days ?? 1;
             return (
               <div key={req.id}
                 className="grid px-5 items-center"
@@ -450,7 +505,9 @@ function LeaveManagement() {
                     </span>
                   </div>
                   <div>
-                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", fontWeight: 600, color: textPri, lineHeight: 1.2 }}>{req.employee}</p>
+                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", fontWeight: 600, color: textPri, lineHeight: 1.2 }}>
+                      {req.employee}
+                    </p>
                     <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>{req.empId}</p>
                   </div>
                 </div>
@@ -465,7 +522,7 @@ function LeaveManagement() {
                 <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: textPri }}>{req.to}</span>
 
                 {/* Days */}
-                <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px", color: textPri }}>{req.days}d</span>
+                <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px", color: textPri }}>{days}d</span>
 
                 {/* Status */}
                 <StatusBadge status={req.status} theme={theme} />

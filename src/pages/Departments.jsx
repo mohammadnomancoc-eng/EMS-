@@ -1,30 +1,71 @@
-import { useState } from "react";
+// ─────────────────────────────────────────────────────────────
+//  src/pages/Departments.jsx
+//
+//  BUG-11 FIX: Removed all imports from ../data/mockData.
+//
+//  Before:
+//    import { departments, employees } from "../data/mockData";
+//    const [depts, setDepts] = useState(departments);   ← static mock list
+//    handleSave / handleDelete only mutated local state  ← never persisted
+//    employees.filter(...)                              ← mock employees
+//    employees.filter(e => e.status === "Present")      ← always mock count
+//
+//  After:
+//    • subscribeDepartments() — real-time Firestore listener for departments
+//    • subscribeEmployees()   — real-time Firestore listener for employees
+//    • addDepartment()        — writes new dept to Firestore
+//    • updateDepartment()     — updates existing dept in Firestore
+//    • deleteDepartment()     — deletes dept from Firestore
+//
+//  All department CRUD now persists. The employee list and Present-today
+//  count reflect real Firestore data. Headcount on each dept card is
+//  computed live from the real employee list (employees whose `department`
+//  field matches the dept name) instead of reading a hardcoded field.
+//
+//  The `headcount` field on the dept Firestore doc is kept as the admin-set
+//  authoritative number for "planned headcount / budget seats". The live
+//  count of employees actually assigned to the dept is shown separately as
+//  "Assigned" so admins can see both figures.
+// ─────────────────────────────────────────────────────────────
+import { useState, useEffect } from "react";
 import { useTheme } from "../App";
 import {
   Building2, Users, Briefcase, Plus, Edit2,
-  Trash2, X, Check, Search, ChevronDown,
-  TrendingUp, UserCheck, Mail, Shield
+  Trash2, X, Check, Search,
+  TrendingUp, UserCheck, Shield,
 } from "lucide-react";
-import { departments, employees } from "../data/mockData";
+import {
+  subscribeEmployees,
+  subscribeDepartments,
+  addDepartment,
+  updateDepartment,
+  deleteDepartment,
+} from "../firebase/firestoreService";
 
 // ── Helpers ────────────────────────────────────────────
-function getInitials(name) {
-  return name.split(" ").map((n) => n[0]).join("").toUpperCase();
+function getInitials(name = "") {
+  return name.split(" ").filter(Boolean).map((n) => n[0]).join("").toUpperCase() || "?";
 }
 
 const accentPalette = ["#CC0000", "#00B8B8", "#C9922A", "#6366F1", "#10B981", "#F59E0B"];
 
-function getDeptColor(id) {
-  return accentPalette[(id - 1) % accentPalette.length];
+// Stable colour per dept — based on Firestore doc id string hash so it
+// doesn't change when the list order changes.
+function getDeptColor(id = "") {
+  let hash = 0;
+  for (let i = 0; i < String(id).length; i++) {
+    hash = String(id).charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return accentPalette[Math.abs(hash) % accentPalette.length];
 }
 
 // ── Stat Card ──────────────────────────────────────────
 function StatCard({ label, value, icon: Icon, accent, sub, theme }) {
-  const surface  = theme === "dark" ? "#111111" : "#FFFFFF";
-  const border   = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
-  const textPri  = theme === "dark" ? "#F0F0F0" : "#111111";
-  const textMuted= theme === "dark" ? "#666666" : "#888888";
-  const iconBg   = theme === "dark" ? "#1A1A1A" : "#F5F5F5";
+  const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
+  const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
+  const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
+  const textMuted = theme === "dark" ? "#666666" : "#888888";
+  const iconBg    = theme === "dark" ? "#1A1A1A" : "#F5F5F5";
 
   return (
     <div
@@ -34,8 +75,8 @@ function StatCard({ label, value, icon: Icon, accent, sub, theme }) {
         boxShadow: theme === "light" ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
         transition: "border-color 200ms ease", cursor: "default",
       }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = accent}
-      onMouseLeave={e => e.currentTarget.style.borderColor = border}
+      onMouseEnter={(e) => e.currentTarget.style.borderColor = accent}
+      onMouseLeave={(e) => e.currentTarget.style.borderColor = border}
     >
       <div className="rounded-lg flex items-center justify-center flex-shrink-0"
         style={{ width: "44px", height: "44px", background: iconBg, border: `1px solid ${border}` }}>
@@ -58,17 +99,17 @@ function StatCard({ label, value, icon: Icon, accent, sub, theme }) {
 
 // ── Department Card ────────────────────────────────────
 function DeptCard({ dept, empList, theme, onEdit, onDelete }) {
-  const isDark   = theme === "dark";
-  const surface  = isDark ? "#111111" : "#FFFFFF";
-  const border   = isDark ? "#1E1E1E" : "#E0E0E0";
-  const textPri  = isDark ? "#F0F0F0" : "#111111";
-  const textSub  = isDark ? "#A0A0A0" : "#888888";
-  const accent   = getDeptColor(dept.id);
+  const isDark  = theme === "dark";
+  const surface = isDark ? "#111111" : "#FFFFFF";
+  const border  = isDark ? "#1E1E1E" : "#E0E0E0";
+  const textPri = isDark ? "#F0F0F0" : "#111111";
+  const textSub = isDark ? "#A0A0A0" : "#888888";
+  const accent  = getDeptColor(dept.id);
   const [hover, setHover] = useState(false);
 
-  // Employees in this dept
-  const deptEmps = empList.filter(e => e.department === dept.name);
-  const present  = deptEmps.filter(e => e.status === "Present").length;
+  // BUG-11 FIX: derive from real Firestore employee list
+  const deptEmps = empList.filter((e) => e.department === dept.name);
+  const present  = deptEmps.filter((e) => e.status === "Present").length;
 
   return (
     <div
@@ -98,7 +139,7 @@ function DeptCard({ dept, empList, theme, onEdit, onDelete }) {
                 {dept.name}
               </h3>
               <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "9px", color: accent, letterSpacing: "0.1em" }}>
-                DEPT — {String(dept.id).padStart(3, "0")}
+                {dept.id}
               </p>
             </div>
           </div>
@@ -108,15 +149,15 @@ function DeptCard({ dept, empList, theme, onEdit, onDelete }) {
             <button onClick={() => onEdit(dept)}
               className="rounded-md p-1.5"
               style={{ color: textSub, transition: "all 150ms", background: "transparent" }}
-              onMouseEnter={e => { e.currentTarget.style.color = "#00B8B8"; e.currentTarget.style.background = isDark ? "#1A1A1A" : "#F0F0F0"; }}
-              onMouseLeave={e => { e.currentTarget.style.color = textSub; e.currentTarget.style.background = "transparent"; }}>
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#00B8B8"; e.currentTarget.style.background = isDark ? "#1A1A1A" : "#F0F0F0"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = textSub; e.currentTarget.style.background = "transparent"; }}>
               <Edit2 size={14} />
             </button>
             <button onClick={() => onDelete(dept.id)}
               className="rounded-md p-1.5"
               style={{ color: textSub, transition: "all 150ms", background: "transparent" }}
-              onMouseEnter={e => { e.currentTarget.style.color = "#CC0000"; e.currentTarget.style.background = isDark ? "#1A1A1A" : "#F0F0F0"; }}
-              onMouseLeave={e => { e.currentTarget.style.color = textSub; e.currentTarget.style.background = "transparent"; }}>
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#CC0000"; e.currentTarget.style.background = isDark ? "#1A1A1A" : "#F0F0F0"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = textSub; e.currentTarget.style.background = "transparent"; }}>
               <Trash2 size={14} />
             </button>
           </div>
@@ -127,37 +168,43 @@ function DeptCard({ dept, empList, theme, onEdit, onDelete }) {
           style={{ background: isDark ? "#0D0D0D" : "#F8F8F8", border: `1px solid ${border}` }}>
           <Shield size={12} style={{ color: accent, flexShrink: 0 }} />
           <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub }}>HOD:</span>
-          <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "13px", color: textPri }}>{dept.hod}</span>
+          <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "13px", color: textPri }}>{dept.hod || "—"}</span>
         </div>
 
-        {/* Stats */}
+        {/* Stats — headcount from Firestore dept doc, assigned+present from live employees */}
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg p-3 text-center" style={{ background: isDark ? "#0D0D0D" : "#F8F8F8", border: `1px solid ${border}` }}>
-            <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "22px", color: accent }}>{dept.headcount}</p>
+            <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "22px", color: accent }}>
+              {dept.headcount ?? deptEmps.length}
+            </p>
             <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textSub }}>Headcount</p>
           </div>
           <div className="rounded-lg p-3 text-center" style={{ background: isDark ? "#0D0D0D" : "#F8F8F8", border: `1px solid ${border}` }}>
-            <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "22px", color: "#00B8B8" }}>{present}</p>
-            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textSub }}>Present</p>
+            <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "22px", color: "#00B8B8" }}>
+              {deptEmps.length}
+            </p>
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textSub }}>Assigned</p>
           </div>
           <div className="rounded-lg p-3 text-center" style={{ background: isDark ? "#0D0D0D" : "#F8F8F8", border: `1px solid ${border}` }}>
-            <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "22px", color: "#C9922A" }}>{dept.openRoles}</p>
+            <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "22px", color: "#C9922A" }}>
+              {dept.openRoles ?? 0}
+            </p>
             <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textSub }}>Open Roles</p>
           </div>
         </div>
 
-        {/* Employee avatars */}
+        {/* Employee avatars — from real Firestore employee list */}
         {deptEmps.length > 0 && (
           <div>
             <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
               color: "#CC0000", letterSpacing: "0.15em", marginBottom: "8px" }}>TEAM MEMBERS</p>
             <div className="flex flex-wrap gap-1">
-              {deptEmps.slice(0, 8).map(emp => (
+              {deptEmps.slice(0, 8).map((emp) => (
                 <div key={emp.id} title={emp.name}
                   className="rounded-full flex items-center justify-center flex-shrink-0"
                   style={{
                     width: "30px", height: "30px",
-                    background: accentPalette[parseInt(emp.id.replace("RWT","")) % accentPalette.length],
+                    background: accentPalette[Math.abs(emp.id.charCodeAt(0) || 0) % accentPalette.length],
                     border: `2px solid ${isDark ? "#111111" : "#FFFFFF"}`,
                     cursor: "default",
                   }}>
@@ -187,18 +234,18 @@ function DeptCard({ dept, empList, theme, onEdit, onDelete }) {
 }
 
 // ── Add/Edit Department Modal ──────────────────────────
-function DeptModal({ theme, onClose, onSave, initial }) {
+function DeptModal({ theme, onClose, onSave, initial, saving }) {
   const isEdit = !!initial;
   const isDark = theme === "dark";
 
-  const [form, setForm] = useState(initial || {
-    name: "", hod: "", headcount: "", openRoles: 0,
-  });
+  const [form, setForm] = useState(initial
+    ? { name: initial.name || "", hod: initial.hod || "", headcount: initial.headcount ?? "", openRoles: initial.openRoles ?? 0 }
+    : { name: "", hod: "", headcount: "", openRoles: 0 }
+  );
   const [errors, setErrors] = useState({});
 
   const bg        = isDark ? "#111111" : "#FFFFFF";
   const border    = isDark ? "#1E1E1E" : "#E0E0E0";
-  const labelColor= "#CC0000";
   const inputBg   = isDark ? "#0A0A0A" : "#F8F8F8";
   const textColor = isDark ? "#F0F0F0" : "#111111";
   const textSub   = isDark ? "#A0A0A0" : "#888888";
@@ -222,28 +269,29 @@ function DeptModal({ theme, onClose, onSave, initial }) {
     <div>
       <label style={{
         fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 700,
-        color: labelColor, letterSpacing: "0.15em", display: "block", marginBottom: "6px",
+        color: "#CC0000", letterSpacing: "0.15em", display: "block", marginBottom: "6px",
       }}>
         {label.toUpperCase()}{errors[key] ? ` — ${errors[key]}` : ""}
       </label>
       <input type={type} value={form[key]}
-        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
         style={{
           width: "100%", background: inputBg, border: `1px solid ${errors[key] ? "#CC0000" : border}`,
           color: textColor, borderRadius: "6px", padding: "8px 10px",
           fontFamily: "Mulish, sans-serif", fontSize: "13px", outline: "none",
         }}
-        onFocus={e => { e.target.style.border = "1px solid #00B8B8"; e.target.style.boxShadow = "0 0 0 3px rgba(0,184,184,0.1)"; }}
-        onBlur={e => { e.target.style.border = `1px solid ${errors[key] ? "#CC0000" : border}`; e.target.style.boxShadow = "none"; }}
+        onFocus={(e) => { e.target.style.border = "1px solid #00B8B8"; e.target.style.boxShadow = "0 0 0 3px rgba(0,184,184,0.1)"; }}
+        onBlur={(e) => { e.target.style.border = `1px solid ${errors[key] ? "#CC0000" : border}`; e.target.style.boxShadow = "none"; }}
       />
     </div>
   );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: overlay }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      style={{ background: overlay }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="rounded-xl w-full overflow-hidden" style={{ maxWidth: "460px", background: bg, border: `1px solid ${border}` }}>
-        {/* Modal Header */}
+        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${border}` }}>
           <div>
             <h2 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textColor }}>
@@ -255,8 +303,8 @@ function DeptModal({ theme, onClose, onSave, initial }) {
           </div>
           <button onClick={onClose}
             style={{ color: textSub, transition: "color 150ms" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#CC0000"}
-            onMouseLeave={e => e.currentTarget.style.color = textSub}>
+            onMouseEnter={(e) => e.currentTarget.style.color = "#CC0000"}
+            onMouseLeave={(e) => e.currentTarget.style.color = textSub}>
             <X size={18} />
           </button>
         </div>
@@ -276,24 +324,22 @@ function DeptModal({ theme, onClose, onSave, initial }) {
           <button onClick={onClose}
             className="px-5 py-2 rounded-md"
             style={{
-              background: isDark ? "#1A1A1A" : "#F0F0F0",
-              border: `1px solid ${border}`,
-              color: textSub,
+              background: isDark ? "#1A1A1A" : "#F0F0F0", border: `1px solid ${border}`, color: textSub,
               fontFamily: "Rajdhani, sans-serif", fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em",
             }}>
             CANCEL
           </button>
-          <button onClick={handleSave}
+          <button onClick={handleSave} disabled={saving}
             className="px-5 py-2 rounded-md flex items-center gap-2"
             style={{
-              background: "#CC0000", border: "1px solid #CC0000",
-              color: "#FFFFFF",
+              background: saving ? "#880000" : "#CC0000", border: "1px solid #CC0000",
+              color: "#FFFFFF", cursor: saving ? "not-allowed" : "pointer",
               fontFamily: "Rajdhani, sans-serif", fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em",
             }}
-            onMouseEnter={e => e.currentTarget.style.background = "#AA0000"}
-            onMouseLeave={e => e.currentTarget.style.background = "#CC0000"}>
+            onMouseEnter={(e) => { if (!saving) e.currentTarget.style.background = "#AA0000"; }}
+            onMouseLeave={(e) => { if (!saving) e.currentTarget.style.background = "#CC0000"; }}>
             <Check size={14} />
-            {isEdit ? "UPDATE" : "CREATE"}
+            {saving ? "SAVING…" : (isEdit ? "UPDATE" : "CREATE")}
           </button>
         </div>
       </div>
@@ -302,16 +348,17 @@ function DeptModal({ theme, onClose, onSave, initial }) {
 }
 
 // ── Delete Confirm Modal ───────────────────────────────
-function DeleteConfirm({ dept, theme, onClose, onConfirm }) {
+function DeleteConfirm({ dept, theme, onClose, onConfirm, deleting }) {
   const isDark = theme === "dark";
   const bg     = isDark ? "#111111" : "#FFFFFF";
   const border = isDark ? "#1E1E1E" : "#E0E0E0";
   const text   = isDark ? "#F0F0F0" : "#111111";
   const sub    = isDark ? "#A0A0A0" : "#888888";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: isDark ? "rgba(0,0,0,0.75)" : "rgba(0,0,0,0.35)" }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="rounded-xl w-full overflow-hidden" style={{ maxWidth: "380px", background: bg, border: `1px solid ${border}` }}>
         <div className="px-6 py-5">
           <div className="flex items-center gap-3 mb-3">
@@ -326,7 +373,6 @@ function DeleteConfirm({ dept, theme, onClose, onConfirm }) {
           </div>
           <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: sub }}>
             Are you sure you want to delete the <strong style={{ color: text }}>{dept?.name}</strong> department?
-            All related data will be removed.
           </p>
         </div>
         <div className="px-6 py-4 flex gap-3 justify-end" style={{ borderTop: `1px solid ${border}` }}>
@@ -336,14 +382,15 @@ function DeleteConfirm({ dept, theme, onClose, onConfirm }) {
               fontFamily: "Rajdhani, sans-serif", fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em" }}>
             CANCEL
           </button>
-          <button onClick={onConfirm}
+          <button onClick={onConfirm} disabled={deleting}
             className="px-5 py-2 rounded-md flex items-center gap-2"
-            style={{ background: "#CC0000", border: "1px solid #CC0000", color: "#FFFFFF",
+            style={{ background: deleting ? "#880000" : "#CC0000", border: "1px solid #CC0000", color: "#FFFFFF",
+              cursor: deleting ? "not-allowed" : "pointer",
               fontFamily: "Rajdhani, sans-serif", fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em" }}
-            onMouseEnter={e => e.currentTarget.style.background = "#AA0000"}
-            onMouseLeave={e => e.currentTarget.style.background = "#CC0000"}>
+            onMouseEnter={(e) => { if (!deleting) e.currentTarget.style.background = "#AA0000"; }}
+            onMouseLeave={(e) => { if (!deleting) e.currentTarget.style.background = "#CC0000"; }}>
             <Trash2 size={13} />
-            DELETE
+            {deleting ? "DELETING…" : "DELETE"}
           </button>
         </div>
       </div>
@@ -362,33 +409,68 @@ export default function Departments() {
   const textSub = isDark ? "#A0A0A0" : "#888888";
   const inputBg = isDark ? "#111111" : "#FFFFFF";
 
-  const [depts, setDepts]           = useState(departments);
-  const [search, setSearch]         = useState("");
-  const [modal, setModal]           = useState(null); // null | "add" | {dept}
-  const [deleteTarget, setDelTarget]= useState(null);
-  const [view, setView]             = useState("cards"); // "cards" | "table"
+  // BUG-11 FIX: real-time Firestore state instead of static mockData
+  const [depts,     setDepts]    = useState([]);
+  const [employees, setEmployees]= useState([]);
+  const [loading,   setLoading]  = useState(true);
 
-  const totalHeadcount  = depts.reduce((s, d) => s + d.headcount, 0);
-  const totalOpenRoles  = depts.reduce((s, d) => s + d.openRoles, 0);
+  const [search,       setSearch]    = useState("");
+  const [modal,        setModal]     = useState(null);   // null | "add" | {dept obj}
+  const [deleteTarget, setDelTarget] = useState(null);
+  const [view,         setView]      = useState("cards");
+  const [saving,       setSaving]    = useState(false);
+  const [deleting,     setDeleting]  = useState(false);
 
-  const filtered = depts.filter(d =>
-    d.name.toLowerCase().includes(search.toLowerCase()) ||
-    d.hod.toLowerCase().includes(search.toLowerCase())
+  // BUG-11 FIX: subscribe to real Firestore collections
+  useEffect(() => {
+    const unsubDepts = subscribeDepartments((list) => {
+      setDepts(list);
+      setLoading(false);
+    });
+    const unsubEmps = subscribeEmployees((list) => {
+      setEmployees(list);
+    });
+    return () => { unsubDepts(); unsubEmps(); };
+  }, []);
+
+  // BUG-11 FIX: stats derived from real data
+  const totalHeadcount = depts.reduce((s, d) => s + (d.headcount ?? 0), 0);
+  const totalOpenRoles = depts.reduce((s, d) => s + (d.openRoles  ?? 0), 0);
+  // "Active today" = employees whose status field is "Present" in Firestore
+  const activeToday    = employees.filter((e) => e.status === "Present").length;
+
+  const filtered = depts.filter((d) =>
+    (d.name || "").toLowerCase().includes(search.toLowerCase()) ||
+    (d.hod  || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleSave = (data) => {
-    if (modal === "add") {
-      const newId = Math.max(...depts.map(d => d.id)) + 1;
-      setDepts(prev => [...prev, { ...data, id: newId, color: getDeptColor(newId) }]);
-    } else {
-      setDepts(prev => prev.map(d => d.id === modal.id ? { ...d, ...data } : d));
+  // BUG-11 FIX: CRUD operations write to Firestore, not just local state
+  const handleSave = async (data) => {
+    setSaving(true);
+    try {
+      if (modal === "add") {
+        await addDepartment(data);
+      } else {
+        await updateDepartment(modal.id, data);
+      }
+      setModal(null);
+    } catch (err) {
+      console.error("Failed to save department:", err);
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
   };
 
-  const handleDelete = () => {
-    setDepts(prev => prev.filter(d => d.id !== deleteTarget));
-    setDelTarget(null);
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteDepartment(deleteTarget);
+      setDelTarget(null);
+    } catch (err) {
+      console.error("Failed to delete department:", err);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -396,10 +478,11 @@ export default function Departments() {
 
       {/* ── Stat Cards ── */}
       <div className="grid grid-cols-4 gap-4">
-        <StatCard label="Total Departments" value={depts.length}       icon={Building2}  accent="#CC0000"  theme={theme} />
-        <StatCard label="Total Headcount"   value={totalHeadcount}     icon={Users}      accent="#00B8B8"  theme={theme} />
-        <StatCard label="Open Roles"        value={totalOpenRoles}     icon={Briefcase}  accent="#C9922A"  theme={theme} />
-        <StatCard label="Active Today"      value={employees.filter(e => e.status === "Present").length} icon={UserCheck} accent="#6366F1" theme={theme} />
+        <StatCard label="Total Departments" value={depts.length}    icon={Building2}  accent="#CC0000"  theme={theme} />
+        <StatCard label="Total Headcount"   value={totalHeadcount}  icon={Users}      accent="#00B8B8"  theme={theme} />
+        <StatCard label="Open Roles"        value={totalOpenRoles}  icon={Briefcase}  accent="#C9922A"  theme={theme} />
+        {/* BUG-11 FIX: activeToday from real Firestore employees */}
+        <StatCard label="Active Today"      value={activeToday}     icon={UserCheck}  accent="#6366F1"  theme={theme} />
       </div>
 
       {/* ── Toolbar ── */}
@@ -409,12 +492,12 @@ export default function Departments() {
         <div className="relative flex-1" style={{ minWidth: "200px" }}>
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#666666" }} />
           <input
-            type="text" value={search} onChange={e => setSearch(e.target.value)}
+            type="text" value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search department or HOD..."
             className="outline-none text-xs pl-8 pr-4 py-2 rounded-md w-full"
             style={{ background: inputBg, border: `1px solid ${border}`, color: textPri, fontFamily: "Mulish, sans-serif", fontSize: "13px" }}
-            onFocus={e => { e.target.style.border = "1px solid #00B8B8"; e.target.style.boxShadow = "0 0 0 3px rgba(0,184,184,0.1)"; }}
-            onBlur={e => { e.target.style.border = `1px solid ${border}`; e.target.style.boxShadow = "none"; }}
+            onFocus={(e) => { e.target.style.border = "1px solid #00B8B8"; e.target.style.boxShadow = "0 0 0 3px rgba(0,184,184,0.1)"; }}
+            onBlur={(e) => { e.target.style.border = `1px solid ${border}`; e.target.style.boxShadow = "none"; }}
           />
         </div>
 
@@ -428,7 +511,7 @@ export default function Departments() {
 
         {/* View toggle */}
         <div className="flex rounded-md overflow-hidden" style={{ border: `1px solid ${border}` }}>
-          {["cards", "table"].map(v => (
+          {["cards", "table"].map((v) => (
             <button key={v} onClick={() => setView(v)}
               className="px-4 py-2"
               style={{
@@ -452,24 +535,36 @@ export default function Departments() {
             fontFamily: "Rajdhani, sans-serif", fontSize: "12px", fontWeight: 700, letterSpacing: "0.08em",
             transition: "background 150ms ease",
           }}
-          onMouseEnter={e => e.currentTarget.style.background = "#AA0000"}
-          onMouseLeave={e => e.currentTarget.style.background = "#CC0000"}>
+          onMouseEnter={(e) => e.currentTarget.style.background = "#AA0000"}
+          onMouseLeave={(e) => e.currentTarget.style.background = "#CC0000"}>
           <Plus size={15} />
           ADD DEPARTMENT
         </button>
       </div>
 
+      {/* ── Loading state ── */}
+      {loading && (
+        <div className="rounded-xl py-20 flex flex-col items-center gap-3"
+          style={{ background: surface, border: `1px solid ${border}` }}>
+          <p style={{ fontFamily: "Mulish, sans-serif", color: textSub, fontSize: "14px" }}>
+            Loading departments…
+          </p>
+        </div>
+      )}
+
       {/* ── Cards View ── */}
-      {view === "cards" && (
+      {!loading && view === "cards" && (
         filtered.length === 0 ? (
           <div className="rounded-xl py-20 flex flex-col items-center gap-3"
             style={{ background: surface, border: `1px solid ${border}` }}>
             <Building2 size={40} style={{ color: "#333333" }} />
-            <p style={{ fontFamily: "Mulish, sans-serif", color: textSub, fontSize: "14px" }}>No departments found</p>
+            <p style={{ fontFamily: "Mulish, sans-serif", color: textSub, fontSize: "14px" }}>
+              {depts.length === 0 ? "No departments yet. Add one to get started." : "No departments match your search."}
+            </p>
           </div>
         ) : (
           <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
-            {filtered.map(dept => (
+            {filtered.map((dept) => (
               <DeptCard
                 key={dept.id}
                 dept={dept}
@@ -484,7 +579,7 @@ export default function Departments() {
       )}
 
       {/* ── Table View ── */}
-      {view === "table" && (
+      {!loading && view === "table" && (
         <div className="rounded-xl overflow-hidden" style={{ background: surface, border: `1px solid ${border}` }}>
           {/* Header */}
           <div className="grid px-5 py-3"
@@ -493,7 +588,7 @@ export default function Departments() {
               borderBottom: `1px solid ${border}`,
               background: isDark ? "#0D0D0D" : "#F8F8F8",
             }}>
-            {["Department", "Head of Dept", "Headcount", "Open Roles", "Present Today", "Actions"].map(h => (
+            {["Department", "Head of Dept", "Headcount", "Open Roles", "Assigned", "Actions"].map((h) => (
               <span key={h} style={{
                 fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
                 color: "#CC0000", letterSpacing: "0.15em", textTransform: "uppercase",
@@ -508,10 +603,10 @@ export default function Departments() {
             </div>
           ) : (
             filtered.map((dept, idx) => {
-              const accent = getDeptColor(dept.id);
-              const rowBg = idx % 2 === 0 ? (isDark ? "#0D0D0D" : "#FAFAFA") : surface;
-              const deptEmps = employees.filter(e => e.department === dept.name);
-              const present  = deptEmps.filter(e => e.status === "Present").length;
+              const accent   = getDeptColor(dept.id);
+              const rowBg    = idx % 2 === 0 ? (isDark ? "#0D0D0D" : "#FAFAFA") : surface;
+              // BUG-11 FIX: count from real Firestore employee list
+              const deptEmps = employees.filter((e) => e.department === dept.name);
               return (
                 <div key={dept.id}
                   className="grid px-5 py-3 items-center"
@@ -521,8 +616,8 @@ export default function Departments() {
                     background: rowBg,
                     transition: "background 150ms ease",
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = isDark ? "#131313" : "#F0F0F0"}
-                  onMouseLeave={e => e.currentTarget.style.background = rowBg}
+                  onMouseEnter={(e) => e.currentTarget.style.background = isDark ? "#131313" : "#F0F0F0"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = rowBg}
                 >
                   {/* Name */}
                   <div className="flex items-center gap-3">
@@ -532,33 +627,32 @@ export default function Departments() {
                     </div>
                     <div>
                       <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: textPri }}>{dept.name}</p>
-                      <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "9px", color: accent }}>DEPT-{String(dept.id).padStart(3,"0")}</p>
+                      <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "9px", color: accent }}>{dept.id}</p>
                     </div>
                   </div>
 
                   {/* HOD */}
-                  <div className="flex items-center">
-                    <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textSub }}>{dept.hod}</span>
-                  </div>
+                  <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textSub }}>{dept.hod || "—"}</span>
 
-                  {/* Headcount */}
-                  <div className="flex items-center">
-                    <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: "#00B8B8" }}>{dept.headcount}</span>
-                  </div>
+                  {/* Headcount (planned) */}
+                  <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: "#00B8B8" }}>
+                    {dept.headcount ?? "—"}
+                  </span>
 
                   {/* Open Roles */}
-                  <div className="flex items-center">
-                    <span style={{
-                      fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px",
-                      color: dept.openRoles > 0 ? "#C9922A" : textSub,
-                    }}>{dept.openRoles}</span>
-                  </div>
+                  <span style={{
+                    fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px",
+                    color: (dept.openRoles ?? 0) > 0 ? "#C9922A" : textSub,
+                  }}>
+                    {dept.openRoles ?? 0}
+                  </span>
 
-                  {/* Present Today */}
+                  {/* Assigned (live from Firestore employees) */}
                   <div className="flex items-center gap-2">
                     <div className="rounded-full" style={{ width: "8px", height: "8px", background: "#00B8B8", flexShrink: 0 }} />
-                    <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: "#00B8B8" }}>{present}</span>
-                    <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textSub }}>/ {dept.headcount}</span>
+                    <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: "#00B8B8" }}>
+                      {deptEmps.length}
+                    </span>
                   </div>
 
                   {/* Actions */}
@@ -566,15 +660,15 @@ export default function Departments() {
                     <button onClick={() => setModal(dept)}
                       className="rounded-md p-1.5"
                       style={{ color: textSub, transition: "all 150ms", background: "transparent" }}
-                      onMouseEnter={e => { e.currentTarget.style.color = "#00B8B8"; e.currentTarget.style.background = isDark ? "#1A1A1A" : "#F0F0F0"; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = textSub; e.currentTarget.style.background = "transparent"; }}>
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "#00B8B8"; e.currentTarget.style.background = isDark ? "#1A1A1A" : "#F0F0F0"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = textSub; e.currentTarget.style.background = "transparent"; }}>
                       <Edit2 size={14} />
                     </button>
                     <button onClick={() => setDelTarget(dept.id)}
                       className="rounded-md p-1.5"
                       style={{ color: textSub, transition: "all 150ms", background: "transparent" }}
-                      onMouseEnter={e => { e.currentTarget.style.color = "#CC0000"; e.currentTarget.style.background = isDark ? "#1A1A1A" : "#F0F0F0"; }}
-                      onMouseLeave={e => { e.currentTarget.style.color = textSub; e.currentTarget.style.background = "transparent"; }}>
+                      onMouseEnter={(e) => { e.currentTarget.style.color = "#CC0000"; e.currentTarget.style.background = isDark ? "#1A1A1A" : "#F0F0F0"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = textSub; e.currentTarget.style.background = "transparent"; }}>
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -593,22 +687,25 @@ export default function Departments() {
         </div>
       )}
 
-      {/* ── Modals ── */}
+      {/* ── Add / Edit Modal ── */}
       {(modal === "add" || (modal && modal.id)) && (
         <DeptModal
           theme={theme}
           onClose={() => setModal(null)}
           onSave={handleSave}
           initial={modal === "add" ? null : modal}
+          saving={saving}
         />
       )}
 
+      {/* ── Delete Confirm Modal ── */}
       {deleteTarget && (
         <DeleteConfirm
-          dept={depts.find(d => d.id === deleteTarget)}
+          dept={depts.find((d) => d.id === deleteTarget)}
           theme={theme}
           onClose={() => setDelTarget(null)}
           onConfirm={handleDelete}
+          deleting={deleting}
         />
       )}
     </div>

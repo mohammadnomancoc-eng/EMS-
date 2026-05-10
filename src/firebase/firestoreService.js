@@ -34,6 +34,13 @@ const col = (name) => collection(db, name);
 //  EMPLOYEES
 // ════════════════════════════════════════════════════════════
 
+/** Fetch a single employee by their RWT ID */
+export async function getEmployee(empId) {
+  const snap = await getDoc(doc(db, "employees", empId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() };
+}
+
 /** Fetch all employees (one-time) */
 export async function getEmployees() {
   const snap = await getDocs(col("employees"));

@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../App";
 import {
   LayoutDashboard, Users, CalendarCheck, CalendarOff,
-  DollarSign, Building2, Settings, LogOut,
-  Bell, Sun, Moon, Search, ChevronRight
+  Building2, Settings, LogOut,
+  Bell, Sun, Moon, Search,
 } from "lucide-react";
+import { logoutUser } from "../firebase/authService";
 
 const navSections = [
   {
@@ -23,12 +24,6 @@ const navSections = [
     ],
   },
   {
-    label: "FINANCE",
-    items: [
-      { to: "/payroll", icon: DollarSign, label: "Payroll" },
-    ],
-  },
-  {
     label: "SYSTEM",
     items: [
       { to: "/departments", icon: Building2, label: "Departments" },
@@ -38,20 +33,37 @@ const navSections = [
 ];
 
 const pageTitles = {
-  "/dashboard": { title: "Dashboard", crumb: "WORKSPACE / DASHBOARD" },
-  "/employees": { title: "Employees", crumb: "PEOPLE / EMPLOYEES" },
-  "/attendance": { title: "Attendance", crumb: "PEOPLE / ATTENDANCE" },
-  "/leave": { title: "Leave Management", crumb: "PEOPLE / LEAVE" },
-  "/payroll": { title: "Payroll", crumb: "FINANCE / PAYROLL" },
-  "/departments": { title: "Departments", crumb: "SYSTEM / DEPARTMENTS" },
-  "/settings": { title: "Settings", crumb: "SYSTEM / SETTINGS" },
+  "/dashboard":  { title: "Dashboard",       crumb: "WORKSPACE / DASHBOARD" },
+  "/employees":  { title: "Employees",        crumb: "PEOPLE / EMPLOYEES" },
+  "/attendance": { title: "Attendance",       crumb: "PEOPLE / ATTENDANCE" },
+  "/leave":      { title: "Leave Management", crumb: "PEOPLE / LEAVE" },
+  "/departments":{ title: "Departments",      crumb: "SYSTEM / DEPARTMENTS" },
+  "/settings":   { title: "Settings",         crumb: "SYSTEM / SETTINGS" },
 };
 
+// ── Sidebar ───────────────────────────────────────────
 function Sidebar() {
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    navigate("/login");
+  // BUG-09 FIX: read real admin name/initials saved to localStorage at login
+  const userRaw = localStorage.getItem("rwt-user");
+  const user = userRaw
+    ? JSON.parse(userRaw)
+    : { name: "Admin", initials: "AD" };
+
+  // BUG-01 FIX: call Firebase signOut + clear localStorage before navigating.
+  // Previously only navigate("/login") was called, leaving the Firebase Auth
+  // session alive — any direct URL visit would re-enter the dashboard.
+  const handleLogout = async () => {
+    try {
+      await logoutUser();
+    } catch (err) {
+      console.warn("Firebase signOut error:", err.message);
+    } finally {
+      localStorage.removeItem("rwt-role");
+      localStorage.removeItem("rwt-user");
+      navigate("/login");
+    }
   };
 
   return (
@@ -70,10 +82,7 @@ function Sidebar() {
       >
         <div
           className="flex items-center justify-center rounded-full flex-shrink-0"
-          style={{
-            width: "38px", height: "38px",
-            border: "1px solid #CC0000",
-          }}
+          style={{ width: "38px", height: "38px", border: "1px solid #CC0000" }}
         >
           <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#CC0000", fontWeight: 700, fontSize: "13px" }}>
             RWT
@@ -96,7 +105,6 @@ function Sidebar() {
       <nav className="flex-1 overflow-y-auto py-3" style={{ scrollbarWidth: "none" }}>
         {navSections.map((section) => (
           <div key={section.label} className="mb-2">
-            {/* Section Label */}
             <div
               className="px-4 py-2 flex items-center gap-2"
               style={{ borderTop: "1px solid #1A1A1A" }}
@@ -115,7 +123,6 @@ function Sidebar() {
               </span>
             </div>
 
-            {/* Nav Items */}
             {section.items.map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to}
@@ -164,19 +171,18 @@ function Sidebar() {
           className="rounded-lg p-3 flex items-center gap-3"
           style={{ background: "#111111", border: "1px solid #1E1E1E" }}
         >
-          {/* Avatar */}
           <div
             className="rounded-full flex items-center justify-center flex-shrink-0"
             style={{ width: "34px", height: "34px", background: "#CC0000" }}
           >
             <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>
-              AD
+              {user.initials}
             </span>
           </div>
 
           <div className="flex-1 min-w-0">
             <p style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
-              Admin
+              {user.name}
             </p>
             <p style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px" }}>
               Super Admin
@@ -187,7 +193,6 @@ function Sidebar() {
             </div>
           </div>
 
-          {/* Logout */}
           <button
             onClick={handleLogout}
             className="flex-shrink-0"
@@ -204,11 +209,18 @@ function Sidebar() {
   );
 }
 
+// ── Header ────────────────────────────────────────────
 function Header() {
   const { theme, toggleTheme } = useTheme();
   const [search, setSearch] = useState("");
-  const pathname = window.location.pathname;
+
+  // BUG-08 FIX: useLocation() re-renders on every client-side navigation.
+  // window.location.pathname is read once at render and never updates.
+  const { pathname } = useLocation();
   const page = pageTitles[pathname] || { title: "Dashboard", crumb: "WORKSPACE / DASHBOARD" };
+
+  const userRaw = localStorage.getItem("rwt-user");
+  const user = userRaw ? JSON.parse(userRaw) : { initials: "AD" };
 
   return (
     <div
@@ -220,7 +232,6 @@ function Header() {
         borderBottom: `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
       }}
     >
-      {/* Page Title */}
       <div className="flex-1">
         <h1
           style={{
@@ -245,9 +256,7 @@ function Header() {
         </p>
       </div>
 
-      {/* Right Controls */}
       <div className="flex items-center gap-3">
-
         {/* Search */}
         <div className="relative">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#666666" }} />
@@ -326,7 +335,7 @@ function Header() {
           }}
         >
           <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>
-            AD
+            {user.initials}
           </span>
         </div>
       </div>
@@ -342,7 +351,6 @@ function Layout() {
       <Sidebar />
       <Header />
 
-      {/* Main Content */}
       <main
         style={{
           marginLeft: "252px",

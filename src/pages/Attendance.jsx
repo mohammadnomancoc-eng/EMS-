@@ -1,96 +1,73 @@
-import { useState } from "react";
+// ─────────────────────────────────────────────────────────────
+//  src/pages/Attendance.jsx
+//
+//  BUG-04 FIX: Replaced the mock employee list and the generated
+//  `allAttendance` constant with live Firestore data.
+//
+//  Before: employees were imported from mockData.js and attendance was
+//  generated from them via `generateAttendanceData()`. Any employee added
+//  through the real Employees page never appeared here.
+//
+//  After:
+//  • `subscribeEmployees()` provides the live employee list in real time.
+//  • `subscribeAttendanceByDate(date, cb)` provides the real attendance
+//    records for the selected date from Firestore.
+//  • `upsertAttendance()` persists admin edits back to Firestore so changes
+//    are not lost on refresh (previously only updated local React state).
+//
+//  UX notes:
+//  • The date filter defaults to today (YYYY-MM-DD) instead of a hardcoded
+//    past date.
+//  • Employees who have no attendance record for the selected date are shown
+//    with status "—" (no record) so the admin can see all employees and
+//    mark attendance for them if needed.
+//  • The department filter derives its options from real Firestore employees.
+// ─────────────────────────────────────────────────────────────
+import { useState, useEffect, useCallback } from "react";
 import { useTheme } from "../App";
 import {
   Search, Filter, Download, CalendarCheck,
   UserCheck, UserX, Home, Clock,
   ChevronDown, ChevronLeft, ChevronRight,
-  Edit2, X, Check
+  Edit2, X,
 } from "lucide-react";
-import { employees } from "../data/mockData";
+import {
+  subscribeEmployees,
+  subscribeAttendanceByDate,
+  upsertAttendance,
+} from "../firebase/firestoreService";
 
 // ── Helpers ───────────────────────────────────────────
-function getInitials(name) {
-  return name.split(" ").map((n) => n[0]).join("").toUpperCase();
+function getInitials(name = "") {
+  return name.split(" ").filter(Boolean).map((n) => n[0]).join("").toUpperCase() || "?";
 }
 
 const avatarColors = [
   "#CC0000", "#00B8B8", "#C9922A", "#6366F1", "#10B981", "#F59E0B",
   "#EF4444", "#8B5CF6", "#06B6D4", "#84CC16",
 ];
-function getAvatarColor(id) {
-  const idx = parseInt(id.replace("RWT", "")) % avatarColors.length;
+function getAvatarColor(id = "") {
+  const idx = parseInt(id.replace("RWT", "") || "0") % avatarColors.length;
   return avatarColors[idx];
 }
 
-// ── Extended attendance mock data ─────────────────────
-const generateAttendanceData = () => {
-  const records = [];
-  const today = new Date("2026-05-07");
-  // Generate 30 days of attendance for each employee
-  employees.forEach((emp) => {
-    for (let d = 0; d < 30; d++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() - d);
-      const dayOfWeek = date.getDay();
-      if (dayOfWeek === 0) continue; // skip Sundays
-
-      let status, checkIn, checkOut, hoursWorked;
-      const rand = (parseInt(emp.id.replace("RWT", "")) + d) % 10;
-
-      if (dayOfWeek === 6) {
-        // Saturday - half day or absent
-        if (rand < 5) {
-          status = "Present"; checkIn = "09:30 AM"; checkOut = "02:00 PM"; hoursWorked = "4.5h";
-        } else {
-          status = "Absent"; checkIn = "--"; checkOut = "--"; hoursWorked = "--";
-        }
-      } else if (d === 0 && emp.status !== "Present") {
-        status = emp.status; checkIn = "--"; checkOut = "--"; hoursWorked = "--";
-      } else if (rand === 0) {
-        status = "Absent"; checkIn = "--"; checkOut = "--"; hoursWorked = "--";
-      } else if (rand === 1) {
-        status = "Leave"; checkIn = "--"; checkOut = "--"; hoursWorked = "--";
-      } else if (rand === 2) {
-        status = "WFH"; checkIn = "09:15 AM"; checkOut = "06:30 PM"; hoursWorked = "9.25h";
-      } else if (rand === 3) {
-        status = "Present"; checkIn = "09:55 AM"; checkOut = "07:10 PM"; hoursWorked = "9.25h"; // late
-      } else {
-        status = "Present";
-        const mins = [0, 5, 10, 15, 30][rand % 5];
-        checkIn = `09:${String(mins).padStart(2, "0")} AM`;
-        checkOut = `06:${String((rand * 7) % 60).padStart(2, "0")} PM`;
-        hoursWorked = "9h";
-      }
-
-      records.push({
-        id: `${emp.id}-${date.toISOString().split("T")[0]}`,
-        empId: emp.id,
-        empName: emp.name,
-        role: emp.role,
-        department: emp.department,
-        date: date.toISOString().split("T")[0],
-        dateLabel: date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
-        status,
-        checkIn,
-        checkOut,
-        hoursWorked,
-        isLate: checkIn !== "--" && checkIn > "09:30 AM",
-      });
-    }
-  });
-  return records;
-};
-
-const allAttendance = generateAttendanceData();
+// Today as YYYY-MM-DD in local time
+function todayString() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 // ── Status Badge ─────────────────────────────────────
 function StatusBadge({ status, theme }) {
   const styles = {
     dark: {
-      Present: { bg: "rgba(0,184,184,0.10)", border: "rgba(0,184,184,0.35)", color: "#00B8B8" },
-      Absent:  { bg: "rgba(204,0,0,0.10)",   border: "rgba(204,0,0,0.35)",   color: "#CC0000" },
-      Leave:   { bg: "rgba(201,146,42,0.10)", border: "rgba(201,146,42,0.35)", color: "#C9922A" },
-      WFH:     { bg: "rgba(255,255,255,0.06)", border: "rgba(255,255,255,0.2)", color: "#E8E8E8" },
+      Present: { bg: "rgba(0,184,184,0.10)",   border: "rgba(0,184,184,0.35)",   color: "#00B8B8" },
+      Absent:  { bg: "rgba(204,0,0,0.10)",     border: "rgba(204,0,0,0.35)",     color: "#CC0000" },
+      Leave:   { bg: "rgba(201,146,42,0.10)",  border: "rgba(201,146,42,0.35)",  color: "#C9922A" },
+      WFH:     { bg: "rgba(255,255,255,0.06)", border: "rgba(255,255,255,0.2)",  color: "#E8E8E8" },
     },
     light: {
       Present: { bg: "#E6F9F9", border: "#00B8B8", color: "#007A7A" },
@@ -100,7 +77,7 @@ function StatusBadge({ status, theme }) {
     },
   };
   const t = theme === "dark" ? "dark" : "light";
-  const s = styles[t][status] || styles[t].WFH;
+  const s = styles[t][status] || styles[t].Absent;
   return (
     <span style={{
       background: s.bg, border: `1px solid ${s.border}`, color: s.color,
@@ -115,9 +92,10 @@ function StatusBadge({ status, theme }) {
 // ── Edit Status Modal ─────────────────────────────────
 function EditModal({ record, theme, onClose, onSave }) {
   const isDark = theme === "dark";
-  const [status, setStatus] = useState(record.status);
-  const [checkIn, setCheckIn] = useState(record.checkIn === "--" ? "" : record.checkIn);
-  const [checkOut, setCheckOut] = useState(record.checkOut === "--" ? "" : record.checkOut);
+  const [status,   setStatus]   = useState(record.status || "Present");
+  const [checkIn,  setCheckIn]  = useState(record.checkIn  === "--" ? "" : (record.checkIn  || ""));
+  const [checkOut, setCheckOut] = useState(record.checkOut === "--" ? "" : (record.checkOut || ""));
+  const [saving,   setSaving]   = useState(false);
 
   const inputStyle = {
     width: "100%",
@@ -131,10 +109,23 @@ function EditModal({ record, theme, onClose, onSave }) {
     outline: "none",
   };
 
+  const handleSave = async () => {
+    setSaving(true);
+    const noTime = ["Absent", "Leave"].includes(status);
+    await onSave({
+      ...record,
+      status,
+      checkIn:     noTime ? "--" : (checkIn  || "--"),
+      checkOut:    noTime ? "--" : (checkOut || "--"),
+      hoursWorked: "--",
+    });
+    setSaving(false);
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}
+      style={{ background: "rgba(0,0,0,0.7)" }}
       onClick={onClose}
     >
       <div
@@ -154,7 +145,7 @@ function EditModal({ record, theme, onClose, onSave }) {
               Edit Attendance
             </p>
             <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#666666" }}>
-              {record.empName} · {record.dateLabel}
+              {record.empName} · {record.dateLabel || record.date}
             </p>
           </div>
           <button onClick={onClose} style={{ color: "#555555" }}><X size={18} /></button>
@@ -191,33 +182,35 @@ function EditModal({ record, theme, onClose, onSave }) {
             </div>
           </div>
 
-          {/* Check In */}
-          <div>
-            <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, color: "#CC0000", letterSpacing: "0.1em", display: "block", marginBottom: "6px" }}>
-              CHECK IN
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. 09:30 AM"
-              value={checkIn}
-              onChange={(e) => setCheckIn(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
-
-          {/* Check Out */}
-          <div>
-            <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, color: "#CC0000", letterSpacing: "0.1em", display: "block", marginBottom: "6px" }}>
-              CHECK OUT
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. 06:30 PM"
-              value={checkOut}
-              onChange={(e) => setCheckOut(e.target.value)}
-              style={inputStyle}
-            />
-          </div>
+          {/* Check In / Out (only relevant for Present / WFH) */}
+          {!["Absent", "Leave"].includes(status) && (
+            <>
+              <div>
+                <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, color: "#CC0000", letterSpacing: "0.1em", display: "block", marginBottom: "6px" }}>
+                  CHECK IN
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 09:30 AM"
+                  value={checkIn}
+                  onChange={(e) => setCheckIn(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+              <div>
+                <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, color: "#CC0000", letterSpacing: "0.1em", display: "block", marginBottom: "6px" }}>
+                  CHECK OUT
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 06:30 PM"
+                  value={checkOut}
+                  onChange={(e) => setCheckOut(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}
@@ -225,34 +218,25 @@ function EditModal({ record, theme, onClose, onSave }) {
           <button
             onClick={onClose}
             style={{
-              padding: "8px 18px",
-              borderRadius: "6px",
-              fontFamily: "Rajdhani, sans-serif",
-              fontSize: "13px",
-              fontWeight: 600,
-              background: "transparent",
-              border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
-              color: isDark ? "#666666" : "#888888",
-              cursor: "pointer",
+              padding: "8px 18px", borderRadius: "6px",
+              fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 600,
+              background: "transparent", border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
+              color: isDark ? "#666666" : "#888888", cursor: "pointer",
             }}
           >
             Cancel
           </button>
           <button
-            onClick={() => onSave({ ...record, status, checkIn: checkIn || "--", checkOut: checkOut || "--" })}
+            onClick={handleSave}
+            disabled={saving}
             style={{
-              padding: "8px 18px",
-              borderRadius: "6px",
-              fontFamily: "Rajdhani, sans-serif",
-              fontSize: "13px",
-              fontWeight: 600,
-              background: "#CC0000",
-              border: "1px solid #CC0000",
-              color: "#FFFFFF",
-              cursor: "pointer",
+              padding: "8px 18px", borderRadius: "6px",
+              fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 600,
+              background: saving ? "#880000" : "#CC0000", border: "1px solid #CC0000",
+              color: "#FFFFFF", cursor: saving ? "not-allowed" : "pointer",
             }}
           >
-            Save Changes
+            {saving ? "Saving…" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -265,79 +249,131 @@ export default function Attendance() {
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
-  const [search, setSearch] = useState("");
+  const [search,       setSearch]       = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [deptFilter, setDeptFilter] = useState("All");
-  const [dateFilter, setDateFilter] = useState("2026-05-07");
-  const [editRecord, setEditRecord] = useState(null);
-  const [records, setRecords] = useState(allAttendance);
-  const [page, setPage] = useState(1);
+  const [deptFilter,   setDeptFilter]   = useState("All");
+  const [dateFilter,   setDateFilter]   = useState(todayString);
+  const [editRecord,   setEditRecord]   = useState(null);
+  const [page,         setPage]         = useState(1);
+
+  // BUG-04 FIX: real Firestore data instead of mock arrays
+  const [employees,        setEmployees]        = useState([]);
+  const [attendanceByDate, setAttendanceByDate] = useState([]);
+  const [loadingEmp,       setLoadingEmp]       = useState(true);
+  const [loadingAtt,       setLoadingAtt]       = useState(true);
+
   const PER_PAGE = 10;
 
-  const bg       = isDark ? "#0A0A0A" : "#F8F8F8";
-  const cardBg   = isDark ? "#111111" : "#FFFFFF";
-  const border   = isDark ? "#1E1E1E" : "#E8E8E8";
-  const textPri  = isDark ? "#F0F0F0" : "#111111";
-  const textMuted= isDark ? "#555555" : "#999999";
+  const bg        = isDark ? "#0A0A0A" : "#F8F8F8";
+  const cardBg    = isDark ? "#111111" : "#FFFFFF";
+  const border    = isDark ? "#1E1E1E" : "#E8E8E8";
+  const textPri   = isDark ? "#F0F0F0" : "#111111";
+  const textMuted = isDark ? "#555555" : "#999999";
 
-  // ── Today's summary ──────────────────────────────────
-  const todayRecords = records.filter((r) => r.date === dateFilter);
-  const presentCount = todayRecords.filter((r) => r.status === "Present").length;
-  const absentCount  = todayRecords.filter((r) => r.status === "Absent").length;
-  const leaveCount   = todayRecords.filter((r) => r.status === "Leave").length;
-  const wfhCount     = todayRecords.filter((r) => r.status === "WFH").length;
-  const lateCount    = todayRecords.filter((r) => r.isLate).length;
+  // Live employee list
+  useEffect(() => {
+    setLoadingEmp(true);
+    const unsub = subscribeEmployees((list) => {
+      setEmployees(list);
+      setLoadingEmp(false);
+    });
+    return unsub;
+  }, []);
 
-  // ── Filters ───────────────────────────────────────────
-  const filtered = records.filter((r) => {
-    const matchDate   = !dateFilter || r.date === dateFilter;
+  // Live attendance records for the selected date
+  useEffect(() => {
+    setLoadingAtt(true);
+    const unsub = subscribeAttendanceByDate(dateFilter, (list) => {
+      setAttendanceByDate(list);
+      setLoadingAtt(false);
+    });
+    return unsub;
+  }, [dateFilter]);
+
+  // Build a merged view: every employee gets a row.
+  // If a Firestore attendance doc exists for that date it is used;
+  // otherwise the employee appears with status "No Record".
+  const attMap = Object.fromEntries(attendanceByDate.map((a) => [a.empId, a]));
+
+  const dateObj = new Date(dateFilter + "T00:00:00");
+  const dateLabel = dateObj.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const dayName   = dateObj.toLocaleDateString("en-IN", { weekday: "long" });
+
+  const mergedRecords = employees.map((emp) => {
+    const att = attMap[emp.id];
+    return {
+      id:          att?.id       || `${emp.id}_${dateFilter}`,
+      empId:       emp.id,
+      empName:     emp.name      || emp.id,
+      role:        emp.role      || emp.jobRole || "—",
+      department:  emp.department || "—",
+      date:        dateFilter,
+      dateLabel,
+      status:      att?.status   || "No Record",
+      checkIn:     att?.checkIn  || "--",
+      checkOut:    att?.checkOut || "--",
+      hoursWorked: att?.hoursWorked || "--",
+      isLate:      att?.checkIn  ? att.checkIn > "09:30 AM" : false,
+      hasRecord:   !!att,
+    };
+  });
+
+  // Stats from merged view (only rows that have an actual record)
+  const presentCount = mergedRecords.filter((r) => r.status === "Present").length;
+  const absentCount  = mergedRecords.filter((r) => r.status === "Absent").length;
+  const leaveCount   = mergedRecords.filter((r) => r.status === "Leave").length;
+  const wfhCount     = mergedRecords.filter((r) => r.status === "WFH").length;
+  const lateCount    = mergedRecords.filter((r) => r.isLate && r.status === "Present").length;
+
+  // Department filter options from real data
+  const departments = ["All", ...new Set(employees.map((e) => e.department).filter(Boolean))];
+
+  // Filters
+  const filtered = mergedRecords.filter((r) => {
     const matchStatus = statusFilter === "All" || r.status === statusFilter;
-    const matchDept   = deptFilter === "All" || r.department === deptFilter;
+    const matchDept   = deptFilter   === "All" || r.department === deptFilter;
     const matchSearch = !search ||
       r.empName.toLowerCase().includes(search.toLowerCase()) ||
       r.empId.toLowerCase().includes(search.toLowerCase()) ||
       r.role.toLowerCase().includes(search.toLowerCase());
-    return matchDate && matchStatus && matchDept && matchSearch;
+    return matchStatus && matchDept && matchSearch;
   });
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
-  const departments = ["All", ...new Set(employees.map((e) => e.department))];
-
-  const statCards = [
-    { label: "Present",  value: presentCount, icon: UserCheck, color: "#00B8B8" },
-    { label: "Absent",   value: absentCount,  icon: UserX,     color: "#CC0000" },
-    { label: "On Leave", value: leaveCount,   icon: CalendarCheck, color: "#C9922A" },
-    { label: "WFH",      value: wfhCount,     icon: Home,      color: isDark ? "#888888" : "#555555" },
-    { label: "Late",     value: lateCount,    icon: Clock,     color: "#6366F1" },
-  ];
-
-  // ── Save edit ─────────────────────────────────────────
-  const handleSave = (updated) => {
-    setRecords((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+  // BUG-04 FIX: persist edits to Firestore via upsertAttendance
+  const handleSave = async (updated) => {
+    await upsertAttendance({
+      empId:       updated.empId,
+      date:        updated.date,
+      status:      updated.status,
+      checkIn:     updated.checkIn,
+      checkOut:    updated.checkOut,
+      hoursWorked: updated.hoursWorked,
+    });
     setEditRecord(null);
+    // subscribeAttendanceByDate will auto-update the UI via its listener
   };
 
-  // ── Stat card component ───────────────────────────────
+  const statCards = [
+    { label: "Present",   value: presentCount, icon: UserCheck,    color: "#00B8B8" },
+    { label: "Absent",    value: absentCount,  icon: UserX,        color: "#CC0000" },
+    { label: "On Leave",  value: leaveCount,   icon: CalendarCheck,color: "#C9922A" },
+    { label: "WFH",       value: wfhCount,     icon: Home,         color: isDark ? "#888888" : "#555555" },
+    { label: "Late",      value: lateCount,    icon: Clock,        color: "#6366F1" },
+  ];
+
   const StatCard = ({ label, value, icon: Icon, color }) => (
     <div style={{
-      background: cardBg,
-      border: `1px solid ${border}`,
-      borderRadius: "10px",
-      padding: "16px",
-      display: "flex",
-      alignItems: "center",
-      gap: "14px",
-      flex: 1,
-      minWidth: "130px",
+      background: cardBg, border: `1px solid ${border}`, borderRadius: "10px",
+      padding: "16px", display: "flex", alignItems: "center", gap: "14px",
+      flex: 1, minWidth: "130px",
     }}>
       <div style={{
         width: "40px", height: "40px", borderRadius: "8px",
-        background: `${color}14`,
-        border: `1px solid ${color}33`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        flexShrink: 0,
+        background: `${color}14`, border: `1px solid ${color}33`,
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
       }}>
         <Icon size={18} style={{ color }} />
       </div>
@@ -352,24 +388,19 @@ export default function Attendance() {
     </div>
   );
 
-  // ── Table header cell ─────────────────────────────────
   const TH = ({ children, w }) => (
     <th style={{
-      padding: "10px 14px",
-      textAlign: "left",
-      fontFamily: "Rajdhani, sans-serif",
-      fontSize: "10px",
-      fontWeight: 700,
-      letterSpacing: "0.15em",
-      color: "#CC0000",
+      padding: "10px 14px", textAlign: "left",
+      fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+      letterSpacing: "0.15em", color: "#CC0000",
       background: isDark ? "#0D0D0D" : "#F5F5F5",
-      borderBottom: `1px solid ${border}`,
-      whiteSpace: "nowrap",
-      width: w,
+      borderBottom: `1px solid ${border}`, whiteSpace: "nowrap", width: w,
     }}>
       {children}
     </th>
   );
+
+  const loading = loadingEmp || loadingAtt;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -384,20 +415,13 @@ export default function Attendance() {
             Track and manage daily employee attendance
           </p>
         </div>
-        <button
-          style={{
-            display: "flex", alignItems: "center", gap: "6px",
-            padding: "9px 16px",
-            borderRadius: "7px",
-            background: "transparent",
-            border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
-            color: isDark ? "#888888" : "#666666",
-            fontFamily: "Rajdhani, sans-serif",
-            fontSize: "13px",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
+        <button style={{
+          display: "flex", alignItems: "center", gap: "6px", padding: "9px 16px",
+          borderRadius: "7px", background: "transparent",
+          border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
+          color: isDark ? "#888888" : "#666666",
+          fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 600, cursor: "pointer",
+        }}>
           <Download size={14} />
           Export
         </button>
@@ -410,14 +434,8 @@ export default function Attendance() {
 
       {/* ── Filters Bar ── */}
       <div style={{
-        background: cardBg,
-        border: `1px solid ${border}`,
-        borderRadius: "10px",
-        padding: "14px 16px",
-        display: "flex",
-        gap: "10px",
-        flexWrap: "wrap",
-        alignItems: "center",
+        background: cardBg, border: `1px solid ${border}`, borderRadius: "10px",
+        padding: "14px 16px", display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center",
       }}>
         {/* Date */}
         <input
@@ -425,14 +443,10 @@ export default function Attendance() {
           value={dateFilter}
           onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}
           style={{
-            padding: "7px 10px",
-            borderRadius: "6px",
+            padding: "7px 10px", borderRadius: "6px",
             border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
             background: isDark ? "#1A1A1A" : "#F5F5F5",
-            color: textPri,
-            fontFamily: "Mulish, sans-serif",
-            fontSize: "13px",
-            outline: "none",
+            color: textPri, fontFamily: "Mulish, sans-serif", fontSize: "13px", outline: "none",
           }}
         />
 
@@ -445,18 +459,11 @@ export default function Attendance() {
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             style={{
-              width: "100%",
-              paddingLeft: "32px",
-              paddingRight: "12px",
-              paddingTop: "7px",
-              paddingBottom: "7px",
-              borderRadius: "6px",
+              width: "100%", paddingLeft: "32px", paddingRight: "12px",
+              paddingTop: "7px", paddingBottom: "7px", borderRadius: "6px",
               border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
               background: isDark ? "#1A1A1A" : "#F5F5F5",
-              color: textPri,
-              fontFamily: "Mulish, sans-serif",
-              fontSize: "13px",
-              outline: "none",
+              color: textPri, fontFamily: "Mulish, sans-serif", fontSize: "13px", outline: "none",
             }}
           />
         </div>
@@ -469,22 +476,15 @@ export default function Attendance() {
             value={statusFilter}
             onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
             style={{
-              appearance: "none",
-              paddingLeft: "28px",
-              paddingRight: "28px",
-              paddingTop: "7px",
-              paddingBottom: "7px",
-              borderRadius: "6px",
+              appearance: "none", paddingLeft: "28px", paddingRight: "28px",
+              paddingTop: "7px", paddingBottom: "7px", borderRadius: "6px",
               border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
               background: isDark ? "#1A1A1A" : "#F5F5F5",
-              color: textPri,
-              fontFamily: "Mulish, sans-serif",
-              fontSize: "13px",
-              outline: "none",
-              cursor: "pointer",
+              color: textPri, fontFamily: "Mulish, sans-serif", fontSize: "13px",
+              outline: "none", cursor: "pointer",
             }}
           >
-            {["All", "Present", "Absent", "Leave", "WFH"].map((s) => (
+            {["All", "Present", "Absent", "Leave", "WFH", "No Record"].map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -497,19 +497,12 @@ export default function Attendance() {
             value={deptFilter}
             onChange={(e) => { setDeptFilter(e.target.value); setPage(1); }}
             style={{
-              appearance: "none",
-              paddingLeft: "12px",
-              paddingRight: "28px",
-              paddingTop: "7px",
-              paddingBottom: "7px",
-              borderRadius: "6px",
+              appearance: "none", paddingLeft: "12px", paddingRight: "28px",
+              paddingTop: "7px", paddingBottom: "7px", borderRadius: "6px",
               border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
               background: isDark ? "#1A1A1A" : "#F5F5F5",
-              color: textPri,
-              fontFamily: "Mulish, sans-serif",
-              fontSize: "13px",
-              outline: "none",
-              cursor: "pointer",
+              color: textPri, fontFamily: "Mulish, sans-serif", fontSize: "13px",
+              outline: "none", cursor: "pointer",
             }}
           >
             {departments.map((d) => (
@@ -518,19 +511,13 @@ export default function Attendance() {
           </select>
         </div>
 
-        {/* Result count */}
         <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: textMuted, marginLeft: "auto" }}>
           {filtered.length} RECORD{filtered.length !== 1 ? "S" : ""}
         </span>
       </div>
 
       {/* ── Table ── */}
-      <div style={{
-        background: cardBg,
-        border: `1px solid ${border}`,
-        borderRadius: "10px",
-        overflow: "hidden",
-      }}>
+      <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "10px", overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
@@ -538,7 +525,7 @@ export default function Attendance() {
                 <TH w="200px">EMPLOYEE</TH>
                 <TH w="110px">DEPARTMENT</TH>
                 <TH w="110px">DATE</TH>
-                <TH w="100px">STATUS</TH>
+                <TH w="110px">STATUS</TH>
                 <TH w="110px">CHECK IN</TH>
                 <TH w="110px">CHECK OUT</TH>
                 <TH w="90px">HOURS</TH>
@@ -546,7 +533,15 @@ export default function Attendance() {
               </tr>
             </thead>
             <tbody>
-              {paginated.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={8} style={{ padding: "48px", textAlign: "center" }}>
+                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>
+                      Loading attendance data…
+                    </p>
+                  </td>
+                </tr>
+              ) : paginated.length === 0 ? (
                 <tr>
                   <td colSpan={8} style={{ padding: "48px", textAlign: "center" }}>
                     <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "15px", color: textMuted }}>
@@ -556,11 +551,10 @@ export default function Attendance() {
                 </tr>
               ) : (
                 paginated.map((rec, i) => {
-                  const color = getAvatarColor(rec.empId);
-                  const rowBg = i % 2 === 0
+                  const color  = getAvatarColor(rec.empId);
+                  const rowBg  = i % 2 === 0
                     ? (isDark ? "#111111" : "#FFFFFF")
                     : (isDark ? "#0D0D0D" : "#FAFAFA");
-
                   return (
                     <tr
                       key={rec.id}
@@ -572,8 +566,7 @@ export default function Attendance() {
                           <div style={{
                             width: "32px", height: "32px", borderRadius: "50%",
                             background: color,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            flexShrink: 0,
+                            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                           }}>
                             <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>
                               {getInitials(rec.empName)}
@@ -607,7 +600,18 @@ export default function Attendance() {
                       {/* Status */}
                       <td style={{ padding: "11px 14px" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
-                          <StatusBadge status={rec.status} theme={theme} />
+                          {rec.status === "No Record" ? (
+                            <span style={{
+                              fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600,
+                              color: isDark ? "#444444" : "#BBBBBB",
+                              border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
+                              borderRadius: "4px", padding: "2px 8px",
+                            }}>
+                              No Record
+                            </span>
+                          ) : (
+                            <StatusBadge status={rec.status} theme={theme} />
+                          )}
                           {rec.isLate && rec.status === "Present" && (
                             <span style={{
                               fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 600,
@@ -622,8 +626,7 @@ export default function Attendance() {
                       {/* Check In */}
                       <td style={{ padding: "11px 14px" }}>
                         <span style={{
-                          fontFamily: "Share Tech Mono, monospace",
-                          fontSize: "12px",
+                          fontFamily: "Share Tech Mono, monospace", fontSize: "12px",
                           color: rec.checkIn === "--" ? textMuted : (rec.isLate ? "#6366F1" : "#00B8B8"),
                         }}>
                           {rec.checkIn}
@@ -633,8 +636,7 @@ export default function Attendance() {
                       {/* Check Out */}
                       <td style={{ padding: "11px 14px" }}>
                         <span style={{
-                          fontFamily: "Share Tech Mono, monospace",
-                          fontSize: "12px",
+                          fontFamily: "Share Tech Mono, monospace", fontSize: "12px",
                           color: rec.checkOut === "--" ? textMuted : (isDark ? "#AAAAAA" : "#555555"),
                         }}>
                           {rec.checkOut}
@@ -644,8 +646,7 @@ export default function Attendance() {
                       {/* Hours */}
                       <td style={{ padding: "11px 14px" }}>
                         <span style={{
-                          fontFamily: "Share Tech Mono, monospace",
-                          fontSize: "12px",
+                          fontFamily: "Share Tech Mono, monospace", fontSize: "12px",
                           color: rec.hoursWorked === "--" ? textMuted : "#C9922A",
                         }}>
                           {rec.hoursWorked}
@@ -691,11 +692,8 @@ export default function Attendance() {
         {/* ── Pagination ── */}
         {totalPages > 1 && (
           <div style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "12px 16px",
-            borderTop: `1px solid ${border}`,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "12px 16px", borderTop: `1px solid ${border}`,
           }}>
             <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: textMuted }}>
               PAGE {page} OF {totalPages} · {filtered.length} RECORDS
@@ -728,10 +726,7 @@ export default function Attendance() {
                       border: p === page ? "1px solid #CC0000" : `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
                       background: p === page ? "rgba(204,0,0,0.10)" : "transparent",
                       color: p === page ? "#CC0000" : (isDark ? "#888888" : "#555555"),
-                      fontFamily: "Rajdhani, sans-serif",
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      cursor: "pointer",
+                      fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 600, cursor: "pointer",
                     }}
                   >
                     {p}

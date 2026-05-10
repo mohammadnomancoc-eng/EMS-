@@ -1,13 +1,3 @@
-// ─────────────────────────────────────────────────────────────
-//  firestore.rules
-//  Deploy with:  firebase deploy --only firestore:rules
-//
-//  Logic:
-//   - Authenticated users can read employees, departments.
-//   - Only admins (role == "admin" in /users/{uid}) can write.
-//   - Employees can read/write their own leaveRequests.
-//   - Employees can read/write their own attendance records.
-// ─────────────────────────────────────────────────────────────
 
 rules_version = '2';
 service cloud.firestore {
@@ -65,7 +55,21 @@ service cloud.firestore {
     // ── /attendance ───────────────────────────────────────
     match /attendance/{recordId} {
       allow read: if isAdmin() || (isEmployee() && resource.data.empId == ownEmpId());
-      allow write: if isAdmin();
+    allow create, update, delete: if isAdmin();
+      allow create, update: if isEmployee()
+                             && request.resource.data.empId == ownEmpId();
+    }
+
+    // ── /media ────────────────────────────────────────────
+    // FIX (Bug 2): Collection had no rules → Firestore denied all access.
+    // Admins can do everything.
+    // Employees can read all media and create new records (uploadedBy must
+    // match their own empId to prevent spoofing).
+    // Only admins can update or delete media records.
+    match /media/{mediaId} {
+      allow read: if isAuthed();
+      allow create: if isEmployee() && request.resource.data.uploadedBy == ownEmpId();
+      allow update, delete: if isAdmin();
     }
   }
 }

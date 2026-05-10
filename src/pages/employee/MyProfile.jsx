@@ -1,36 +1,29 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTheme } from "../../App";
 import {
   User, Mail, Phone, Building2, Briefcase,
   Calendar, Shield, Edit3, Save, X,
   KeyRound, Eye, EyeOff, CheckCircle2, AlertCircle,
-  Camera, Upload,
+  Camera, Hash, MapPin, DollarSign, Loader,
 } from "lucide-react";
 import { uploadEmployeePhoto, getThumbnailUrl } from "../../cloudinary/cloudinaryService";
-import { updateEmployeePhoto } from "../../firebase/firestoreService";
+import {
+  getEmployee,
+  updateEmployee,
+  updateEmployeePhoto,
+} from "../../firebase/firestoreService";
+import {
+  updatePassword,
+  reauthenticateWithCredential,
+  EmailAuthProvider,
+} from "firebase/auth";
+import { auth } from "../../firebase/config";
 
 // ── Helpers ───────────────────────────────────────────
-function getUser() {
+function getStoredUser() {
   const raw = localStorage.getItem("rwt-user");
-  return raw
-    ? JSON.parse(raw)
-    : { name: "Arjun Sharma", role: "Frontend Developer", initials: "AS", empId: "RWT001" };
+  return raw ? JSON.parse(raw) : {};
 }
-
-const mockProfile = {
-  empId:      "RWT001",
-  name:       "Arjun Sharma",
-  role:       "Frontend Developer",
-  department: "Engineering",
-  email:      "arjun@royalswebtech.com",
-  phone:      "+91 98765 43210",
-  joinDate:   "2023-01-15",
-  status:     "Active",
-  initials:   "AS",
-  manager:    "Rahul Verma",
-  location:   "Nagpur, MH",
-  bio:        "Passionate frontend developer with 3+ years of experience building scalable React applications.",
-};
 
 function SectionLabel({ children }) {
   return (
@@ -55,13 +48,15 @@ function InfoRow({ icon: Icon, label, value, theme }) {
       </div>
       <div className="flex-1 min-w-0">
         <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textMuted, marginBottom: "2px" }}>{label}</p>
-        <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", fontWeight: 600, color: textPri }}>{value}</p>
+        <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", fontWeight: 600, color: textPri }}>
+          {value || <span style={{ color: textMuted, fontStyle: "italic", fontWeight: 400 }}>Not set</span>}
+        </p>
       </div>
     </div>
   );
 }
 
-function EditField({ label, value, onChange, theme }) {
+function EditField({ label, value, onChange, theme, disabled }) {
   const surface   = theme === "dark" ? "#0D0D0D" : "#F8F8F8";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
   const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
@@ -70,14 +65,17 @@ function EditField({ label, value, onChange, theme }) {
     <div className="flex flex-col gap-1.5">
       <label style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, fontWeight: 600 }}>{label}</label>
       <input
-        type="text" value={value} onChange={(e) => onChange(e.target.value)}
+        type="text" value={value || ""} onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
         style={{
-          background: surface, border: `1px solid ${border}`, borderRadius: "8px",
+          background: disabled ? (theme === "dark" ? "#0A0A0A" : "#F0F0F0") : surface,
+          border: `1px solid ${border}`, borderRadius: "8px",
           padding: "9px 12px", fontFamily: "Mulish, sans-serif", fontSize: "13px",
-          color: textPri, outline: "none", width: "100%", transition: "border-color 150ms",
+          color: disabled ? textMuted : textPri, outline: "none", width: "100%",
+          transition: "border-color 150ms", cursor: disabled ? "not-allowed" : "text",
         }}
-        onFocus={(e) => e.target.style.borderColor = "#CC0000"}
-        onBlur={(e) => e.target.style.borderColor = border}
+        onFocus={(e) => { if (!disabled) e.target.style.borderColor = "#CC0000"; }}
+        onBlur={(e)  => { e.target.style.borderColor = border; }}
       />
     </div>
   );
@@ -100,7 +98,7 @@ function PasswordField({ label, value, onChange, show, onToggle, theme }) {
             color: textPri, outline: "none", width: "100%", transition: "border-color 150ms",
           }}
           onFocus={(e) => e.target.style.borderColor = "#CC0000"}
-          onBlur={(e) => e.target.style.borderColor = border}
+          onBlur={(e)  => e.target.style.borderColor = border}
         />
         <button type="button" onClick={onToggle}
           className="absolute right-3 top-1/2 -translate-y-1/2"
@@ -122,91 +120,185 @@ function Toast({ msg, type }) {
         border: `1px solid ${ok ? "rgba(0,184,184,0.4)" : "rgba(204,0,0,0.4)"}`,
         backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
       }}>
-      {ok ? <CheckCircle2 size={15} style={{ color: "#00B8B8" }} /> : <AlertCircle size={15} style={{ color: "#CC0000" }} />}
-      <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: ok ? "#00B8B8" : "#CC0000", fontWeight: 600 }}>{msg}</span>
+      {ok
+        ? <CheckCircle2 size={15} style={{ color: "#00B8B8" }} />
+        : <AlertCircle  size={15} style={{ color: "#CC0000" }} />}
+      <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: ok ? "#00B8B8" : "#CC0000", fontWeight: 600 }}>
+        {msg}
+      </span>
     </div>
   );
 }
 
+// ── Main Component ────────────────────────────────────
 export default function MyProfile() {
-  const { theme } = useTheme();
-  const user      = getUser();
-  const profile   = { ...mockProfile, ...user };
+  const { theme }  = useTheme();
+  const storedUser = getStoredUser();   // { name, empId, uid, initials, role }
 
-  const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
-  const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
-  const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
-  const textMuted = theme === "dark" ? "#A0A0A0" : "#888888";
+  const [profile,  setProfile]  = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [fetchErr, setFetchErr] = useState("");
 
-  const [editing, setEditing]   = useState(false);
-  const [editData, setEditData] = useState({ phone: profile.phone, bio: profile.bio, location: profile.location });
-  const [toast, setToast]       = useState({ msg: "", type: "" });
-  const [pwForm, setPwForm]     = useState({ current: "", next: "", confirm: "" });
-  const [showPw, setShowPw]     = useState({ current: false, next: false, confirm: false });
-  const [pwError, setPwError]   = useState("");
+  const [editing,  setEditing]  = useState(false);
+  const [editData, setEditData] = useState({ phone: "", location: "", bio: "" });
 
-  // Photo upload state
-  const photoInputRef               = useRef(null);
-  const [photoUrl, setPhotoUrl]     = useState(profile.photoUrl || null);
+  const [pwForm,   setPwForm]   = useState({ current: "", next: "", confirm: "" });
+  const [showPw,   setShowPw]   = useState({ current: false, next: false, confirm: false });
+  const [pwError,  setPwError]  = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
+
+  const photoInputRef                       = useRef(null);
+  const [photoUrl,       setPhotoUrl]       = useState(null);
   const [photoUploading, setPhotoUploading] = useState(false);
-  const [photoProgress, setPhotoProgress]  = useState(0);
-  const [photoErr, setPhotoErr]     = useState("");
+  const [photoProgress,  setPhotoProgress]  = useState(0);
+  const [photoErr,       setPhotoErr]       = useState("");
+
+  const [toast, setToast] = useState({ msg: "", type: "" });
+
+  // ── Load from Firestore ───────────────────────────
+  useEffect(() => {
+    const empId = storedUser.empId;
+    if (!empId) {
+      setFetchErr("Employee ID missing. Please log out and log in again.");
+      setLoading(false);
+      return;
+    }
+    getEmployee(empId)
+      .then((doc) => {
+        if (!doc) {
+          setFetchErr("Profile not found in database. Contact HR/Admin.");
+          setLoading(false);
+          return;
+        }
+        setProfile(doc);
+        setPhotoUrl(doc.photoUrl || null);
+        setEditData({ phone: doc.phone || "", location: doc.location || "", bio: doc.bio || "" });
+        setLoading(false);
+      })
+      .catch((err) => {
+        setFetchErr(err.message || "Failed to load profile.");
+        setLoading(false);
+      });
+  }, [storedUser.empId]);
 
   function showToast(msg, type = "success") {
     setToast({ msg, type });
     setTimeout(() => setToast({ msg: "", type: "" }), 3000);
   }
 
+  // ── Photo upload ─────────────────────────────────
   async function handlePhotoUpload(file) {
-    if (!file) return;
-    setPhotoErr("");
-    setPhotoUploading(true);
-    setPhotoProgress(0);
-    // Optimistic preview
+    if (!file || !profile) return;
+    setPhotoErr(""); setPhotoUploading(true); setPhotoProgress(0);
     const objUrl = URL.createObjectURL(file);
     setPhotoUrl(objUrl);
     try {
-      const result = await uploadEmployeePhoto(file, profile.empId, (pct) => setPhotoProgress(pct));
-      await updateEmployeePhoto(profile.empId, result.secure_url, result.public_id);
+      const result = await uploadEmployeePhoto(file, profile.id, (pct) => setPhotoProgress(pct));
+      await updateEmployeePhoto(profile.id, result.secure_url, result.public_id);
       setPhotoUrl(result.secure_url);
-      showToast("Profile photo updated successfully");
+      setProfile((p) => ({ ...p, photoUrl: result.secure_url, photoPublicId: result.public_id }));
+      showToast("Profile photo updated");
     } catch (err) {
       setPhotoErr(err.message || "Upload failed.");
       setPhotoUrl(profile.photoUrl || null);
     } finally {
-      setPhotoUploading(false);
-      setPhotoProgress(0);
-      URL.revokeObjectURL(objUrl);
+      setPhotoUploading(false); setPhotoProgress(0); URL.revokeObjectURL(objUrl);
     }
   }
 
-  function handleSaveProfile() {
-    setEditing(false);
-    showToast("Profile updated successfully");
+  // ── Save editable fields ─────────────────────────
+  async function handleSaveProfile() {
+    if (!profile) return;
+    try {
+      await updateEmployee(profile.id, { phone: editData.phone, location: editData.location, bio: editData.bio });
+      setProfile((p) => ({ ...p, ...editData }));
+      setEditing(false);
+      showToast("Profile updated successfully");
+    } catch (err) {
+      showToast(err.message || "Save failed.", "error");
+    }
   }
 
   function handleCancelEdit() {
-    setEditData({ phone: profile.phone, bio: profile.bio, location: profile.location });
+    setEditData({ phone: profile?.phone || "", location: profile?.location || "", bio: profile?.bio || "" });
     setEditing(false);
   }
 
-  function handleChangePassword() {
+  // ── Change password ───────────────────────────────
+  async function handleChangePassword() {
     setPwError("");
     if (!pwForm.current) return setPwError("Enter your current password.");
     if (pwForm.next.length < 8) return setPwError("New password must be at least 8 characters.");
     if (pwForm.next !== pwForm.confirm) return setPwError("Passwords do not match.");
-    setPwForm({ current: "", next: "", confirm: "" });
-    showToast("Password changed successfully");
+    const firebaseUser = auth.currentUser;
+    if (!firebaseUser) return setPwError("Session expired. Please log in again.");
+    setPwSaving(true);
+    try {
+      const cred = EmailAuthProvider.credential(firebaseUser.email, pwForm.current);
+      await reauthenticateWithCredential(firebaseUser, cred);
+      await updatePassword(firebaseUser, pwForm.next);
+      setPwForm({ current: "", next: "", confirm: "" });
+      showToast("Password changed successfully");
+    } catch (err) {
+      const code = err.code || "";
+      setPwError(
+        code.includes("wrong-password") || code.includes("invalid-credential")
+          ? "Current password is incorrect."
+          : err.message || "Password change failed."
+      );
+    } finally {
+      setPwSaving(false);
+    }
   }
 
   const togglePw = (f) => setShowPw((p) => ({ ...p, [f]: !p[f] }));
 
-  const st = {
-    Active:   { bg: "rgba(0,184,184,0.10)",  border: "rgba(0,184,184,0.35)",  color: "#00B8B8" },
-    Inactive: { bg: "rgba(204,0,0,0.10)",    border: "rgba(204,0,0,0.35)",    color: "#CC0000" },
-  }[profile.status] || { bg: "rgba(0,184,184,0.10)", border: "rgba(0,184,184,0.35)", color: "#00B8B8" };
+  // ── Theme tokens ─────────────────────────────────
+  const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
+  const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
+  const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
+  const textMuted = theme === "dark" ? "#A0A0A0" : "#888888";
+  const card      = { background: surface, border: `1px solid ${border}`, boxShadow: theme === "light" ? "0 2px 8px rgba(0,0,0,0.06)" : "none" };
 
-  const card = { background: surface, border: `1px solid ${border}`, boxShadow: theme === "light" ? "0 2px 8px rgba(0,0,0,0.06)" : "none" };
+  // ── Loading / error ───────────────────────────────
+  if (loading) return (
+    <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "16px" }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <Loader size={28} style={{ color: "#00B8B8", animation: "spin 1s linear infinite" }} />
+      <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", color: textMuted }}>Loading your profile…</p>
+    </div>
+  );
+
+  if (fetchErr) return (
+    <div style={{ minHeight: "60vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ textAlign: "center", maxWidth: "400px" }}>
+        <AlertCircle size={40} style={{ color: "#CC0000", margin: "0 auto 12px" }} />
+        <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", color: textPri }}>{fetchErr}</p>
+      </div>
+    </div>
+  );
+
+  // ── Derived display values ────────────────────────
+  const displayName     = profile.name      || storedUser.name     || "—";
+  const displayInitials = profile.initials   || storedUser.initials || displayName.slice(0, 2).toUpperCase();
+  const displayEmpId    = profile.id         || storedUser.empId    || "—";
+  const displayRole     = profile.role       || profile.jobRole     || "—";
+  const displayDept     = profile.department || "—";
+  const displayEmail    = profile.email      || "—";
+  const displayStatus   = profile.status     || "Active";
+  const displaySalary   = profile.salary     ? `₹${Number(profile.salary).toLocaleString("en-IN")}` : "—";
+  const joinDisplay     = profile.joinDate
+    ? new Date(profile.joinDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+    : "—";
+
+  const st = ({
+    Active:  { bg: "rgba(0,184,184,0.10)",  border: "rgba(0,184,184,0.35)",  color: "#00B8B8" },
+    Present: { bg: "rgba(0,184,184,0.10)",  border: "rgba(0,184,184,0.35)",  color: "#00B8B8" },
+    Inactive:{ bg: "rgba(204,0,0,0.10)",    border: "rgba(204,0,0,0.35)",    color: "#CC0000" },
+    Absent:  { bg: "rgba(204,0,0,0.10)",    border: "rgba(204,0,0,0.35)",    color: "#CC0000" },
+    Leave:   { bg: "rgba(201,146,42,0.10)", border: "rgba(201,146,42,0.35)", color: "#C9922A" },
+    WFH:     { bg: "rgba(255,255,255,0.06)",border: "rgba(255,255,255,0.2)", color: "#E8E8E8" },
+  })[displayStatus] || { bg: "rgba(0,184,184,0.10)", border: "rgba(0,184,184,0.35)", color: "#00B8B8" };
 
   return (
     <div className="flex flex-col gap-6">
@@ -216,36 +308,31 @@ export default function MyProfile() {
         <div style={{ height: "80px", background: "linear-gradient(135deg, #CC0000 0%, #8A0000 100%)", position: "relative" }}>
           <div style={{ position: "absolute", inset: 0, backgroundImage: "repeating-linear-gradient(45deg, transparent, transparent 20px, rgba(255,255,255,0.03) 20px, rgba(255,255,255,0.03) 40px)" }} />
           <span style={{ position: "absolute", right: "20px", bottom: "10px", fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "56px", color: "rgba(255,255,255,0.06)", lineHeight: 1, userSelect: "none" }}>
-            {profile.empId}
+            {displayEmpId}
           </span>
         </div>
+
         <div className="flex items-end gap-5 px-6 pb-5" style={{ marginTop: "-32px" }}>
-          {/* Avatar with upload */}
           <div style={{ position: "relative", flexShrink: 0 }}>
             <div className="rounded-full flex items-center justify-center"
               style={{ width: "72px", height: "72px", overflow: "hidden",
                 background: photoUrl ? "transparent" : "#CC0000",
                 border: `3px solid ${surface}`, boxShadow: "0 4px 16px rgba(204,0,0,0.4)" }}>
               {photoUrl ? (
-                <img src={getThumbnailUrl(photoUrl, 144)} alt={profile.name}
+                <img src={getThumbnailUrl(photoUrl, 144)} alt={displayName}
                   style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
                 <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "26px" }}>
-                  {profile.initials || profile.name.slice(0, 2).toUpperCase()}
+                  {displayInitials}
                 </span>
               )}
               {photoUploading && (
-                <div style={{ position: "absolute", inset: 0, borderRadius: "50%",
-                  background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center",
-                  justifyContent: "center" }}>
-                  <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
-                    fontSize: "14px", color: "#00B8B8" }}>{photoProgress}%</span>
+                <div style={{ position: "absolute", inset: 0, borderRadius: "50%", background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: "#00B8B8" }}>{photoProgress}%</span>
                 </div>
               )}
             </div>
-            {/* Camera button */}
             <button onClick={() => photoInputRef.current?.click()} disabled={photoUploading}
-              title="Change profile photo"
               style={{ position: "absolute", bottom: 0, right: 0, width: "22px", height: "22px",
                 borderRadius: "50%", background: "#CC0000", border: `2px solid ${surface}`,
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -253,40 +340,39 @@ export default function MyProfile() {
               <Camera size={11} color="#fff" />
             </button>
             <input ref={photoInputRef} type="file" accept="image/*" style={{ display: "none" }}
-              onChange={e => handlePhotoUpload(e.target.files?.[0])} />
+              onChange={(e) => handlePhotoUpload(e.target.files?.[0])} />
           </div>
+
           <div className="flex-1 pt-10">
             <div className="flex items-start justify-between flex-wrap gap-3">
               <div>
-                <h2 style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "26px", fontWeight: 700, color: textPri, lineHeight: 1 }}>{profile.name}</h2>
-                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted, marginTop: "3px" }}>{profile.role} · {profile.department}</p>
+                <h2 style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "26px", fontWeight: 700, color: textPri, lineHeight: 1 }}>{displayName}</h2>
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted, marginTop: "3px" }}>
+                  {displayRole}{displayDept !== "—" ? ` · ${displayDept}` : ""}
+                </p>
               </div>
               <div className="flex items-center gap-3 mt-1">
-                <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#C9922A", background: "rgba(201,146,42,0.1)", border: "1px solid rgba(201,146,42,0.3)", borderRadius: "4px", padding: "2px 10px" }}>{profile.empId}</span>
-                <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, background: st.bg, border: `1px solid ${st.border}`, color: st.color, borderRadius: "4px", padding: "2px 10px" }}>{profile.status}</span>
+                <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#C9922A", background: "rgba(201,146,42,0.1)", border: "1px solid rgba(201,146,42,0.3)", borderRadius: "4px", padding: "2px 10px" }}>
+                  {displayEmpId}
+                </span>
+                <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, background: st.bg, border: `1px solid ${st.border}`, color: st.color, borderRadius: "4px", padding: "2px 10px" }}>
+                  {displayStatus}
+                </span>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Photo upload status banner */}
+      {/* Photo upload banner */}
       {(photoErr || photoUploading) && (
-        <div style={{
-          padding: "10px 16px", borderRadius: "10px",
-          background: photoErr ? "rgba(204,0,0,0.08)" : "rgba(0,184,184,0.08)",
-          border: `1px solid ${photoErr ? "rgba(204,0,0,0.3)" : "rgba(0,184,184,0.3)"}`,
-          display: "flex", alignItems: "center", gap: "10px",
-        }}>
+        <div style={{ padding: "10px 16px", borderRadius: "10px", background: photoErr ? "rgba(204,0,0,0.08)" : "rgba(0,184,184,0.08)", border: `1px solid ${photoErr ? "rgba(204,0,0,0.3)" : "rgba(0,184,184,0.3)"}`, display: "flex", alignItems: "center", gap: "10px" }}>
           {photoUploading ? (
             <>
-              <div style={{ flex: 1, height: "4px", borderRadius: "2px",
-                background: theme === "dark" ? "#1E1E1E" : "#E0E0E0", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${photoProgress}%`,
-                  background: "#00B8B8", borderRadius: "2px", transition: "width 300ms" }} />
+              <div style={{ flex: 1, height: "4px", borderRadius: "2px", background: theme === "dark" ? "#1E1E1E" : "#E0E0E0", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${photoProgress}%`, background: "#00B8B8", borderRadius: "2px", transition: "width 300ms" }} />
               </div>
-              <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px",
-                color: "#00B8B8", whiteSpace: "nowrap" }}>Uploading photo… {photoProgress}%</span>
+              <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#00B8B8", whiteSpace: "nowrap" }}>Uploading… {photoProgress}%</span>
             </>
           ) : (
             <>
@@ -326,19 +412,24 @@ export default function MyProfile() {
                 </div>
               )}
             </div>
+
             {!editing ? (
               <>
-                <InfoRow icon={User}      label="Full Name" value={profile.name}      theme={theme} />
-                <InfoRow icon={Mail}      label="Email"     value={profile.email}     theme={theme} />
-                <InfoRow icon={Phone}     label="Phone"     value={editData.phone}    theme={theme} />
-                <InfoRow icon={Building2} label="Location"  value={editData.location} theme={theme} />
+                <InfoRow icon={User}    label="Full Name" value={displayName}   theme={theme} />
+                <InfoRow icon={Mail}    label="Email"     value={displayEmail}   theme={theme} />
+                <InfoRow icon={Phone}   label="Phone"     value={profile.phone}  theme={theme} />
+                <InfoRow icon={MapPin}  label="Location"  value={profile.location} theme={theme} />
                 <div className="pt-3">
                   <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textMuted, marginBottom: "4px" }}>Bio</p>
-                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, lineHeight: 1.6 }}>{editData.bio || "—"}</p>
+                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: profile.bio ? textPri : textMuted, lineHeight: 1.6, fontStyle: profile.bio ? "normal" : "italic" }}>
+                    {profile.bio || "No bio added yet."}
+                  </p>
                 </div>
               </>
             ) : (
               <div className="flex flex-col gap-4">
+                <EditField label="Full Name"    value={displayName}       onChange={() => {}} theme={theme} disabled />
+                <EditField label="Email"        value={displayEmail}      onChange={() => {}} theme={theme} disabled />
                 <EditField label="Phone Number" value={editData.phone}    onChange={(v) => setEditData((p) => ({ ...p, phone: v }))}    theme={theme} />
                 <EditField label="Location"     value={editData.location} onChange={(v) => setEditData((p) => ({ ...p, location: v }))} theme={theme} />
                 <div className="flex flex-col gap-1.5">
@@ -346,10 +437,11 @@ export default function MyProfile() {
                   <textarea value={editData.bio} onChange={(e) => setEditData((p) => ({ ...p, bio: e.target.value }))} rows={3}
                     style={{ background: theme === "dark" ? "#0D0D0D" : "#F8F8F8", border: `1px solid ${border}`, borderRadius: "8px", padding: "9px 12px", fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, outline: "none", width: "100%", resize: "vertical", transition: "border-color 150ms" }}
                     onFocus={(e) => e.target.style.borderColor = "#CC0000"}
-                    onBlur={(e) => e.target.style.borderColor = border}
-                  />
+                    onBlur={(e)  => e.target.style.borderColor = border} />
                 </div>
-                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>* Name and email can only be changed by HR/Admin.</p>
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>
+                  * Name and email can only be changed by HR/Admin.
+                </p>
               </div>
             )}
           </div>
@@ -357,11 +449,12 @@ export default function MyProfile() {
           {/* Employment Details */}
           <div className="rounded-2xl p-5" style={card}>
             <SectionLabel>Employment Details</SectionLabel>
-            <InfoRow icon={Briefcase}  label="Role"         value={profile.role}       theme={theme} />
-            <InfoRow icon={Building2}  label="Department"   value={profile.department} theme={theme} />
-            <InfoRow icon={User}       label="Manager"      value={profile.manager}    theme={theme} />
-            <InfoRow icon={Calendar}   label="Joined"       value={new Date(profile.joinDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })} theme={theme} />
-            <InfoRow icon={Shield}     label="Access Level" value="Employee"           theme={theme} />
+            <InfoRow icon={Briefcase}  label="Job Role"     value={displayRole}   theme={theme} />
+            <InfoRow icon={Building2}  label="Department"   value={displayDept}   theme={theme} />
+            <InfoRow icon={Hash}       label="Employee ID"  value={displayEmpId}  theme={theme} />
+            <InfoRow icon={Calendar}   label="Date Joined"  value={joinDisplay}   theme={theme} />
+            <InfoRow icon={DollarSign} label="Salary (CTC)" value={displaySalary} theme={theme} />
+            <InfoRow icon={Shield}     label="Access Level" value="Employee"       theme={theme} />
           </div>
         </div>
 
@@ -372,9 +465,9 @@ export default function MyProfile() {
           <div className="rounded-2xl p-5" style={card}>
             <SectionLabel>Change Password</SectionLabel>
             <div className="flex flex-col gap-4">
-              <PasswordField label="Current Password"      value={pwForm.current} onChange={(v) => setPwForm((p) => ({ ...p, current: v }))} show={showPw.current} onToggle={() => togglePw("current")} theme={theme} />
-              <PasswordField label="New Password"          value={pwForm.next}    onChange={(v) => setPwForm((p) => ({ ...p, next: v }))}    show={showPw.next}    onToggle={() => togglePw("next")}    theme={theme} />
-              <PasswordField label="Confirm New Password"  value={pwForm.confirm} onChange={(v) => setPwForm((p) => ({ ...p, confirm: v }))} show={showPw.confirm} onToggle={() => togglePw("confirm")} theme={theme} />
+              <PasswordField label="Current Password"     value={pwForm.current} onChange={(v) => setPwForm((p) => ({ ...p, current: v }))} show={showPw.current} onToggle={() => togglePw("current")} theme={theme} />
+              <PasswordField label="New Password"         value={pwForm.next}    onChange={(v) => setPwForm((p) => ({ ...p, next: v }))}    show={showPw.next}    onToggle={() => togglePw("next")}    theme={theme} />
+              <PasswordField label="Confirm New Password" value={pwForm.confirm} onChange={(v) => setPwForm((p) => ({ ...p, confirm: v }))} show={showPw.confirm} onToggle={() => togglePw("confirm")} theme={theme} />
               {pwError && (
                 <div className="flex items-center gap-2 rounded-lg px-3 py-2"
                   style={{ background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.2)" }}>
@@ -382,14 +475,18 @@ export default function MyProfile() {
                   <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#CC0000" }}>{pwError}</span>
                 </div>
               )}
-              <button onClick={handleChangePassword}
+              <button onClick={handleChangePassword} disabled={pwSaving}
                 className="flex items-center justify-center gap-2 rounded-xl py-2.5"
-                style={{ background: "#CC0000", color: "#FFFFFF", fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", letterSpacing: "0.08em", border: "none", cursor: "pointer", transition: "opacity 150ms" }}
-                onMouseEnter={(e) => e.currentTarget.style.opacity = "0.85"}
-                onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}>
-                <KeyRound size={15} /> UPDATE PASSWORD
+                style={{ background: pwSaving ? "#991111" : "#CC0000", color: "#FFFFFF", fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", letterSpacing: "0.08em", border: "none", cursor: pwSaving ? "not-allowed" : "pointer", transition: "opacity 150ms" }}
+                onMouseEnter={(e) => { if (!pwSaving) e.currentTarget.style.opacity = "0.85"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}>
+                {pwSaving
+                  ? <><Loader size={14} style={{ animation: "spin 1s linear infinite" }} /> Updating…</>
+                  : <><KeyRound size={15} /> UPDATE PASSWORD</>}
               </button>
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, textAlign: "center" }}>Use at least 8 characters with a mix of letters and numbers.</p>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, textAlign: "center" }}>
+                Use at least 8 characters with a mix of letters and numbers.
+              </p>
             </div>
           </div>
 
@@ -398,10 +495,10 @@ export default function MyProfile() {
             <SectionLabel>This Month at a Glance</SectionLabel>
             <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
               {[
-                { label: "Days Present", value: "18",  color: "#00B8B8" },
-                { label: "Days Absent",  value: "2",   color: "#CC0000" },
-                { label: "Leave Used",   value: "1/2", color: "#C9922A" },
-                { label: "WFH Days",     value: "2/2", color: "#00B8B8" },
+                { label: "Days Present", value: "—", color: "#00B8B8" },
+                { label: "Days Absent",  value: "—", color: "#CC0000" },
+                { label: "Leave Used",   value: "—", color: "#C9922A" },
+                { label: "WFH Days",     value: "—", color: "#00B8B8" },
               ].map(({ label, value, color }) => (
                 <div key={label} className="rounded-xl p-4 flex flex-col gap-1"
                   style={{ background: theme === "dark" ? "#0D0D0D" : "#F8F8F8", border: `1px solid ${theme === "dark" ? "#1A1A1A" : "#EBEBEB"}` }}>
@@ -410,6 +507,9 @@ export default function MyProfile() {
                 </div>
               ))}
             </div>
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, marginTop: "12px", textAlign: "center" }}>
+              View detailed stats in My Attendance.
+            </p>
           </div>
 
           {/* Account */}
@@ -417,9 +517,10 @@ export default function MyProfile() {
             <SectionLabel>Account</SectionLabel>
             <div className="flex flex-col gap-3">
               {[
-                { label: "Employee ID",    value: profile.empId },
+                { label: "Employee ID",    value: displayEmpId },
                 { label: "Portal Access",  value: "Employee Portal" },
-                { label: "Account Status", value: profile.status },
+                { label: "Account Status", value: displayStatus },
+                { label: "Email",          value: displayEmail },
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between items-center py-2"
                   style={{ borderBottom: `1px solid ${theme === "dark" ? "#1A1A1A" : "#F0F0F0"}` }}>

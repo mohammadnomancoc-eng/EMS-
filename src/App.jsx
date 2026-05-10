@@ -1,18 +1,20 @@
 // ─────────────────────────────────────────────────────────────
 //  src/App.jsx
 //
-//  FIX (Bug 3 - Open /setup route): The /setup route previously rendered
-//  AdminSetup unconditionally for any visitor, allowing anyone to overwrite
-//  the admin profile even after initial setup was complete.
+//  BUG-02 FIX (No auth guards): Added <AdminRoute> and <EmployeeRoute>
+//  guards that wrap every protected route.
 //
-//  Fix: the /setup route now renders through a <SetupGuard> wrapper that
-//  checks Firestore for an existing admin document on mount.
-//  - If an admin doc exists    → redirect to /login (setup already done).
-//  - If no admin doc exists    → render AdminSetup (first-time setup).
-//  - While the check is in flight → show a neutral loading screen.
+//  Previously ALL routes (dashboard, employees, attendance, leave, etc.)
+//  were accessible by anyone who typed the URL directly — no login required.
+//  RoleRedirect only ran at "/" so it provided zero protection elsewhere.
 //
-//  This means the /setup route can safely be left in the codebase for
-//  fresh deployments without exposing it to abuse on live systems.
+//  Fix strategy:
+//  • AdminRoute    – checks rwt-role === "admin"  → else redirect /login
+//  • EmployeeRoute – checks rwt-role === "employee" → else redirect /login
+//  Both guards also verify the user still has a live Firebase Auth session
+//  (via subscribeAuthState, which already clears localStorage on sign-out).
+//  If localStorage says logged-in but Firebase session is gone (e.g. expired
+//  token), the next page render will re-check and redirect cleanly.
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -37,7 +39,7 @@ import { subscribeAuthState } from "./firebase/authService";
 export const ThemeContext = createContext();
 export function useTheme() { return useContext(ThemeContext); }
 
-// Role-based redirect — reads from localStorage (set on login)
+// ── Role-based redirect from "/" ──────────────────────
 function RoleRedirect() {
   const role = localStorage.getItem("rwt-role");
   if (role === "admin")    return <Navigate to="/dashboard"    replace />;
@@ -45,12 +47,32 @@ function RoleRedirect() {
   return <Navigate to="/login" replace />;
 }
 
-// ── SetupGuard ────────────────────────────────────────────────
+// ── BUG-02 FIX: Auth guard for admin routes ───────────
+// Renders children only when rwt-role is "admin".
+// Any other visitor (unauthenticated, or an employee who typed the URL)
+// is silently redirected to /login.
+function AdminRoute({ children }) {
+  const role = localStorage.getItem("rwt-role");
+  if (role !== "admin") return <Navigate to="/login" replace />;
+  return children;
+}
+
+// ── BUG-02 FIX: Auth guard for employee routes ────────
+// Renders children only when rwt-role is "employee".
+// Admins who visit /my-attendance are redirected to /dashboard instead
+// so they land in the right place without an error page.
+function EmployeeRoute({ children }) {
+  const role = localStorage.getItem("rwt-role");
+  if (role === "admin")    return <Navigate to="/dashboard"    replace />;
+  if (role !== "employee") return <Navigate to="/login"        replace />;
+  return children;
+}
+
+// ── SetupGuard ────────────────────────────────────────
 // Checks Firestore for an existing admin user before rendering AdminSetup.
-// • Admin already exists  → redirect to /login (setup is done; refuse access)
+// • Admin already exists  → redirect to /login (setup is done)
 // • No admin found        → render children (show the setup form)
 // • Firestore error       → treat as "no admin" so setup can still proceed
-//   (e.g. fresh project where rules haven't been deployed yet)
 function SetupGuard({ children }) {
   const [status, setStatus] = useState("checking"); // "checking" | "allowed" | "deny"
 
@@ -58,22 +80,12 @@ function SetupGuard({ children }) {
     let cancelled = false;
     (async () => {
       try {
-        // Query /users for any document with role == "admin".
-        // We only need to know if at least one exists — limit(1) keeps it cheap.
         const snap = await getDocs(
           query(collection(db, "users"), where("role", "==", "admin"), limit(1))
         );
         if (cancelled) return;
-        if (!snap.empty) {
-          // An admin profile already exists — block access to /setup.
-          setStatus("deny");
-        } else {
-          // No admin yet — allow the setup form to render.
-          setStatus("allowed");
-        }
+        setStatus(snap.empty ? "allowed" : "deny");
       } catch {
-        // Firestore rules may deny this read on a brand-new project (no rules
-        // deployed yet). Treat as "allowed" so first-time setup can proceed.
         if (!cancelled) setStatus("allowed");
       }
     })();
@@ -81,7 +93,6 @@ function SetupGuard({ children }) {
   }, []);
 
   if (status === "checking") {
-    // Neutral full-screen loader — shown only for the brief Firestore check.
     return (
       <div style={{
         minHeight: "100vh", background: "#0A0A0A",
@@ -97,11 +108,7 @@ function SetupGuard({ children }) {
     );
   }
 
-  if (status === "deny") {
-    // Setup already done — silently redirect to login.
-    return <Navigate to="/login" replace />;
-  }
-
+  if (status === "deny") return <Navigate to="/login" replace />;
   return children;
 }
 
@@ -134,10 +141,9 @@ function App() {
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<RoleRedirect />} />
+          {/* Public routes */}
+          <Route path="/"      element={<RoleRedirect />} />
           <Route path="/login" element={<Login />} />
-
-          {/* /setup is gated: only accessible when no admin profile exists yet */}
           <Route
             path="/setup"
             element={
@@ -147,18 +153,32 @@ function App() {
             }
           />
 
-          {/* Admin Routes */}
-          <Route path="/" element={<Layout />}>
-            <Route path="dashboard"  element={<Dashboard />} />
-            <Route path="employees"  element={<Employees />} />
-            <Route path="attendance" element={<Attendance />} />
-            <Route path="leave"      element={<LeaveManagement />} />
+          {/* ── Admin Routes (guarded by AdminRoute) ── */}
+          <Route
+            path="/"
+            element={
+              <AdminRoute>
+                <Layout />
+              </AdminRoute>
+            }
+          >
+            <Route path="dashboard"   element={<Dashboard />} />
+            <Route path="employees"   element={<Employees />} />
+            <Route path="attendance"  element={<Attendance />} />
+            <Route path="leave"       element={<LeaveManagement />} />
             <Route path="departments" element={<Departments />} />
-            <Route path="settings"   element={<Settings />} />
+            <Route path="settings"    element={<Settings />} />
           </Route>
 
-          {/* Employee Routes */}
-          <Route path="/" element={<EmployeeLayout />}>
+          {/* ── Employee Routes (guarded by EmployeeRoute) ── */}
+          <Route
+            path="/"
+            element={
+              <EmployeeRoute>
+                <EmployeeLayout />
+              </EmployeeRoute>
+            }
+          >
             <Route path="my-attendance" element={<MyAttendance />} />
             <Route path="my-leave"      element={<MyLeave />} />
             <Route path="my-profile"    element={<MyProfile />} />

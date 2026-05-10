@@ -1,4 +1,3 @@
-import { seedDatabase } from "../firebase/seed";
 import { useState, useEffect } from "react";
 import { useTheme } from "../App";
 import {
@@ -11,9 +10,11 @@ import {
   ResponsiveContainer, CartesianGrid
 } from "recharts";
 import {
-  employees, weeklyAttendance,
-  recentJoinings, leaveRequests
-} from "../data/mockdata";
+  subscribeEmployees,
+  subscribeLeaveRequests,
+  updateLeaveStatus,
+  getAttendanceByDate,
+} from "../firebase/firestoreService";
 
 
 // ── helpers ──────────────────────────────────────────
@@ -178,25 +179,81 @@ function CustomTooltip({ active, payload, label, theme }) {
   );
 }
 
+// ── helpers ──────────────────────────────────────────
+// Build an array of the last N dates (YYYY-MM-DD), newest last
+function lastNDates(n) {
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (n - 1 - i));
+    return d.toISOString().slice(0, 10);
+  });
+}
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 // ── Main Dashboard ────────────────────────────────────
 function Dashboard() {
   const { theme } = useTheme();
-  const [leaves, setLeaves] = useState(leaveRequests);
 
-  const present = employees.filter((e) => e.status === "Present").length;
-  const absent  = employees.filter((e) => e.status === "Absent").length;
-  const onLeave = employees.filter((e) => e.status === "Leave").length;
-  const totalPayroll = employees.reduce((s, e) => s + e.salary, 0);
+  // ── Firestore state ───────────────────────────────
+  const [employees,        setEmployees]        = useState([]);
+  const [leaves,           setLeaves]           = useState([]);
+  const [weeklyAttendance, setWeeklyAttendance] = useState([]);
+  const [loadingAttendance, setLoadingAttendance] = useState(true);
 
-  const handleApprove = (id) =>
-    setLeaves((prev) => prev.map((l) => l.id === id ? { ...l, status: "Approved" } : l));
-  const handleReject  = (id) =>
-    setLeaves((prev) => prev.map((l) => l.id === id ? { ...l, status: "Rejected" } : l));
+  // Real-time employees
+  useEffect(() => {
+    const unsub = subscribeEmployees((list) => setEmployees(list));
+    return unsub;
+  }, []);
 
-  const spark1 = [28,30,28,31,29,32,employees.length].map((v) => ({ v }));
-  const spark2 = [8,10,9,11,10,12,present].map((v) => ({ v }));
-  const spark3 = [2,3,2,4,3,3,onLeave].map((v) => ({ v }));
-  const spark4 = [600000,620000,615000,630000,628000,635000,totalPayroll].map((v) => ({ v }));
+  // Real-time leave requests (only Pending shown in dashboard widget)
+  useEffect(() => {
+    const unsub = subscribeLeaveRequests((list) => setLeaves(list));
+    return unsub;
+  }, []);
+
+  // Fetch last-6-days attendance for the chart
+  useEffect(() => {
+    const dates = lastNDates(6);
+    Promise.all(dates.map((d) => getAttendanceByDate(d))).then((results) => {
+      const chart = results.map((records, i) => {
+        const date = new Date(dates[i]);
+        return {
+          day: DAY_LABELS[date.getDay()],
+          present: records.filter((r) => r.status === "Present" || r.status === "WFH").length,
+          absent:  records.filter((r) => r.status === "Absent").length,
+        };
+      });
+      setWeeklyAttendance(chart);
+      setLoadingAttendance(false);
+    });
+  }, []);
+
+  // ── Derived stats ─────────────────────────────────
+  const present      = employees.filter((e) => e.status === "Present").length;
+  const onLeave      = employees.filter((e) => e.status === "Leave").length;
+  const totalPayroll = employees.reduce((s, e) => s + (e.salary || 0), 0);
+
+  // Recent joinings = last 4 employees sorted by joinDate desc
+  const recentJoinings = [...employees]
+    .sort((a, b) => (b.joinDate || "").localeCompare(a.joinDate || ""))
+    .slice(0, 4);
+
+  // Pending leaves for the approval widget
+  const pendingLeaves = leaves.filter((l) => l.status === "Pending");
+
+  const handleApprove = async (id) => {
+    await updateLeaveStatus(id, "Approved");
+  };
+  const handleReject = async (id) => {
+    await updateLeaveStatus(id, "Rejected");
+  };
+
+  const spark1 = [28,30,28,31,29,32, employees.length].map((v) => ({ v }));
+  const spark2 = [8,10,9,11,10,12,   present].map((v)         => ({ v }));
+  const spark3 = [2,3,2,4,3,3,        onLeave].map((v)        => ({ v }));
+  const spark4 = [600000,620000,615000,630000,628000,635000, totalPayroll].map((v) => ({ v }));
 
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
@@ -291,10 +348,13 @@ function Dashboard() {
         <StatCard theme={theme} label="Total Employees" value={employees.length}
           icon={Users} trend="+2 this month" trendUp sparkData={spark1} />
         <StatCard theme={theme} label="Present Today" value={present}
-          icon={UserCheck} valueColor="#00B8B8" trend={`${Math.round(present/employees.length*100)}% attendance`} trendUp sparkData={spark2} />
+          icon={UserCheck} valueColor="#00B8B8"
+          trend={employees.length ? `${Math.round(present / employees.length * 100)}% attendance` : "—"}
+          trendUp sparkData={spark2} />
         <StatCard theme={theme} label="On Leave" value={onLeave}
-          icon={UserX} valueColor="#CC0000" trend="1 pending approval" trendUp={false} sparkData={spark3} />
-        <StatCard theme={theme} label="Payroll May" value={totalPayroll}
+          icon={UserX} valueColor="#CC0000"
+          trend={`${pendingLeaves.length} pending approval`} trendUp={false} sparkData={spark3} />
+        <StatCard theme={theme} label="Payroll This Month" value={totalPayroll}
           icon={DollarSign} valueColor="#C9922A" prefix="₹" trend="+3.2% vs last month" trendUp sparkData={spark4} />
       </div>
 
@@ -354,7 +414,7 @@ function Dashboard() {
                 padding: "2px 8px",
               }}
             >
-              {present}/{employees.length}
+              {present} / {employees.length}
             </span>
           </div>
 
@@ -420,7 +480,11 @@ function Dashboard() {
             ))}
           </div>
 
-          {recentJoinings.map((emp, i) => (
+          {recentJoinings.length === 0 ? (
+            <div className="px-5 py-6 text-center" style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>
+              No employees yet.
+            </div>
+          ) : recentJoinings.map((emp, i) => (
             <div
               key={emp.id}
               className="grid px-5 items-center"
@@ -464,6 +528,7 @@ function Dashboard() {
               </span>
             </div>
           ))}
+          {recentJoinings.length === 0 ? null : null}
         </div>
 
         {/* Pending Approvals */}
@@ -492,14 +557,19 @@ function Dashboard() {
             ))}
           </div>
 
-          {leaves.map((req, i) => (
+          {leaves.filter(req => req.status === "Pending" || req.status === "Approved" || req.status === "Rejected").slice(0, 5).map((req, i, arr) => {
+            // Support both field name conventions
+            const empName = req.employee || req.name ||
+              employees.find(e => e.id === req.empId)?.name || req.empId || "—";
+            const leaveType = req.type || req.leaveType || req.requestType || "Leave";
+            return (
             <div
               key={req.id}
               className="grid px-5 items-center"
               style={{
                 gridTemplateColumns: "1fr 1fr auto",
                 height: "60px",
-                borderBottom: i < leaves.length - 1 ? `1px solid ${divider}` : "none",
+                borderBottom: i < arr.length - 1 ? `1px solid ${divider}` : "none",
                 borderLeft: "3px solid transparent",
                 transition: "all 150ms",
               }}
@@ -514,7 +584,7 @@ function Dashboard() {
             >
               <div>
                 <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "13px", color: textPri }}>
-                  {req.employee}
+                  {empName}
                 </p>
                 <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>
                   {req.from} → {req.to}
@@ -522,7 +592,7 @@ function Dashboard() {
               </div>
 
               <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
-                {req.type}
+                {leaveType}
               </span>
 
               <div className="flex items-center gap-2">
@@ -565,7 +635,8 @@ function Dashboard() {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

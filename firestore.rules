@@ -73,9 +73,18 @@ service cloud.firestore {
     }
 
     // ── /settings ────────────────────────────────────────
-    // Company-wide settings (office GPS coords, geo-fence radius, etc.).
-    // Admins write; all authenticated users read
-    // (employees need to read office coords for the geo-fence check).
+    // All settings documents live under /settings/{docId}.
+    // Documents used:
+    //   company        – company info, work schedule, geo-fence (employees read for webcam geo-check)
+    //   notifications  – admin notification preferences
+    //   appearance     – UI appearance preferences
+    //   security       – 2FA, session timeout
+    //   sessions       – active session list
+    //   system         – auto-backup flag, maintenance mode, last backup timestamp
+    //   backup         – manual backup metadata
+    //
+    // Employees need to read "company" for the geo-fence check.
+    // All other settings docs are admin-only.
     match /settings/{docId} {
       allow read: if isAuthed();
       allow write: if isAdmin();

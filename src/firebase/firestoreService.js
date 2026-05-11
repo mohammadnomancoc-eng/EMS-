@@ -372,7 +372,13 @@ export async function deleteMediaRecord(id) {
 // ════════════════════════════════════════════════════════════
 //  COMPANY SETTINGS  (/settings/company)
 //
-//  Shape: { name, address, officeLat, officeLng, geoFenceRadius, updatedAt }
+//  Shape: {
+//    name, gstin, pan, address,
+//    workingDays, workStart, workEnd,
+//    leaveYear, payDay, currency,
+//    officeLat, officeLng, geoFenceRadius,
+//    updatedAt
+//  }
 // ════════════════════════════════════════════════════════════
 
 const SETTINGS_DOC = doc(db, "settings", "company");

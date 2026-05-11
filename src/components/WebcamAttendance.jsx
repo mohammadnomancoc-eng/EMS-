@@ -102,7 +102,7 @@ function LiveClock({ isDark }) {
     <div style={{ textAlign: "center" }}>
       <p style={{
         fontFamily: "Share Tech Mono, monospace",
-        fontSize: "32px",
+        fontSize: "clamp(22px, 6vw, 32px)",
         fontWeight: 700,
         color: "#00B8B8",
         letterSpacing: "0.05em",
@@ -112,7 +112,7 @@ function LiveClock({ isDark }) {
       </p>
       <p style={{
         fontFamily: "Mulish, sans-serif",
-        fontSize: "12px",
+        fontSize: "clamp(10px, 2.5vw, 12px)",
         color: isDark ? "#666666" : "#999999",
         marginTop: "4px",
       }}>
@@ -393,7 +393,9 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
         <div
           onClick={(e) => e.stopPropagation()}
           style={{
-            width: "420px",
+            width: "min(420px, 95vw)",
+            maxHeight: "90dvh",
+            overflowY: "auto",
             background: cardBg,
             border: `1px solid ${border}`,
             borderRadius: "16px",
@@ -402,7 +404,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
         >
           {/* Header */}
           <div style={{
-            padding: "20px 24px 16px",
+            padding: "16px 20px",
             borderBottom: `1px solid ${border}`,
             display: "flex",
             alignItems: "center",
@@ -410,36 +412,36 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <div style={{
-                width: "36px", height: "36px", borderRadius: "8px",
+                width: "34px", height: "34px", borderRadius: "8px",
                 background: "rgba(0,184,184,0.12)", border: "1px solid rgba(0,184,184,0.3)",
-                display: "flex", alignItems: "center", justifyContent: "center",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
               }}>
                 <Camera size={16} style={{ color: "#00B8B8" }} />
               </div>
-              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px", color: textPri }}>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "clamp(14px, 4vw, 16px)", color: textPri }}>
                 Webcam Attendance
               </p>
             </div>
-            <button onClick={onClose} style={{ color: textMuted, background: "none", border: "none", cursor: "pointer" }}>
+            <button onClick={onClose} style={{ color: textMuted, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>
               <X size={18} />
             </button>
           </div>
 
           {/* Success body */}
-          <div style={{ padding: "32px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
+          <div style={{ padding: "20px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
             <div style={{
-              width: "64px", height: "64px", borderRadius: "50%",
+              width: "56px", height: "56px", borderRadius: "50%",
               background: "rgba(0,184,184,0.12)", border: "2px solid #00B8B8",
-              display: "flex", alignItems: "center", justifyContent: "center",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}>
-              <CheckCircle size={32} style={{ color: "#00B8B8" }} />
+              <CheckCircle size={28} style={{ color: "#00B8B8" }} />
             </div>
 
             <div style={{ textAlign: "center" }}>
-              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "20px", color: "#00B8B8" }}>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "clamp(16px, 5vw, 20px)", color: "#00B8B8" }}>
                 {savedRecord.action === "checkin" ? "Checked In!" : "Checked Out!"}
               </p>
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted, marginTop: "4px" }}>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "clamp(11px, 3vw, 13px)", color: textMuted, marginTop: "4px" }}>
                 Attendance recorded at <span style={{ color: textPri, fontWeight: 600 }}>{savedRecord.time}</span>
               </p>
             </div>
@@ -450,7 +452,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
               background: isDark ? "#0D0D0D" : "#F5F5F5",
               border: `1px solid ${border}`,
               borderRadius: "10px",
-              padding: "16px",
+              padding: "12px 14px",
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
               gap: "12px",
@@ -464,7 +466,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
               ].map(({ label, val }) => (
                 <div key={label}>
                   <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em" }}>{label}</p>
-                  <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "13px", color: textPri, marginTop: "2px" }}>{val}</p>
+                  <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "clamp(11px, 3vw, 13px)", color: textPri, marginTop: "2px", wordBreak: "break-word" }}>{val}</p>
                 </div>
               ))}
             </div>
@@ -486,6 +488,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
                 fontWeight: 700,
                 cursor: "pointer",
                 letterSpacing: "0.05em",
+                width: "100%",
               }}
             >
               DONE
@@ -499,15 +502,29 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   // ── Render: Main Modal ────────────────────────────────────
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
       style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)" }}
       onClick={onClose}
     >
+      <style>{`
+        @media (max-width: 640px) {
+          .webcam-modal-card {
+            width: 100% !important;
+            border-bottom-left-radius: 0 !important;
+            border-bottom-right-radius: 0 !important;
+            max-height: 96dvh !important;
+            border-radius: 16px 16px 0 0 !important;
+          }
+        }
+      `}</style>
       <div
         onClick={(e) => e.stopPropagation()}
+        className="webcam-modal-card"
         style={{
-          width: "520px",
-          maxWidth: "95vw",
+          width: "min(520px, 96vw)",
+          maxHeight: "95dvh",
+          display: "flex",
+          flexDirection: "column",
           background: cardBg,
           border: `1px solid ${border}`,
           borderRadius: "16px",
@@ -516,25 +533,26 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
       >
         {/* ── Header ── */}
         <div style={{
-          padding: "20px 24px 16px",
+          padding: "14px 18px",
           borderBottom: `1px solid ${border}`,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          flexShrink: 0,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div style={{
               width: "36px", height: "36px", borderRadius: "8px",
               background: "rgba(204,0,0,0.10)", border: "1px solid rgba(204,0,0,0.3)",
-              display: "flex", alignItems: "center", justifyContent: "center",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
             }}>
               <Camera size={16} style={{ color: "#CC0000" }} />
             </div>
             <div>
-              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px", color: textPri, lineHeight: 1 }}>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "clamp(14px, 4vw, 16px)", color: textPri, lineHeight: 1 }}>
                 Webcam Attendance
               </p>
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, marginTop: "2px" }}>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "clamp(10px, 2.5vw, 11px)", color: textMuted, marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {empName} · {todayString()}
               </p>
             </div>
@@ -545,7 +563,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
         </div>
 
         {/* ── Body ── */}
-        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", flex: 1 }}>
 
           {/* Live Clock */}
           <LiveClock isDark={isDark} />
@@ -848,11 +866,13 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
         {/* ── Footer ── */}
         <div style={{
-          padding: "14px 24px",
+          padding: "12px 18px",
           borderTop: `1px solid ${border}`,
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
-          gap: "10px",
+          gap: "8px",
+          flexShrink: 0,
         }}>
           <button
             onClick={onClose}

@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../App";
 import {
   LayoutDashboard, Users, CalendarCheck, CalendarOff,
   Building2, Settings, LogOut,
-  Bell, Sun, Moon, Search,
+  Bell, Sun, Moon, Search, Menu, X,
 } from "lucide-react";
 import { logoutUser } from "../firebase/authService";
+
+const SIDEBAR_W = 252;
 
 const navSections = [
   {
@@ -33,27 +35,24 @@ const navSections = [
 ];
 
 const pageTitles = {
-  "/dashboard":  { title: "Dashboard",       crumb: "WORKSPACE / DASHBOARD" },
-  "/employees":  { title: "Employees",        crumb: "PEOPLE / EMPLOYEES" },
-  "/attendance": { title: "Attendance",       crumb: "PEOPLE / ATTENDANCE" },
-  "/leave":      { title: "Leave Management", crumb: "PEOPLE / LEAVE" },
-  "/departments":{ title: "Departments",      crumb: "SYSTEM / DEPARTMENTS" },
-  "/settings":   { title: "Settings",         crumb: "SYSTEM / SETTINGS" },
+  "/dashboard":   { title: "Dashboard",       crumb: "WORKSPACE / DASHBOARD" },
+  "/employees":   { title: "Employees",        crumb: "PEOPLE / EMPLOYEES" },
+  "/attendance":  { title: "Attendance",       crumb: "PEOPLE / ATTENDANCE" },
+  "/leave":       { title: "Leave Management", crumb: "PEOPLE / LEAVE" },
+  "/departments": { title: "Departments",      crumb: "SYSTEM / DEPARTMENTS" },
+  "/settings":    { title: "Settings",         crumb: "SYSTEM / SETTINGS" },
 };
 
 // ── Sidebar ───────────────────────────────────────────
-function Sidebar() {
+function Sidebar({ open, onClose }) {
   const navigate = useNavigate();
 
-  // BUG-09 FIX: read real admin name/initials saved to localStorage at login
   const userRaw = localStorage.getItem("rwt-user");
   const user = userRaw
     ? JSON.parse(userRaw)
     : { name: "Admin", initials: "AD" };
 
   // BUG-01 FIX: call Firebase signOut + clear localStorage before navigating.
-  // Previously only navigate("/login") was called, leaving the Firebase Auth
-  // session alive — any direct URL visit would re-enter the dashboard.
   const handleLogout = async () => {
     try {
       await logoutUser();
@@ -67,155 +66,206 @@ function Sidebar() {
   };
 
   return (
-    <div
-      className="fixed left-0 top-0 h-screen flex flex-col z-50"
-      style={{
-        width: "252px",
-        background: "#050505",
-        borderRight: "1px solid #1A1A1A",
-      }}
-    >
-      {/* Logo Area */}
+    <>
+      {/* Mobile backdrop */}
       <div
-        className="flex items-center gap-3 px-4"
-        style={{ height: "72px", borderBottom: "1px solid #1A1A1A" }}
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.65)",
+          backdropFilter: "blur(2px)",
+          WebkitBackdropFilter: "blur(2px)",
+          zIndex: 49,
+          opacity: open ? 1 : 0,
+          pointerEvents: open ? "auto" : "none",
+          transition: "opacity 280ms ease",
+        }}
+        className="md:hidden"
+      />
+
+      {/* Sidebar panel */}
+      <div
+        style={{
+          position: "fixed",
+          left: 0,
+          top: 0,
+          height: "100dvh",
+          width: `${SIDEBAR_W}px`,
+          background: "#050505",
+          borderRight: "1px solid #1A1A1A",
+          display: "flex",
+          flexDirection: "column",
+          zIndex: 50,
+          transform: open ? "translateX(0)" : "translateX(-100%)",
+          transition: "transform 280ms cubic-bezier(0.4,0,0.2,1)",
+        }}
+        // On md+ always show via a style override below
+        className="sidebar-panel"
       >
+        {/* Logo Area */}
         <div
-          className="flex items-center justify-center rounded-full flex-shrink-0"
-          style={{ width: "38px", height: "38px", border: "1px solid #CC0000" }}
-        >
-          <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#CC0000", fontWeight: 700, fontSize: "13px" }}>
-            RWT
-          </span>
-        </div>
-        <div className="flex flex-col">
-          <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
-            Royals Webtech
-          </span>
-          <span style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px", lineHeight: 1.2 }}>
-            Pvt. Ltd.
-          </span>
-          <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8", fontSize: "8px", letterSpacing: "0.1em", marginTop: "2px" }}>
-            OPTIMIZED FOR WORK
-          </span>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3" style={{ scrollbarWidth: "none" }}>
-        {navSections.map((section) => (
-          <div key={section.label} className="mb-2">
-            <div
-              className="px-4 py-2 flex items-center gap-2"
-              style={{ borderTop: "1px solid #1A1A1A" }}
-            >
-              <span
-                style={{
-                  fontFamily: "Rajdhani, sans-serif",
-                  color: "#CC0000",
-                  fontSize: "9px",
-                  fontWeight: 700,
-                  letterSpacing: "0.2em",
-                  textTransform: "uppercase",
-                }}
-              >
-                {section.label}
-              </span>
-            </div>
-
-            {section.items.map(({ to, icon: Icon, label }) => (
-              <NavLink
-                key={to}
-                to={to}
-                style={({ isActive }) => ({
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  padding: "10px 16px",
-                  margin: "1px 6px",
-                  borderRadius: "6px",
-                  textDecoration: "none",
-                  borderLeft: isActive ? "3px solid #CC0000" : "3px solid transparent",
-                  background: isActive ? "rgba(204,0,0,0.06)" : "transparent",
-                  transition: "all 150ms ease",
-                })}
-                className="nav-item group"
-              >
-                {({ isActive }) => (
-                  <>
-                    <Icon
-                      size={18}
-                      style={{ color: isActive ? "#00B8B8" : "#333333", flexShrink: 0 }}
-                    />
-                    <span
-                      style={{
-                        fontFamily: "Mulish, sans-serif",
-                        fontSize: "13px",
-                        fontWeight: isActive ? 700 : 500,
-                        color: isActive ? "#FFFFFF" : "#555555",
-                      }}
-                    >
-                      {label}
-                    </span>
-                  </>
-                )}
-              </NavLink>
-            ))}
-          </div>
-        ))}
-      </nav>
-
-      {/* Bottom User Card */}
-      <div className="p-3" style={{ borderTop: "1px solid #1A1A1A" }}>
-        <div
-          className="rounded-lg p-3 flex items-center gap-3"
-          style={{ background: "#111111", border: "1px solid #1E1E1E" }}
+          className="flex items-center gap-3 px-4"
+          style={{ height: "72px", borderBottom: "1px solid #1A1A1A", flexShrink: 0 }}
         >
           <div
-            className="rounded-full flex items-center justify-center flex-shrink-0"
-            style={{ width: "34px", height: "34px", background: "#CC0000" }}
+            className="flex items-center justify-center rounded-full flex-shrink-0"
+            style={{ width: "38px", height: "38px", border: "1px solid #CC0000" }}
           >
-            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>
-              {user.initials}
+            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#CC0000", fontWeight: 700, fontSize: "13px" }}>
+              RWT
+            </span>
+          </div>
+          <div className="flex flex-col flex-1 min-w-0">
+            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
+              Royals Webtech
+            </span>
+            <span style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px", lineHeight: 1.2 }}>
+              Pvt. Ltd.
+            </span>
+            <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8", fontSize: "8px", letterSpacing: "0.1em", marginTop: "2px" }}>
+              OPTIMIZED FOR WORK
             </span>
           </div>
 
-          <div className="flex-1 min-w-0">
-            <p style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
-              {user.name}
-            </p>
-            <p style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px" }}>
-              Super Admin
-            </p>
-            <div className="flex items-center gap-1 mt-1">
-              <div className="rounded-full" style={{ width: "6px", height: "6px", background: "#00B8B8" }} />
-              <span style={{ fontFamily: "Mulish, sans-serif", color: "#00B8B8", fontSize: "10px" }}>Online</span>
-            </div>
-          </div>
-
+          {/* Close button — mobile only */}
           <button
-            onClick={handleLogout}
-            className="flex-shrink-0"
-            title="Logout"
-            style={{ color: "#333333", transition: "color 150ms" }}
-            onMouseEnter={(e) => e.currentTarget.style.color = "#CC0000"}
-            onMouseLeave={(e) => e.currentTarget.style.color = "#333333"}
+            onClick={onClose}
+            className="flex-shrink-0 md:hidden"
+            style={{ color: "#555555", padding: "4px" }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#555555")}
           >
-            <LogOut size={15} />
+            <X size={18} />
           </button>
         </div>
+
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto py-3" style={{ scrollbarWidth: "none" }}>
+          {navSections.map((section) => (
+            <div key={section.label} className="mb-2">
+              <div
+                className="px-4 py-2 flex items-center gap-2"
+                style={{ borderTop: "1px solid #1A1A1A" }}
+              >
+                <span
+                  style={{
+                    fontFamily: "Rajdhani, sans-serif",
+                    color: "#CC0000",
+                    fontSize: "9px",
+                    fontWeight: 700,
+                    letterSpacing: "0.2em",
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {section.label}
+                </span>
+              </div>
+
+              {section.items.map(({ to, icon: Icon, label }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  onClick={onClose}
+                  style={({ isActive }) => ({
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    padding: "10px 16px",
+                    margin: "1px 6px",
+                    borderRadius: "6px",
+                    textDecoration: "none",
+                    borderLeft: isActive ? "3px solid #CC0000" : "3px solid transparent",
+                    background: isActive ? "rgba(204,0,0,0.06)" : "transparent",
+                    transition: "all 150ms ease",
+                  })}
+                  className="nav-item group"
+                >
+                  {({ isActive }) => (
+                    <>
+                      <Icon
+                        size={18}
+                        style={{ color: isActive ? "#00B8B8" : "#333333", flexShrink: 0 }}
+                      />
+                      <span
+                        style={{
+                          fontFamily: "Mulish, sans-serif",
+                          fontSize: "13px",
+                          fontWeight: isActive ? 700 : 500,
+                          color: isActive ? "#FFFFFF" : "#555555",
+                        }}
+                      >
+                        {label}
+                      </span>
+                    </>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        {/* Bottom User Card */}
+        <div className="p-3" style={{ borderTop: "1px solid #1A1A1A", flexShrink: 0 }}>
+          <div
+            className="rounded-lg p-3 flex items-center gap-3"
+            style={{ background: "#111111", border: "1px solid #1E1E1E" }}
+          >
+            <div
+              className="rounded-full flex items-center justify-center flex-shrink-0"
+              style={{ width: "34px", height: "34px", background: "#CC0000" }}
+            >
+              <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>
+                {user.initials}
+              </span>
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <p style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {user.name}
+              </p>
+              <p style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px" }}>
+                Super Admin
+              </p>
+              <div className="flex items-center gap-1 mt-1">
+                <div className="rounded-full" style={{ width: "6px", height: "6px", background: "#00B8B8" }} />
+                <span style={{ fontFamily: "Mulish, sans-serif", color: "#00B8B8", fontSize: "10px" }}>Online</span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleLogout}
+              className="flex-shrink-0"
+              title="Logout"
+              style={{ color: "#333333", transition: "color 150ms" }}
+              onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = "#333333")}
+            >
+              <LogOut size={15} />
+            </button>
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* ── Responsive override: always show sidebar on md+ ── */}
+      <style>{`
+        @media (min-width: 768px) {
+          .sidebar-panel {
+            transform: translateX(0) !important;
+          }
+        }
+      `}</style>
+    </>
   );
 }
 
 // ── Header ────────────────────────────────────────────
-function Header() {
+function Header({ onMenuClick }) {
   const { theme, toggleTheme } = useTheme();
   const [search, setSearch] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
 
-  // BUG-08 FIX: useLocation() re-renders on every client-side navigation.
-  // window.location.pathname is read once at render and never updates.
+  // BUG-08 FIX: useLocation() is reactive
   const { pathname } = useLocation();
   const page = pageTitles[pathname] || { title: "Dashboard", crumb: "WORKSPACE / DASHBOARD" };
 
@@ -224,27 +274,49 @@ function Header() {
 
   return (
     <div
-      className="fixed top-0 right-0 flex items-center px-6 z-40"
       style={{
-        left: "252px",
+        position: "fixed",
+        top: 0,
+        right: 0,
+        left: 0,
         height: "56px",
         background: theme === "dark" ? "#0A0A0A" : "#FFFFFF",
         borderBottom: `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
+        display: "flex",
+        alignItems: "center",
+        zIndex: 40,
+        paddingLeft: "16px",
+        paddingRight: "16px",
       }}
+      className="header-bar"
     >
-      <div className="flex-1">
+      {/* Hamburger — mobile only */}
+      <button
+        onClick={onMenuClick}
+        className="md:hidden flex-shrink-0"
+        style={{ color: theme === "dark" ? "#666666" : "#888888", marginRight: "12px" }}
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Page title */}
+      <div className="flex-1 min-w-0">
         <h1
           style={{
             fontFamily: "Rajdhani, sans-serif",
             fontWeight: 700,
-            fontSize: "22px",
+            fontSize: "clamp(15px, 2.5vw, 22px)",
             color: theme === "dark" ? "#F0F0F0" : "#111111",
             lineHeight: 1,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
           }}
         >
           {page.title}
         </h1>
         <p
+          className="hidden sm:block"
           style={{
             fontFamily: "Share Tech Mono, monospace",
             fontSize: "10px",
@@ -256,18 +328,18 @@ function Header() {
         </p>
       </div>
 
-      <div className="flex items-center gap-3">
-        {/* Search */}
-        <div className="relative">
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Search — desktop */}
+        <div className="relative hidden sm:block">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "#666666" }} />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search employees..."
-            className="outline-none text-xs pl-8 pr-16 py-2 rounded-md"
+            className="outline-none text-xs pl-8 pr-14 py-2 rounded-md"
             style={{
-              width: "220px",
+              width: "clamp(130px, 16vw, 220px)",
               background: theme === "dark" ? "#111111" : "#F5F5F5",
               border: `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
               color: theme === "dark" ? "#F0F0F0" : "#111111",
@@ -283,7 +355,7 @@ function Header() {
             }}
           />
           <span
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-xs px-1 rounded"
+            className="absolute right-2 top-1/2 -translate-y-1/2 px-1 rounded"
             style={{
               fontFamily: "Share Tech Mono, monospace",
               fontSize: "9px",
@@ -295,6 +367,15 @@ function Header() {
             ⌘K
           </span>
         </div>
+
+        {/* Search icon — mobile */}
+        <button
+          className="sm:hidden"
+          onClick={() => setSearchOpen((v) => !v)}
+          style={{ color: theme === "dark" ? "#555555" : "#888888" }}
+        >
+          {searchOpen ? <X size={18} /> : <Search size={18} />}
+        </button>
 
         {/* Bell */}
         <button className="relative" style={{ color: theme === "dark" ? "#555555" : "#888888" }}>
@@ -310,7 +391,7 @@ function Header() {
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-full"
+          className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-full"
           style={{
             background: theme === "dark" ? "#111111" : "#F0F0F0",
             border: `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
@@ -326,7 +407,7 @@ function Header() {
 
         {/* Avatar */}
         <div
-          className="rounded-full flex items-center justify-center cursor-pointer"
+          className="rounded-full flex items-center justify-center cursor-pointer flex-shrink-0"
           style={{
             width: "32px", height: "32px",
             background: "#CC0000",
@@ -339,25 +420,93 @@ function Header() {
           </span>
         </div>
       </div>
+
+      {/* Mobile search dropdown */}
+      {searchOpen && (
+        <div
+          className="sm:hidden"
+          style={{
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            padding: "8px 16px",
+            background: theme === "dark" ? "#0A0A0A" : "#FFFFFF",
+            borderBottom: `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
+            zIndex: 39,
+          }}
+        >
+          <div className="relative">
+            <Search size={13} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#666666" }} />
+            <input
+              type="text"
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search employees..."
+              style={{
+                width: "100%",
+                paddingLeft: "32px",
+                paddingRight: "12px",
+                paddingTop: "8px",
+                paddingBottom: "8px",
+                borderRadius: "6px",
+                outline: "none",
+                fontSize: "12px",
+                background: theme === "dark" ? "#111111" : "#F5F5F5",
+                border: "1px solid #00B8B8",
+                boxShadow: "0 0 0 3px rgba(0,184,184,0.1)",
+                color: theme === "dark" ? "#F0F0F0" : "#111111",
+                fontFamily: "Mulish, sans-serif",
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Responsive offset: push header content right of sidebar on md+ ── */}
+      <style>{`
+        @media (min-width: 768px) {
+          .header-bar {
+            left: ${SIDEBAR_W}px !important;
+            padding-left: 24px !important;
+            padding-right: 24px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
 
+// ── Layout wrapper ────────────────────────────────────
 function Layout() {
   const { theme } = useTheme();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { pathname } = useLocation();
+
+  // Close sidebar on route change (mobile UX)
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll when mobile sidebar is open
+  useEffect(() => {
+    document.body.style.overflow = sidebarOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [sidebarOpen]);
 
   return (
     <div style={{ background: "var(--page-bg)", minHeight: "100vh" }}>
-      <Sidebar />
-      <Header />
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Header onMenuClick={() => setSidebarOpen(true)} />
 
       <main
         style={{
-          marginLeft: "252px",
           paddingTop: "56px",
           minHeight: "100vh",
           background: "var(--page-bg)",
         }}
+        className="main-content"
       >
         {/* RWT Watermark */}
         <div
@@ -367,7 +516,7 @@ function Layout() {
             right: "0",
             zIndex: 0,
             fontFamily: "Rajdhani, sans-serif",
-            fontSize: "280px",
+            fontSize: "clamp(80px, 18vw, 280px)",
             fontWeight: 700,
             color: theme === "dark" ? "#FFFFFF" : "#CCCCCC",
             opacity: theme === "dark" ? 0.025 : 0.35,
@@ -379,10 +528,19 @@ function Layout() {
           RWT
         </div>
 
-        <div className="relative z-10 p-6">
+        <div className="relative z-10 p-4 sm:p-6">
           <Outlet />
         </div>
       </main>
+
+      {/* ── Responsive main content offset on md+ ── */}
+      <style>{`
+        @media (min-width: 768px) {
+          .main-content {
+            margin-left: ${SIDEBAR_W}px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

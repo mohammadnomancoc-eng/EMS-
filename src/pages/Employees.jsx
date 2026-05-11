@@ -18,6 +18,18 @@ import { createEmployeeAccount, deleteEmployeeAccount, generateEmail, generatePa
 import { firebaseConfig } from "../firebase/config";
 import { uploadEmployeePhoto, getThumbnailUrl } from "../cloudinary/cloudinaryService";
 
+// ── Responsive hook ────────────────────────────────────────────
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
+  return isMobile;
+}
+
+// ── Helpers ────────────────────────────────────────────────────
 function getInitials(name) {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase();
 }
@@ -31,13 +43,14 @@ function getAvatarColor(id) {
   return avatarColors[idx];
 }
 
+// ── Status Badge ───────────────────────────────────────────────
 function StatusBadge({ status, theme }) {
   const styles = {
     dark: {
       Present: { bg: "rgba(0,184,184,0.10)", border: "rgba(0,184,184,0.35)", color: "#00B8B8" },
       Absent:  { bg: "rgba(204,0,0,0.10)",   border: "rgba(204,0,0,0.35)",   color: "#CC0000" },
-      Leave:   { bg: "rgba(201,146,42,0.10)", border: "rgba(201,146,42,0.35)",color: "#C9922A" },
-      WFH:     { bg: "rgba(255,255,255,0.06)",border: "rgba(255,255,255,0.2)",color: "#E8E8E8" },
+      Leave:   { bg: "rgba(201,146,42,0.10)", border: "rgba(201,146,42,0.35)", color: "#C9922A" },
+      WFH:     { bg: "rgba(255,255,255,0.06)", border: "rgba(255,255,255,0.2)", color: "#E8E8E8" },
     },
     light: {
       Present: { bg: "#E6F9F9", border: "#00B8B8", color: "#007A7A" },
@@ -51,7 +64,7 @@ function StatusBadge({ status, theme }) {
     <span style={{
       background: s.bg, border: `1px solid ${s.border}`, color: s.color,
       fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600,
-      borderRadius: "4px", padding: "2px 8px",
+      borderRadius: "4px", padding: "2px 8px", whiteSpace: "nowrap",
     }}>
       {status}
     </span>
@@ -60,35 +73,34 @@ function StatusBadge({ status, theme }) {
 
 // ── Confirm Delete Modal ───────────────────────────────────────
 function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
-  const isDark  = theme === "dark";
-  const bg      = isDark ? "#111111" : "#FFFFFF";
-  const border  = isDark ? "#1E1E1E" : "#E0E0E0";
-  const text    = isDark ? "#F0F0F0" : "#111111";
-  const sub     = isDark ? "#A0A0A0" : "#888888";
-  const color   = getAvatarColor(emp.id);
+  const isDark = theme === "dark";
+  const bg     = isDark ? "#111111" : "#FFFFFF";
+  const border = isDark ? "#1E1E1E" : "#E0E0E0";
+  const text   = isDark ? "#F0F0F0" : "#111111";
+  const sub    = isDark ? "#A0A0A0" : "#888888";
+  const color  = getAvatarColor(emp.id);
 
   return (
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
-      zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center"
+      zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "16px",
     }}>
       <div style={{
-        background: bg, border: `1px solid rgba(204,0,0,0.4)`,
-        borderRadius: "14px", width: "420px", padding: "28px",
-        boxShadow: "0 32px 80px rgba(0,0,0,0.5)"
+        background: bg, border: "1px solid rgba(204,0,0,0.4)",
+        borderRadius: "14px", width: "100%", maxWidth: "420px",
+        padding: "24px", boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
       }}>
-        {/* Icon */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "18px" }}>
           <div style={{
             width: "56px", height: "56px", borderRadius: "50%",
             background: "rgba(204,0,0,0.1)", border: "2px solid rgba(204,0,0,0.35)",
-            display: "flex", alignItems: "center", justifyContent: "center"
+            display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             <Trash2 size={22} style={{ color: "#CC0000" }} />
           </div>
         </div>
 
-        {/* Title */}
         <div style={{ textAlign: "center", marginBottom: "6px" }}>
           <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "20px", color: text }}>
             Delete Employee?
@@ -98,24 +110,23 @@ function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
           </div>
         </div>
 
-        {/* Employee chip */}
         <div style={{
           display: "flex", alignItems: "center", gap: "12px",
           padding: "12px 16px", borderRadius: "8px", margin: "14px 0",
-          background: isDark ? "#0A0A0A" : "#F8F8F8",
-          border: `1px solid ${border}`
+          background: isDark ? "#0A0A0A" : "#F8F8F8", border: `1px solid ${border}`,
         }}>
           <div style={{
             width: "38px", height: "38px", borderRadius: "50%", flexShrink: 0,
             background: `${color}20`, border: `2px solid ${color}`,
-            display: "flex", alignItems: "center", justifyContent: "center"
+            display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", color }}>
               {getInitials(emp.name)}
             </span>
           </div>
-          <div>
-            <div style={{ fontFamily: "Mulish, sans-serif", fontWeight: 700, fontSize: "14px", color: text }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: "Mulish, sans-serif", fontWeight: 700, fontSize: "14px", color: text,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {emp.name}
             </div>
             <div style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#00B8B8", marginTop: "1px" }}>
@@ -124,11 +135,10 @@ function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
           </div>
         </div>
 
-        {/* Warning list */}
         <div style={{
           padding: "12px 14px", borderRadius: "8px",
           background: "rgba(204,0,0,0.06)", border: "1px solid rgba(204,0,0,0.2)",
-          marginBottom: "20px"
+          marginBottom: "20px",
         }}>
           <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 700,
             color: "#CC0000", letterSpacing: "0.12em", marginBottom: "8px" }}>
@@ -147,20 +157,21 @@ function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
           ))}
         </div>
 
-        {/* Buttons */}
         <div style={{ display: "flex", gap: "10px" }}>
           <button onClick={onCancel} disabled={deleting} style={{
-            flex: 1, padding: "11px", borderRadius: "7px", cursor: deleting ? "not-allowed" : "pointer",
+            flex: 1, padding: "11px", borderRadius: "7px",
+            cursor: deleting ? "not-allowed" : "pointer",
             background: "transparent", border: `1px solid ${border}`,
             color: sub, fontFamily: "Rajdhani, sans-serif", fontWeight: 600,
-            fontSize: "13px", letterSpacing: "0.05em"
+            fontSize: "13px", letterSpacing: "0.05em",
           }}>CANCEL</button>
           <button onClick={onConfirm} disabled={deleting} style={{
-            flex: 1, padding: "11px", borderRadius: "7px", cursor: deleting ? "not-allowed" : "pointer",
+            flex: 1, padding: "11px", borderRadius: "7px",
+            cursor: deleting ? "not-allowed" : "pointer",
             background: deleting ? "#880000" : "#CC0000", border: "none",
             color: "#fff", fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
             fontSize: "13px", letterSpacing: "0.08em",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "7px"
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "7px",
           }}>
             {deleting ? (
               <>
@@ -179,14 +190,14 @@ function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
   );
 }
 
-// ── Credentials Popup shown after employee is created ──────────
+// ── Credentials Modal ──────────────────────────────────────────
 function CredentialsModal({ theme, credentials, onClose }) {
-  const isDark = theme === "dark";
-  const bg     = isDark ? "#111111" : "#FFFFFF";
-  const border = isDark ? "#1E1E1E" : "#E0E0E0";
-  const inputBg= isDark ? "#0A0A0A" : "#F4F4F4";
-  const text   = isDark ? "#F0F0F0" : "#111111";
-  const sub    = isDark ? "#A0A0A0" : "#888888";
+  const isDark  = theme === "dark";
+  const bg      = isDark ? "#111111" : "#FFFFFF";
+  const border  = isDark ? "#1E1E1E" : "#E0E0E0";
+  const inputBg = isDark ? "#0A0A0A" : "#F4F4F4";
+  const text    = isDark ? "#F0F0F0" : "#111111";
+  const sub     = isDark ? "#A0A0A0" : "#888888";
 
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [copiedPass,  setCopiedPass]  = useState(false);
@@ -220,7 +231,7 @@ function CredentialsModal({ theme, credentials, onClose }) {
         display: "flex", alignItems: "center", gap: "4px",
         color: copied ? "#00B8B8" : sub,
         fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600,
-        transition: "all 200ms",
+        transition: "all 200ms", flexShrink: 0,
       }}
     >
       {copied ? <CheckCheck size={12} /> : <Copy size={12} />}
@@ -231,49 +242,45 @@ function CredentialsModal({ theme, credentials, onClose }) {
   return (
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
-      zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center"
+      zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "16px",
     }}>
       <div style={{
         background: bg, border: `1px solid ${border}`, borderRadius: "14px",
-        width: "460px", padding: "28px", boxShadow: "0 32px 80px rgba(0,0,0,0.5)"
+        width: "100%", maxWidth: "460px", padding: "24px",
+        boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
       }}>
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "6px" }}>
           <div style={{
-            width: "40px", height: "40px", borderRadius: "10px",
+            width: "40px", height: "40px", borderRadius: "10px", flexShrink: 0,
             background: "rgba(0,184,184,0.12)", border: "1px solid rgba(0,184,184,0.3)",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
             <ShieldCheck size={20} style={{ color: "#00B8B8" }} />
           </div>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: text }}>
               Employee Account Created
             </div>
             <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: sub, marginTop: "1px" }}>
-              Share these credentials with <strong style={{ color: text }}>{credentials.name}</strong>
+              Share with <strong style={{ color: text }}>{credentials.name}</strong>
             </div>
           </div>
         </div>
 
-        {/* Divider */}
         <div style={{ borderTop: `1px solid ${border}`, margin: "18px 0" }} />
 
-        {/* Credentials */}
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-
           {/* Emp ID */}
           <div>
             <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
               color: "#CC0000", letterSpacing: "0.18em", display: "block", marginBottom: "6px" }}>
               EMPLOYEE ID
             </label>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <div style={{ flex: 1, background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
-                padding: "9px 12px", fontFamily: "Share Tech Mono, monospace", fontSize: "14px",
-                color: "#00B8B8", letterSpacing: "0.08em" }}>
-                {credentials.empId}
-              </div>
+            <div style={{ background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
+              padding: "9px 12px", fontFamily: "Share Tech Mono, monospace", fontSize: "14px",
+              color: "#00B8B8", letterSpacing: "0.08em" }}>
+              {credentials.empId}
             </div>
           </div>
 
@@ -284,8 +291,9 @@ function CredentialsModal({ theme, credentials, onClose }) {
               LOGIN EMAIL
             </label>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <div style={{ flex: 1, background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
-                padding: "9px 12px", fontFamily: "Mulish, sans-serif", fontSize: "13px", color: text }}>
+              <div style={{ flex: 1, minWidth: 0, background: inputBg, border: `1px solid ${border}`,
+                borderRadius: "6px", padding: "9px 12px", fontFamily: "Mulish, sans-serif",
+                fontSize: "13px", color: text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {credentials.email}
               </div>
               <CopyBtn value={credentials.email} copied={copiedEmail} setter={setCopiedEmail} label="email" />
@@ -299,10 +307,9 @@ function CredentialsModal({ theme, credentials, onClose }) {
               DEFAULT PASSWORD
             </label>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <div style={{ flex: 1, background: inputBg, border: `1px solid rgba(0,184,184,0.3)`,
-                borderRadius: "6px", padding: "9px 12px",
-                fontFamily: "Share Tech Mono, monospace", fontSize: "14px", color: "#00B8B8",
-                letterSpacing: "0.08em" }}>
+              <div style={{ flex: 1, background: inputBg, border: "1px solid rgba(0,184,184,0.3)",
+                borderRadius: "6px", padding: "9px 12px", fontFamily: "Share Tech Mono, monospace",
+                fontSize: "14px", color: "#00B8B8", letterSpacing: "0.08em" }}>
                 {credentials.password}
               </div>
               <CopyBtn value={credentials.password} copied={copiedPass} setter={setCopiedPass} label="password" />
@@ -310,16 +317,14 @@ function CredentialsModal({ theme, credentials, onClose }) {
           </div>
         </div>
 
-        {/* Info note */}
         <div style={{
           marginTop: "16px", padding: "10px 12px", borderRadius: "7px",
           background: "rgba(201,146,42,0.08)", border: "1px solid rgba(201,146,42,0.25)",
-          fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#C9922A", lineHeight: 1.5
+          fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#C9922A", lineHeight: 1.5,
         }}>
           💡 Ask the employee to change their password after first login. These credentials are auto-generated.
         </div>
 
-        {/* Actions */}
         <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
           <button onClick={copyAll} style={{
             flex: 1, padding: "10px", borderRadius: "6px", cursor: "pointer",
@@ -335,9 +340,9 @@ function CredentialsModal({ theme, credentials, onClose }) {
           </button>
           <button onClick={onClose} style={{
             flex: 2, padding: "10px", borderRadius: "6px", cursor: "pointer",
-            background: "#CC0000", border: "none",
-            color: "#FFFFFF", fontFamily: "Rajdhani, sans-serif",
-            fontWeight: 700, fontSize: "13px", letterSpacing: "0.1em",
+            background: "#CC0000", border: "none", color: "#FFFFFF",
+            fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px",
+            letterSpacing: "0.1em",
           }}>
             DONE
           </button>
@@ -347,16 +352,14 @@ function CredentialsModal({ theme, credentials, onClose }) {
   );
 }
 
-// ── Add/Edit Employee Modal ────────────────────────────────────
-// ── Photo Upload Widget (shared by modal & drawer) ─────────────
+// ── Photo Upload Widget ────────────────────────────────────────
 function PhotoUploader({ theme, currentUrl, empName, onUploaded, empId }) {
-  const fileRef  = useRef(null);
-  const isDark   = theme === "dark";
-  const border   = isDark ? "#1E1E1E" : "#E0E0E0";
-  const inputBg  = isDark ? "#0A0A0A" : "#F4F4F4";
-  const subColor = isDark ? "#666666" : "#999999";
+  const fileRef    = useRef(null);
+  const isDark     = theme === "dark";
+  const border     = isDark ? "#1E1E1E" : "#E0E0E0";
+  const subColor   = isDark ? "#666666" : "#999999";
 
-  const [preview,  setPreview]  = useState(currentUrl || null);
+  const [preview,   setPreview]   = useState(currentUrl || null);
   const [uploading, setUploading] = useState(false);
   const [progress,  setProgress]  = useState(0);
   const [uploadErr, setUploadErr] = useState("");
@@ -364,16 +367,13 @@ function PhotoUploader({ theme, currentUrl, empName, onUploaded, empId }) {
   const handleFile = async (file) => {
     if (!file) return;
     setUploadErr("");
-    // Local preview
     const objUrl = URL.createObjectURL(file);
     setPreview(objUrl);
     setUploading(true);
     setProgress(0);
     try {
       const result = await uploadEmployeePhoto(
-        file,
-        empId || `temp_${Date.now()}`,
-        (pct) => setProgress(pct)
+        file, empId || `temp_${Date.now()}`, (pct) => setProgress(pct)
       );
       onUploaded(result.secure_url, result.public_id);
     } catch (err) {
@@ -394,23 +394,16 @@ function PhotoUploader({ theme, currentUrl, empName, onUploaded, empId }) {
     <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "18px",
       padding: "14px", borderRadius: "8px", background: isDark ? "#0A0A0A" : "#F8F8F8",
       border: `1px solid ${border}` }}>
-
-      {/* Avatar preview */}
       <div style={{ position: "relative", flexShrink: 0 }}>
         <div style={{ width: "64px", height: "64px", borderRadius: "50%", overflow: "hidden",
           border: "2px solid #CC0000", background: "#CC000020",
           display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {preview ? (
-            <img src={getThumbnailUrl(preview, 128)} alt="preview"
-              style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          ) : (
-            <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
-              fontSize: "22px", color: "#CC0000" }}>{initials}</span>
-          )}
+          {preview
+            ? <img src={getThumbnailUrl(preview, 128)} alt="preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "22px", color: "#CC0000" }}>{initials}</span>
+          }
         </div>
-        {/* Camera overlay button */}
-        <button onClick={() => fileRef.current?.click()}
-          disabled={uploading}
+        <button onClick={() => fileRef.current?.click()} disabled={uploading}
           style={{ position: "absolute", bottom: 0, right: 0, width: "22px", height: "22px",
             borderRadius: "50%", background: "#CC0000", border: "2px solid " + (isDark ? "#111" : "#fff"),
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -419,21 +412,18 @@ function PhotoUploader({ theme, currentUrl, empName, onUploaded, empId }) {
         </button>
       </div>
 
-      {/* Text + button */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
           color: "#CC0000", letterSpacing: "0.18em", marginBottom: "4px" }}>
           PROFILE PHOTO
         </div>
         <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: subColor, marginBottom: "8px" }}>
-          JPG, PNG or WEBP · Max 10 MB · Stored on Cloudinary
+          JPG, PNG or WEBP · Max 10 MB
         </div>
-
         {uploading ? (
           <div>
             <div style={{ height: "4px", borderRadius: "2px", background: border, overflow: "hidden", marginBottom: "4px" }}>
-              <div style={{ height: "100%", width: `${progress}%`, background: "#00B8B8",
-                transition: "width 300ms", borderRadius: "2px" }} />
+              <div style={{ height: "100%", width: `${progress}%`, background: "#00B8B8", transition: "width 300ms", borderRadius: "2px" }} />
             </div>
             <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#00B8B8" }}>
               Uploading… {progress}%
@@ -449,37 +439,36 @@ function PhotoUploader({ theme, currentUrl, empName, onUploaded, empId }) {
             <Upload size={11} /> {preview ? "CHANGE PHOTO" : "UPLOAD PHOTO"}
           </button>
         )}
-
         {uploadErr && (
-          <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px",
-            color: "#CC0000", marginTop: "4px" }}>⚠ {uploadErr}</div>
+          <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#CC0000", marginTop: "4px" }}>
+            ⚠ {uploadErr}
+          </div>
         )}
       </div>
-
       <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
         onChange={e => handleFile(e.target.files?.[0])} />
     </div>
   );
 }
 
+// ── Add / Edit Employee Modal ──────────────────────────────────
 function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
   const isEdit = !!initial;
   const [form, setForm] = useState(initial || {
     name: "", role: "", department: "Engineering",
     email: "", phone: "", joinDate: "", status: "Present", salary: "",
-    workType: "WFO",
-    photoUrl: "", photoPublicId: "",
+    workType: "WFO", photoUrl: "", photoPublicId: "",
   });
   const [errors,    setErrors]    = useState({});
   const [saving,    setSaving]    = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  const isDark    = theme === "dark";
-  const bg        = isDark ? "#111111" : "#FFFFFF";
-  const border    = isDark ? "#1E1E1E" : "#E0E0E0";
-  const labelColor= isDark ? "#A0A0A0" : "#888888";
-  const inputBg   = isDark ? "#0A0A0A" : "#F8F8F8";
-  const textColor = isDark ? "#F0F0F0" : "#111111";
+  const isDark     = theme === "dark";
+  const bg         = isDark ? "#111111" : "#FFFFFF";
+  const border     = isDark ? "#1E1E1E" : "#E0E0E0";
+  const labelColor = isDark ? "#A0A0A0" : "#888888";
+  const inputBg    = isDark ? "#0A0A0A" : "#F8F8F8";
+  const textColor  = isDark ? "#F0F0F0" : "#111111";
 
   const validate = () => {
     const e = {};
@@ -495,8 +484,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
 
   const handleSave = async () => {
     if (!validate()) return;
-    setSaving(true);
-    setSaveError("");
+    setSaving(true); setSaveError("");
     try {
       await onSave({ ...form, salary: Number(form.salary) });
     } catch (err) {
@@ -528,60 +516,43 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
     </div>
   );
 
-  // Preview auto-generated credentials (shown only for new employee)
   const previewEmail = form.name ? generateEmail(form.name) : "—";
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200,
-      display: "flex", alignItems: "center", justifyContent: "center" }}
+      display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: "12px",
-        width: "500px", maxHeight: "92vh", overflowY: "auto", padding: "28px" }}>
+        width: "100%", maxWidth: "500px", maxHeight: "92vh", overflowY: "auto", padding: "24px" }}>
 
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
           <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textColor }}>
             {isEdit ? "EDIT EMPLOYEE" : "ADD NEW EMPLOYEE"}
           </span>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: labelColor }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: labelColor, padding: "4px" }}>
             <X size={18} />
           </button>
         </div>
 
-        {/* ── Photo Upload ── */}
-        {/* FIX (Bug 1 - Photo/null empId): For new employees the Firestore
-            empId does not exist yet, so uploading here would put the photo
-            in the wrong Cloudinary folder (ems/employees/temp_<ts>).
-            We only render the uploader for existing employees (isEdit).
-            For new employees a reminder is shown; the photo can be added
-            from the employee drawer after the record is saved. */}
+        {/* Photo section */}
         {isEdit ? (
           <PhotoUploader
-            theme={theme}
-            currentUrl={form.photoUrl}
-            empName={form.name}
-            empId={form.id}
+            theme={theme} currentUrl={form.photoUrl} empName={form.name} empId={form.id}
             onUploaded={(url, publicId) => setForm(f => ({ ...f, photoUrl: url, photoPublicId: publicId }))}
           />
         ) : (
-          <div style={{
-            display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px",
-            padding: "12px 14px", borderRadius: "8px",
-            background: isDark ? "#0A0A0A" : "#F8F8F8",
-            border: `1px solid ${border}`,
-          }}>
-            <div style={{
-              width: "44px", height: "44px", borderRadius: "50%", flexShrink: 0,
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px",
+            padding: "12px 14px", borderRadius: "8px", background: isDark ? "#0A0A0A" : "#F8F8F8",
+            border: `1px solid ${border}` }}>
+            <div style={{ width: "44px", height: "44px", borderRadius: "50%", flexShrink: 0,
               background: "rgba(0,184,184,0.1)", border: "2px dashed rgba(0,184,184,0.4)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
+              display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span style={{ fontSize: "18px" }}>📷</span>
             </div>
             <div>
               <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "12px",
-                color: isDark ? "#A0A0A0" : "#888888", letterSpacing: "0.05em" }}>
-                PHOTO UPLOAD
-              </p>
+                color: isDark ? "#A0A0A0" : "#888888", letterSpacing: "0.05em" }}>PHOTO UPLOAD</p>
               <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px",
                 color: isDark ? "#666666" : "#AAAAAA", marginTop: "2px" }}>
                 Photo can be added after the employee record is saved.
@@ -602,44 +573,38 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
           {field("Monthly Salary (₹)", "salary", "number")}
         </div>
 
-        {/* Auto-credentials preview — only for new employee */}
         {!isEdit && (
-          <div style={{
-            marginTop: "18px", padding: "12px 14px", borderRadius: "8px",
-            background: "rgba(0,184,184,0.06)", border: "1px solid rgba(0,184,184,0.2)",
-          }}>
+          <div style={{ marginTop: "18px", padding: "12px 14px", borderRadius: "8px",
+            background: "rgba(0,184,184,0.06)", border: "1px solid rgba(0,184,184,0.2)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "8px" }}>
               <KeyRound size={13} style={{ color: "#00B8B8" }} />
               <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 700,
-                color: "#00B8B8", letterSpacing: "0.15em" }}>
-                AUTO-GENERATED LOGIN CREDENTIALS
-              </span>
+                color: "#00B8B8", letterSpacing: "0.15em" }}>AUTO-GENERATED LOGIN CREDENTIALS</span>
             </div>
             <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: labelColor, lineHeight: 1.7 }}>
               <span style={{ color: textColor, fontWeight: 600 }}>Email: </span>{previewEmail}<br />
               <span style={{ color: textColor, fontWeight: 600 }}>Password: </span>
               <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8" }}>
-                EmpId@{new Date().getFullYear()} &nbsp;
+                EmpId@{new Date().getFullYear()}&nbsp;
               </span>
               <span style={{ fontSize: "11px" }}>(e.g. RWT013@{new Date().getFullYear()})</span>
             </div>
           </div>
         )}
 
-        {/* Buttons */}
         <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
           <button onClick={onClose} disabled={saving} style={{
             flex: 1, padding: "10px", background: "transparent",
             border: `1px solid ${border}`, borderRadius: "6px",
             color: labelColor, fontFamily: "Rajdhani, sans-serif", fontWeight: 600,
-            fontSize: "13px", cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.05em"
+            fontSize: "13px", cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.05em",
           }}>CANCEL</button>
           <button onClick={handleSave} disabled={saving} style={{
             flex: 2, padding: "10px", background: saving ? "#880000" : "#CC0000",
             border: "none", borderRadius: "6px", color: "#FFFFFF",
             fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px",
             cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.1em",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px"
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
           }}>
             {saving ? (
               <>
@@ -665,7 +630,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
 }
 
 // ── Employee Detail Drawer ─────────────────────────────────────
-function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated }) {
+function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated, isMobile }) {
   const isDark     = theme === "dark";
   const bg         = isDark ? "#111111" : "#FFFFFF";
   const border     = isDark ? "#1E1E1E" : "#E0E0E0";
@@ -673,16 +638,14 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated 
   const textColor  = isDark ? "#F0F0F0" : "#111111";
   const color      = getAvatarColor(emp.id);
 
-  const fileRef    = useRef(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadErr, setUploadErr] = useState("");
+  const fileRef = useRef(null);
+  const [uploading,       setUploading]       = useState(false);
+  const [uploadProgress,  setUploadProgress]  = useState(0);
+  const [uploadErr,       setUploadErr]       = useState("");
 
   const handlePhotoChange = async (file) => {
     if (!file) return;
-    setUploadErr("");
-    setUploading(true);
-    setUploadProgress(0);
+    setUploadErr(""); setUploading(true); setUploadProgress(0);
     try {
       const result = await uploadEmployeePhoto(file, emp.id, (pct) => setUploadProgress(pct));
       await updateEmployeePhoto(emp.id, result.secure_url, result.public_id);
@@ -690,60 +653,63 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated 
     } catch (err) {
       setUploadErr(err.message || "Upload failed.");
     } finally {
-      setUploading(false);
-      setUploadProgress(0);
+      setUploading(false); setUploadProgress(0);
     }
   };
 
   const row = (label, value) => (
     <div style={{ padding: "12px 0", borderBottom: `1px solid ${border}`,
-      display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
       <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
-        color: labelColor, letterSpacing: "0.15em" }}>{label}</span>
-      <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textColor, fontWeight: 500 }}>{value}</span>
+        color: labelColor, letterSpacing: "0.15em", flexShrink: 0 }}>{label}</span>
+      <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textColor,
+        fontWeight: 500, textAlign: "right", wordBreak: "break-word" }}>{value}</span>
     </div>
   );
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: "360px",
-        background: bg, borderLeft: `1px solid ${border}`, display: "flex", flexDirection: "column" }}>
-        {/* Top */}
+      {/* Full-width on mobile, 360 px panel on desktop */}
+      <div style={{
+        position: "absolute", right: 0, top: 0, bottom: 0,
+        width: isMobile ? "100%" : "360px",
+        background: bg, borderLeft: `1px solid ${border}`,
+        display: "flex", flexDirection: "column",
+      }}>
+        {/* Header */}
         <div style={{ padding: "20px", borderBottom: `1px solid ${border}`,
           display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px",
             color: "#CC0000", letterSpacing: "0.15em" }}>EMPLOYEE PROFILE</span>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: labelColor }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer",
+            color: labelColor, padding: "4px" }}>
             <X size={18} />
           </button>
         </div>
 
+        {/* Scrollable body */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px" }}>
-          {/* Avatar with photo support */}
+          {/* Avatar */}
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", marginBottom: "24px" }}>
             <div style={{ position: "relative" }}>
               <div style={{ width: "72px", height: "72px", borderRadius: "50%", overflow: "hidden",
                 background: `${color}20`, border: `2px solid ${color}`,
                 display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {emp.photoUrl ? (
-                  <img src={getThumbnailUrl(emp.photoUrl, 144)} alt={emp.name}
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                ) : (
-                  <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "24px", color }}>
-                    {getInitials(emp.name)}
-                  </span>
-                )}
+                {emp.photoUrl
+                  ? <img src={getThumbnailUrl(emp.photoUrl, 144)} alt={emp.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "24px", color }}>{getInitials(emp.name)}</span>
+                }
                 {uploading && (
                   <div style={{ position: "absolute", inset: 0, borderRadius: "50%",
                     background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center",
-                    justifyContent: "center", flexDirection: "column", gap: "2px" }}>
-                    <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "13px",
-                      fontWeight: 700, color: "#00B8B8" }}>{uploadProgress}%</span>
+                    justifyContent: "center" }}>
+                    <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 700, color: "#00B8B8" }}>
+                      {uploadProgress}%
+                    </span>
                   </div>
                 )}
               </div>
-              {/* Camera button */}
               <button onClick={() => fileRef.current?.click()} disabled={uploading}
                 style={{ position: "absolute", bottom: 0, right: 0, width: "22px", height: "22px",
                   borderRadius: "50%", background: "#CC0000", border: "2px solid " + bg,
@@ -778,23 +744,23 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated 
           {row("MONTHLY SALARY", `₹${Number(emp.salary).toLocaleString("en-IN")}`)}
         </div>
 
-        {/* Actions */}
+        {/* Action buttons */}
         <div style={{ padding: "16px", borderTop: `1px solid ${border}`, display: "flex", gap: "8px" }}>
           <button onClick={() => onEdit(emp)} style={{
-            flex: 1, padding: "9px", background: "transparent", border: `1px solid ${border}`,
+            flex: 1, padding: "10px", background: "transparent", border: `1px solid ${border}`,
             borderRadius: "6px", color: textColor, fontFamily: "Rajdhani, sans-serif",
-            fontWeight: 600, fontSize: "12px", cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", letterSpacing: "0.05em"
+            fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
           }}>
-            <Edit2 size={13} /> EDIT
+            <Edit2 size={14} /> EDIT
           </button>
           <button onClick={() => onDelete(emp)} style={{
-            flex: 1, padding: "9px", background: "rgba(204,0,0,0.1)", border: "1px solid rgba(204,0,0,0.3)",
+            flex: 1, padding: "10px", background: "rgba(204,0,0,0.1)", border: "1px solid rgba(204,0,0,0.3)",
             borderRadius: "6px", color: "#CC0000", fontFamily: "Rajdhani, sans-serif",
-            fontWeight: 600, fontSize: "12px", cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", letterSpacing: "0.05em"
+            fontWeight: 600, fontSize: "13px", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
           }}>
-            <Trash2 size={13} /> REMOVE
+            <Trash2 size={14} /> REMOVE
           </button>
         </div>
 
@@ -805,74 +771,133 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated 
   );
 }
 
+// ── Mobile Employee Card ───────────────────────────────────────
+function EmployeeCard({ emp, theme, onTap, onEdit, onDelete }) {
+  const isDark    = theme === "dark";
+  const cardBg    = isDark ? "#111111" : "#FFFFFF";
+  const border    = isDark ? "#1E1E1E" : "#E0E0E0";
+  const textColor = isDark ? "#F0F0F0" : "#111111";
+  const subColor  = isDark ? "#A0A0A0" : "#888888";
+  const color     = getAvatarColor(emp.id);
+
+  return (
+    <div
+      onClick={() => onTap(emp)}
+      style={{
+        background: cardBg, border: `1px solid ${border}`, borderRadius: "12px",
+        padding: "14px 16px", display: "flex", alignItems: "center", gap: "12px",
+        cursor: "pointer", transition: "border-color 150ms",
+      }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = "#CC0000"}
+      onMouseLeave={e => e.currentTarget.style.borderColor = border}
+    >
+      {/* Avatar */}
+      <div style={{ width: "44px", height: "44px", borderRadius: "50%", flexShrink: 0,
+        background: `${color}20`, border: `1.5px solid ${color}`, overflow: "hidden",
+        display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {emp.photoUrl
+          ? <img src={getThumbnailUrl(emp.photoUrl, 88)} alt={emp.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          : <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color }}>{getInitials(emp.name)}</span>
+        }
+      </div>
+
+      {/* Info */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: "Mulish, sans-serif", fontWeight: 600, fontSize: "14px",
+          color: textColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {emp.name}
+        </div>
+        <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: subColor, marginTop: "1px",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {emp.role} · {emp.department}
+        </div>
+        <div style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8", marginTop: "1px" }}>
+          {emp.id}
+        </div>
+      </div>
+
+      {/* Right side: badge + action buttons */}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px", flexShrink: 0 }}>
+        <StatusBadge status={emp.status} theme={theme} />
+        <div style={{ display: "flex", gap: "6px" }} onClick={e => e.stopPropagation()}>
+          <button onClick={() => onEdit(emp)} style={{
+            width: "30px", height: "30px", background: "transparent",
+            border: `1px solid ${border}`, borderRadius: "6px", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", color: subColor,
+          }}>
+            <Edit2 size={13} />
+          </button>
+          <button onClick={() => onDelete(emp)} style={{
+            width: "30px", height: "30px", background: "transparent",
+            border: "1px solid rgba(204,0,0,0.3)", borderRadius: "6px", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", color: "#CC0000",
+          }}>
+            <Trash2 size={13} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────
 export default function Employees() {
   const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const isMobile  = useIsMobile();
+  const isDark    = theme === "dark";
 
-  const [data,         setData]         = useState([]);
-  const [departments,  setDepartments]  = useState([]);
-  const [search,       setSearch]       = useState("");
-  const [deptFilter,   setDeptFilter]   = useState("All");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [showModal,    setShowModal]    = useState(false);
-  const [editEmp,      setEditEmp]      = useState(null);
-  const [drawer,       setDrawer]       = useState(null);
-  // Credentials popup state
+  const [data,           setData]           = useState([]);
+  const [departments,    setDepartments]    = useState([]);
+  const [search,         setSearch]         = useState("");
+  const [deptFilter,     setDeptFilter]     = useState("All");
+  const [statusFilter,   setStatusFilter]   = useState("All");
+  const [showModal,      setShowModal]      = useState(false);
+  const [editEmp,        setEditEmp]        = useState(null);
+  const [drawer,         setDrawer]         = useState(null);
   const [newCredentials, setNewCredentials] = useState(null);
-  // Confirm delete state
-  const [confirmDelete, setConfirmDelete]   = useState(null); // emp object
-  const [deleting,      setDeleting]        = useState(false);
+  const [confirmDelete,  setConfirmDelete]  = useState(null);
+  const [deleting,       setDeleting]       = useState(false);
 
-  // Real-time employees from Firestore
   useEffect(() => {
     const unsub = subscribeEmployees((list) => setData(list));
     return unsub;
   }, []);
 
-  // Load departments
   useEffect(() => {
-    getDepartments().then((list) => {
-      if (list.length > 0) setDepartments(list);
-    });
+    getDepartments().then((list) => { if (list.length > 0) setDepartments(list); });
   }, []);
 
-  const bg       = isDark ? "#0A0A0A" : "#F4F4F4";
-  const cardBg   = isDark ? "#111111" : "#FFFFFF";
-  const border   = isDark ? "#1E1E1E" : "#E0E0E0";
-  const textColor= isDark ? "#F0F0F0" : "#111111";
-  const subColor = isDark ? "#A0A0A0" : "#888888";
-  const inputBg  = isDark ? "#111111" : "#FFFFFF";
+  // ── Theme tokens ──
+  const bg        = isDark ? "#0A0A0A" : "#F4F4F4";
+  const cardBg    = isDark ? "#111111" : "#FFFFFF";
+  const border    = isDark ? "#1E1E1E" : "#E0E0E0";
+  const textColor = isDark ? "#F0F0F0" : "#111111";
+  const subColor  = isDark ? "#A0A0A0" : "#888888";
+  const inputBg   = isDark ? "#111111" : "#FFFFFF";
 
+  // ── Filtered list ──
   const filtered = data.filter(e => {
-    const matchSearch =
-      e.name.toLowerCase().includes(search.toLowerCase()) ||
-      e.role.toLowerCase().includes(search.toLowerCase()) ||
-      e.id.toLowerCase().includes(search.toLowerCase());
+    const q = search.toLowerCase();
+    const matchSearch = e.name.toLowerCase().includes(q)
+      || e.role.toLowerCase().includes(q)
+      || e.id.toLowerCase().includes(q);
     const matchDept   = deptFilter   === "All" || e.department === deptFilter;
     const matchStatus = statusFilter === "All" || e.status     === statusFilter;
     return matchSearch && matchDept && matchStatus;
   });
 
+  // ── Stat cards data ──
   const stats = [
-    { label: "TOTAL EMPLOYEES", value: data.length, icon: Users,     color: "#00B8B8" },
-    { label: "PRESENT TODAY",   value: data.filter(e => e.status === "Present").length, icon: UserCheck, color: "#00B8B8" },
-    { label: "ABSENT TODAY",    value: data.filter(e => e.status === "Absent").length,  icon: UserX,     color: "#CC0000" },
-    { label: "ON LEAVE / WFH",  value: data.filter(e => e.status === "Leave" || e.status === "WFH").length, icon: Clock, color: "#C9922A" },
+    { label: "TOTAL EMPLOYEES", value: data.length,                                                          icon: Users,     color: "#00B8B8" },
+    { label: "PRESENT TODAY",   value: data.filter(e => e.status === "Present").length,                      icon: UserCheck, color: "#00B8B8" },
+    { label: "ABSENT TODAY",    value: data.filter(e => e.status === "Absent").length,                       icon: UserX,     color: "#CC0000" },
+    { label: "ON LEAVE / WFH",  value: data.filter(e => e.status === "Leave" || e.status === "WFH").length,  icon: Clock,     color: "#C9922A" },
   ];
 
-  // ── Add employee: save to Firestore + create Firebase Auth account ──
+  // ── Handlers ──
   const handleAdd = async (form) => {
-    // 1. Save employee record to Firestore and get the new RWT ID
     const empId = await addEmployee({ ...form, salary: Number(form.salary) });
-
-    // 2. Create Firebase Auth + /users profile automatically
-    const creds = await createEmployeeAccount(
-      { empId, name: form.name, role: form.role },
-      firebaseConfig
-    );
-
-    // 3. Close modal and show credentials popup
+    const creds = await createEmployeeAccount({ empId, name: form.name, role: form.role }, firebaseConfig);
     setShowModal(false);
     setNewCredentials({ ...creds, empId, name: form.name });
   };
@@ -883,19 +908,14 @@ export default function Employees() {
     setDrawer(null);
   };
 
-  const handleDelete = (emp) => {
-    setDrawer(null);
-    setConfirmDelete(emp);
-  };
+  const handleDelete = (emp) => { setDrawer(null); setConfirmDelete(emp); };
 
   const confirmDeleteEmployee = async () => {
     if (!confirmDelete) return;
     setDeleting(true);
     try {
       await deleteEmployeeAccount(confirmDelete.id, firebaseConfig);
-      // FIX (Bug 1): Optimistically remove the employee from local state for
-      // instant UI feedback without waiting for the Firestore listener.
-      setData((prev) => prev.filter((e) => e.id !== confirmDelete.id));
+      setData(prev => prev.filter(e => e.id !== confirmDelete.id));
       setConfirmDelete(null);
       setDrawer(null);
     } catch (err) {
@@ -906,112 +926,177 @@ export default function Employees() {
     }
   };
 
-  const openEdit = (emp) => {
-    setDrawer(null);
-    setEditEmp(emp);
+  const openEdit = (emp) => { setDrawer(null); setEditEmp(emp); };
+
+  // ── Shared select style ──
+  const selectStyle = {
+    appearance: "none",
+    paddingLeft: "10px",
+    paddingRight: "26px",
+    height: "38px",
+    background: inputBg,
+    border: `1px solid ${border}`,
+    borderRadius: "6px",
+    color: textColor,
+    fontFamily: "Mulish, sans-serif",
+    fontSize: "13px",
+    cursor: "pointer",
+    outline: "none",
+    width: "100%",
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: bg, padding: "24px" }}>
+    <div style={{ minHeight: "100vh", background: bg, padding: isMobile ? "12px" : "24px" }}>
 
-      {/* Stats Row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "20px" }}>
+      {/* ── Stat Cards ── 2-col on mobile, 4-col on desktop */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)",
+        gap: "10px",
+        marginBottom: "16px",
+      }}>
         {stats.map(s => (
-          <div key={s.label} style={{ background: cardBg, border: `1px solid ${border}`,
-            borderRadius: "10px", padding: "16px 20px", display: "flex", alignItems: "center", gap: "14px" }}>
-            <div style={{ width: "40px", height: "40px", borderRadius: "8px",
+          <div key={s.label} style={{
+            background: cardBg, border: `1px solid ${border}`,
+            borderRadius: "10px", padding: isMobile ? "12px 14px" : "16px 20px",
+            display: "flex", alignItems: "center", gap: "12px",
+          }}>
+            <div style={{ width: "38px", height: "38px", borderRadius: "8px", flexShrink: 0,
               background: `${s.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <s.icon size={18} style={{ color: s.color }} />
+              <s.icon size={17} style={{ color: s.color }} />
             </div>
-            <div>
-              <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "26px",
-                color: textColor, lineHeight: 1 }}>{s.value}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+                fontSize: isMobile ? "22px" : "26px", color: textColor, lineHeight: 1 }}>
+                {s.value}
+              </div>
               <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
-                color: "#CC0000", letterSpacing: "0.15em", marginTop: "2px" }}>{s.label}</div>
+                color: "#CC0000", letterSpacing: "0.12em", marginTop: "2px",
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {s.label}
+              </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Toolbar */}
+      {/* ── Toolbar ── */}
       <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "10px",
-        padding: "14px 16px", display: "flex", alignItems: "center", gap: "10px",
-        marginBottom: "16px", flexWrap: "wrap" }}>
+        padding: "12px 14px", marginBottom: "14px",
+        display: "flex", flexDirection: "column", gap: "10px" }}>
 
-        {/* Search */}
-        <div style={{ flex: 1, minWidth: "180px", position: "relative" }}>
+        {/* Row 1: Search (always full-width) */}
+        <div style={{ position: "relative" }}>
           <Search size={14} style={{ position: "absolute", left: "10px", top: "50%",
-            transform: "translateY(-50%)", color: subColor }} />
-          <input value={search} onChange={e => setSearch(e.target.value)}
+            transform: "translateY(-50%)", color: subColor, pointerEvents: "none" }} />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
             placeholder="Search name, role, ID…"
-            style={{ width: "100%", paddingLeft: "32px", paddingRight: "10px", height: "36px",
+            style={{ width: "100%", paddingLeft: "34px", paddingRight: "10px", height: "38px",
               background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
               color: textColor, fontFamily: "Mulish, sans-serif", fontSize: "13px",
-              outline: "none", boxSizing: "border-box" }} />
+              outline: "none", boxSizing: "border-box" }}
+          />
         </div>
 
-        {/* Dept Filter */}
-        <div style={{ position: "relative" }}>
-          <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
-            style={{ appearance: "none", paddingLeft: "12px", paddingRight: "28px", height: "36px",
-              background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
-              color: textColor, fontFamily: "Mulish, sans-serif", fontSize: "13px",
-              cursor: "pointer", outline: "none" }}>
-            <option value="All">All Departments</option>
-            {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-          </select>
-          <ChevronDown size={12} style={{ position: "absolute", right: "8px", top: "50%",
-            transform: "translateY(-50%)", color: subColor, pointerEvents: "none" }} />
-        </div>
+        {/* Row 2: filters + add button */}
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
 
-        {/* Status Filter */}
-        <div style={{ position: "relative" }}>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            style={{ appearance: "none", paddingLeft: "12px", paddingRight: "28px", height: "36px",
-              background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
-              color: textColor, fontFamily: "Mulish, sans-serif", fontSize: "13px",
-              cursor: "pointer", outline: "none" }}>
-            <option value="All">All Status</option>
-            {["Present", "Absent", "Leave", "WFH"].map(s =>
-              <option key={s} value={s}>{s}</option>
-            )}
-          </select>
-          <ChevronDown size={12} style={{ position: "absolute", right: "8px", top: "50%",
-            transform: "translateY(-50%)", color: subColor, pointerEvents: "none" }} />
-        </div>
+          {/* Dept filter */}
+          <div style={{ position: "relative", flex: "1 1 130px", minWidth: "110px" }}>
+            <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={selectStyle}>
+              <option value="All">All Departments</option>
+              {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+            </select>
+            <ChevronDown size={12} style={{ position: "absolute", right: "8px", top: "50%",
+              transform: "translateY(-50%)", color: subColor, pointerEvents: "none" }} />
+          </div>
 
-        {/* Add Button */}
-        <button onClick={() => setShowModal(true)}
-          style={{ display: "flex", alignItems: "center", gap: "6px", height: "36px",
-            padding: "0 16px", background: "#CC0000", border: "none", borderRadius: "6px",
-            color: "#FFFFFF", fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
-            fontSize: "13px", cursor: "pointer", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
-          <Plus size={14} /> ADD EMPLOYEE
-        </button>
+          {/* Status filter */}
+          <div style={{ position: "relative", flex: "1 1 110px", minWidth: "100px" }}>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectStyle}>
+              <option value="All">All Status</option>
+              {["Present", "Absent", "Leave", "WFH"].map(s =>
+                <option key={s} value={s}>{s}</option>
+              )}
+            </select>
+            <ChevronDown size={12} style={{ position: "absolute", right: "8px", top: "50%",
+              transform: "translateY(-50%)", color: subColor, pointerEvents: "none" }} />
+          </div>
+
+          {/* Add employee button — pushes to far right */}
+          <button
+            onClick={() => setShowModal(true)}
+            style={{ display: "flex", alignItems: "center", gap: "6px", height: "38px",
+              padding: "0 16px", background: "#CC0000", border: "none", borderRadius: "6px",
+              color: "#FFFFFF", fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+              fontSize: "13px", cursor: "pointer", letterSpacing: "0.08em",
+              whiteSpace: "nowrap", marginLeft: "auto" }}
+          >
+            <Plus size={14} />
+            {isMobile ? "ADD" : "ADD EMPLOYEE"}
+          </button>
+        </div>
       </div>
 
-      {/* Table */}
-      <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "10px", overflow: "hidden" }}>
-        {/* Header */}
-        <div style={{ display: "grid", gridTemplateColumns: "44px 1fr 1fr 1fr 110px 120px 80px",
-          padding: "10px 16px", borderBottom: `1px solid ${border}`,
-          background: isDark ? "#0D0D0D" : "#F8F8F8" }}>
-          {["#", "EMPLOYEE", "ROLE", "DEPARTMENT", "STATUS", "SALARY", ""].map((h, i) => (
-            <span key={i} style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px",
-              fontWeight: 700, color: "#CC0000", letterSpacing: "0.2em" }}>{h}</span>
+      {/* ── MOBILE: Card list ── */}
+      {isMobile && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: "48px", textAlign: "center", fontFamily: "Mulish, sans-serif",
+              fontSize: "13px", color: subColor }}>
+              No employees found
+            </div>
+          ) : filtered.map(emp => (
+            <EmployeeCard
+              key={emp.id}
+              emp={emp}
+              theme={theme}
+              onTap={setDrawer}
+              onEdit={openEdit}
+              onDelete={handleDelete}
+            />
           ))}
-        </div>
 
-        {filtered.length === 0 ? (
-          <div style={{ padding: "48px", textAlign: "center", color: subColor,
-            fontFamily: "Mulish, sans-serif", fontSize: "13px" }}>
-            No employees found
+          {/* Footer count */}
+          {filtered.length > 0 && (
+            <div style={{ padding: "12px 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: subColor }}>
+                Showing {filtered.length} of {data.length} employees
+              </span>
+              <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8" }}>
+                ROYALS WEBTECH
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── DESKTOP: Table ── */}
+      {!isMobile && (
+        <div style={{ background: cardBg, border: `1px solid ${border}`, borderRadius: "10px", overflow: "hidden" }}>
+          {/* Table header */}
+          <div style={{ display: "grid", gridTemplateColumns: "44px 1fr 1fr 1fr 110px 120px 80px",
+            padding: "10px 16px", borderBottom: `1px solid ${border}`,
+            background: isDark ? "#0D0D0D" : "#F8F8F8" }}>
+            {["#", "EMPLOYEE", "ROLE", "DEPARTMENT", "STATUS", "SALARY", ""].map((h, i) => (
+              <span key={i} style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px",
+                fontWeight: 700, color: "#CC0000", letterSpacing: "0.2em" }}>{h}</span>
+            ))}
           </div>
-        ) : (
-          filtered.map((emp, idx) => {
+
+          {/* Rows */}
+          {filtered.length === 0 ? (
+            <div style={{ padding: "48px", textAlign: "center", color: subColor,
+              fontFamily: "Mulish, sans-serif", fontSize: "13px" }}>
+              No employees found
+            </div>
+          ) : filtered.map((emp, idx) => {
             const color = getAvatarColor(emp.id);
             return (
-              <div key={emp.id}
+              <div
+                key={emp.id}
                 onClick={() => setDrawer(emp)}
                 style={{ display: "grid", gridTemplateColumns: "44px 1fr 1fr 1fr 110px 120px 80px",
                   padding: "12px 16px",
@@ -1020,23 +1105,21 @@ export default function Employees() {
                 onMouseEnter={e => e.currentTarget.style.background = isDark ? "#161616" : "#F9F9F9"}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               >
+                {/* # */}
                 <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px",
                   color: subColor, display: "flex", alignItems: "center" }}>
                   {String(idx + 1).padStart(2, "0")}
                 </span>
 
+                {/* Employee */}
                 <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <div style={{ width: "32px", height: "32px", borderRadius: "50%", flexShrink: 0,
                     background: `${color}20`, border: `1.5px solid ${color}`, overflow: "hidden",
                     display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {emp.photoUrl ? (
-                      <img src={getThumbnailUrl(emp.photoUrl, 64)} alt={emp.name}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    ) : (
-                      <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px", color }}>
-                        {getInitials(emp.name)}
-                      </span>
-                    )}
+                    {emp.photoUrl
+                      ? <img src={getThumbnailUrl(emp.photoUrl, 64)} alt={emp.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px", color }}>{getInitials(emp.name)}</span>
+                    }
                   </div>
                   <div>
                     <div style={{ fontFamily: "Mulish, sans-serif", fontWeight: 600, fontSize: "13px", color: textColor }}>
@@ -1048,104 +1131,86 @@ export default function Employees() {
                   </div>
                 </div>
 
+                {/* Role */}
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: subColor }}>{emp.role}</span>
                 </div>
 
+                {/* Department */}
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textColor }}>{emp.department}</span>
                 </div>
 
+                {/* Status */}
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <StatusBadge status={emp.status} theme={theme} />
                 </div>
 
+                {/* Salary */}
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: "#00B8B8" }}>
                     ₹{Number(emp.salary).toLocaleString("en-IN")}
                   </span>
                 </div>
 
+                {/* Actions */}
                 <div style={{ display: "flex", alignItems: "center", gap: "6px" }}
                   onClick={e => e.stopPropagation()}>
-                  <button onClick={() => openEdit(emp)}
-                    style={{ width: "28px", height: "28px", background: "transparent",
-                      border: `1px solid ${border}`, borderRadius: "4px", cursor: "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "center", color: subColor }}>
+                  <button onClick={() => openEdit(emp)} style={{
+                    width: "28px", height: "28px", background: "transparent",
+                    border: `1px solid ${border}`, borderRadius: "4px", cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center", color: subColor,
+                  }}>
                     <Edit2 size={12} />
                   </button>
-                  <button onClick={() => handleDelete(emp)}
-                    style={{ width: "28px", height: "28px", background: "transparent",
-                      border: "1px solid rgba(204,0,0,0.3)", borderRadius: "4px", cursor: "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "center", color: "#CC0000" }}>
+                  <button onClick={() => handleDelete(emp)} style={{
+                    width: "28px", height: "28px", background: "transparent",
+                    border: "1px solid rgba(204,0,0,0.3)", borderRadius: "4px", cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center", color: "#CC0000",
+                  }}>
                     <Trash2 size={12} />
                   </button>
                 </div>
               </div>
             );
-          })
-        )}
+          })}
 
-        {/* Footer */}
-        <div style={{ padding: "10px 16px", borderTop: `1px solid ${border}`,
-          background: isDark ? "#0D0D0D" : "#F8F8F8",
-          display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: subColor }}>
-            Showing {filtered.length} of {data.length} employees
-          </span>
-          <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8" }}>
-            ROYALS WEBTECH
-          </span>
+          {/* Footer */}
+          <div style={{ padding: "10px 16px", borderTop: `1px solid ${border}`,
+            background: isDark ? "#0D0D0D" : "#F8F8F8",
+            display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: subColor }}>
+              Showing {filtered.length} of {data.length} employees
+            </span>
+            <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8" }}>
+              ROYALS WEBTECH
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Modals */}
+      {/* ── Modals ── */}
       {showModal && (
-        <EmployeeModal
-          theme={theme}
-          onClose={() => setShowModal(false)}
-          onSave={handleAdd}
-          departments={departments}
-        />
+        <EmployeeModal theme={theme} onClose={() => setShowModal(false)}
+          onSave={handleAdd} departments={departments} />
       )}
       {editEmp && (
-        <EmployeeModal
-          theme={theme}
-          onClose={() => setEditEmp(null)}
-          onSave={handleEdit}
-          initial={editEmp}
-          departments={departments}
-        />
+        <EmployeeModal theme={theme} onClose={() => setEditEmp(null)}
+          onSave={handleEdit} initial={editEmp} departments={departments} />
       )}
       {drawer && (
-        <EmployeeDrawer
-          emp={drawer}
-          theme={theme}
-          onClose={() => setDrawer(null)}
-          onEdit={openEdit}
-          onDelete={handleDelete}
-          onPhotoUpdated={() => {/* subscribeEmployees auto-refreshes */}}
-        />
+        <EmployeeDrawer emp={drawer} theme={theme} isMobile={isMobile}
+          onClose={() => setDrawer(null)} onEdit={openEdit}
+          onDelete={handleDelete} onPhotoUpdated={() => {}} />
       )}
-
-      {/* Confirm delete popup */}
       {confirmDelete && (
-        <ConfirmDeleteModal
-          theme={theme}
-          emp={confirmDelete}
-          deleting={deleting}
+        <ConfirmDeleteModal theme={theme} emp={confirmDelete} deleting={deleting}
           onConfirm={confirmDeleteEmployee}
-          onCancel={() => !deleting && setConfirmDelete(null)}
-        />
+          onCancel={() => !deleting && setConfirmDelete(null)} />
       )}
-
-      {/* Credentials popup — shown after new employee is created */}
       {newCredentials && (
-        <CredentialsModal
-          theme={theme}
-          credentials={newCredentials}
-          onClose={() => setNewCredentials(null)}
-        />
+        <CredentialsModal theme={theme} credentials={newCredentials}
+          onClose={() => setNewCredentials(null)} />
       )}
     </div>
   );

@@ -3,7 +3,7 @@ import { useTheme } from "../App";
 import {
   Users, UserCheck, UserX, DollarSign,
   TrendingUp, TrendingDown, Download, Plus,
-  Check, X
+  Check, X, KeyRound, ShieldCheck, Copy, CheckCheck,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -14,7 +14,11 @@ import {
   subscribeLeaveRequests,
   updateLeaveStatus,
   getAttendanceByDate,
+  addEmployee,
+  getDepartments,
 } from "../firebase/firestoreService";
+import { createEmployeeAccount, generateEmail } from "../firebase/employeeAuthService";
+import { firebaseConfig } from "../firebase/config";
 
 
 // ── helpers ──────────────────────────────────────────
@@ -191,6 +195,339 @@ function lastNDates(n) {
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// ── Credentials Modal (copied from Employees.jsx) ────────────
+function CredentialsModal({ theme, credentials, onClose }) {
+  const isDark  = theme === "dark";
+  const bg      = isDark ? "#111111" : "#FFFFFF";
+  const border  = isDark ? "#1E1E1E" : "#E0E0E0";
+  const inputBg = isDark ? "#0A0A0A" : "#F4F4F4";
+  const text    = isDark ? "#F0F0F0" : "#111111";
+  const sub     = isDark ? "#A0A0A0" : "#888888";
+
+  const [copiedEmail, setCopiedEmail] = useState(false);
+  const [copiedPass,  setCopiedPass]  = useState(false);
+  const [copiedAll,   setCopiedAll]   = useState(false);
+
+  const copy = (value, setter) => {
+    navigator.clipboard.writeText(value);
+    setter(true);
+    setTimeout(() => setter(false), 2000);
+  };
+
+  const copyAll = () => {
+    const msg =
+      `Employee Login Credentials\n` +
+      `---------------------------\n` +
+      `Email:    ${credentials.email}\n` +
+      `Password: ${credentials.password}\n` +
+      `Emp ID:   ${credentials.empId}\n` +
+      `\nLogin at: ${window.location.origin}/login`;
+    copy(msg, setCopiedAll);
+  };
+
+  const CopyBtn = ({ value, copied, setter, label }) => (
+    <button
+      onClick={() => copy(value, setter)}
+      title={`Copy ${label}`}
+      style={{
+        background: copied ? "rgba(0,184,184,0.15)" : "transparent",
+        border: `1px solid ${copied ? "#00B8B8" : border}`,
+        borderRadius: "5px", padding: "4px 8px", cursor: "pointer",
+        display: "flex", alignItems: "center", gap: "4px",
+        color: copied ? "#00B8B8" : sub,
+        fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600,
+        transition: "all 200ms", flexShrink: 0,
+      }}
+    >
+      {copied ? <CheckCheck size={12} /> : <Copy size={12} />}
+      {copied ? "COPIED" : "COPY"}
+    </button>
+  );
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
+      zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "16px",
+    }}>
+      <div style={{
+        background: bg, border: `1px solid ${border}`, borderRadius: "14px",
+        width: "100%", maxWidth: "460px", padding: "24px",
+        boxShadow: "0 32px 80px rgba(0,0,0,0.5)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "6px" }}>
+          <div style={{
+            width: "40px", height: "40px", borderRadius: "10px", flexShrink: 0,
+            background: "rgba(0,184,184,0.12)", border: "1px solid rgba(0,184,184,0.3)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <ShieldCheck size={20} style={{ color: "#00B8B8" }} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: text }}>
+              Employee Account Created
+            </div>
+            <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: sub, marginTop: "1px" }}>
+              Share with <strong style={{ color: text }}>{credentials.name}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ borderTop: `1px solid ${border}`, margin: "18px 0" }} />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          {/* Emp ID */}
+          <div>
+            <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+              color: "#CC0000", letterSpacing: "0.18em", display: "block", marginBottom: "6px" }}>
+              EMPLOYEE ID
+            </label>
+            <div style={{ background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
+              padding: "9px 12px", fontFamily: "Share Tech Mono, monospace", fontSize: "14px",
+              color: "#00B8B8", letterSpacing: "0.08em" }}>
+              {credentials.empId}
+            </div>
+          </div>
+          {/* Email */}
+          <div>
+            <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+              color: "#CC0000", letterSpacing: "0.18em", display: "block", marginBottom: "6px" }}>
+              LOGIN EMAIL
+            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ flex: 1, minWidth: 0, background: inputBg, border: `1px solid ${border}`,
+                borderRadius: "6px", padding: "9px 12px", fontFamily: "Mulish, sans-serif",
+                fontSize: "13px", color: text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {credentials.email}
+              </div>
+              <CopyBtn value={credentials.email} copied={copiedEmail} setter={setCopiedEmail} label="email" />
+            </div>
+          </div>
+          {/* Password */}
+          <div>
+            <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+              color: "#CC0000", letterSpacing: "0.18em", display: "block", marginBottom: "6px" }}>
+              DEFAULT PASSWORD
+            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ flex: 1, background: inputBg, border: "1px solid rgba(0,184,184,0.3)",
+                borderRadius: "6px", padding: "9px 12px", fontFamily: "Share Tech Mono, monospace",
+                fontSize: "14px", color: "#00B8B8", letterSpacing: "0.08em" }}>
+                {credentials.password}
+              </div>
+              <CopyBtn value={credentials.password} copied={copiedPass} setter={setCopiedPass} label="password" />
+            </div>
+          </div>
+        </div>
+
+        <div style={{
+          marginTop: "16px", padding: "10px 12px", borderRadius: "7px",
+          background: "rgba(201,146,42,0.08)", border: "1px solid rgba(201,146,42,0.25)",
+          fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#C9922A", lineHeight: 1.5,
+        }}>
+          💡 Ask the employee to change their password after first login. These credentials are auto-generated.
+        </div>
+
+        <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+          <button onClick={copyAll} style={{
+            flex: 1, padding: "10px", borderRadius: "6px", cursor: "pointer",
+            background: copiedAll ? "rgba(0,184,184,0.15)" : "transparent",
+            border: `1px solid ${copiedAll ? "#00B8B8" : border}`,
+            color: copiedAll ? "#00B8B8" : sub,
+            fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "12px",
+            letterSpacing: "0.08em", display: "flex", alignItems: "center",
+            justifyContent: "center", gap: "6px", transition: "all 200ms",
+          }}>
+            {copiedAll ? <CheckCheck size={14} /> : <Copy size={14} />}
+            {copiedAll ? "COPIED ALL" : "COPY ALL"}
+          </button>
+          <button onClick={onClose} style={{
+            flex: 2, padding: "10px", borderRadius: "6px", cursor: "pointer",
+            background: "#CC0000", border: "none", color: "#FFFFFF",
+            fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px",
+            letterSpacing: "0.1em",
+          }}>
+            DONE
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Employee Modal (copied from Employees.jsx) ────────────────
+function EmployeeModal({ theme, onClose, onSave, departments }) {
+  const [form, setForm] = useState({
+    name: "", role: "", department: departments[0]?.name || "Engineering",
+    email: "", phone: "", joinDate: "", completionDate: "", status: "Present", salary: "",
+    workType: "WFO", photoUrl: "", photoPublicId: "",
+  });
+  const [errors,    setErrors]    = useState({});
+  const [saving,    setSaving]    = useState(false);
+  const [saveError, setSaveError] = useState("");
+
+  const isDark     = theme === "dark";
+  const bg         = isDark ? "#111111" : "#FFFFFF";
+  const border     = isDark ? "#1E1E1E" : "#E0E0E0";
+  const labelColor = isDark ? "#A0A0A0" : "#888888";
+  const inputBg    = isDark ? "#0A0A0A" : "#F8F8F8";
+  const textColor  = isDark ? "#F0F0F0" : "#111111";
+
+  const validate = () => {
+    const e = {};
+    if (!form.name.trim())  e.name  = "Required";
+    if (!form.role.trim())  e.role  = "Required";
+    if (!form.email.trim() || !form.email.includes("@")) e.email = "Valid email required";
+    if (!form.phone.trim()) e.phone = "Required";
+    if (!form.joinDate)     e.joinDate = "Required";
+    if (!form.salary || isNaN(form.salary)) e.salary = "Valid number required";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSave = async () => {
+    if (!validate()) return;
+    setSaving(true); setSaveError("");
+    try {
+      await onSave({ ...form, salary: Number(form.salary) });
+    } catch (err) {
+      setSaveError(err.message || "Failed to save. Please try again.");
+      setSaving(false);
+    }
+  };
+
+  const field = (label, key, type = "text", opts) => (
+    <div>
+      <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 700,
+        color: "#CC0000", letterSpacing: "0.15em", display: "block", marginBottom: "6px" }}>
+        {label.toUpperCase()}{errors[key] ? ` — ${errors[key]}` : ""}
+      </label>
+      {opts ? (
+        <select value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          style={{ width: "100%", background: inputBg, border: `1px solid ${errors[key] ? "#CC0000" : border}`,
+            color: textColor, borderRadius: "6px", padding: "8px 10px",
+            fontFamily: "Mulish, sans-serif", fontSize: "13px", outline: "none" }}>
+          {opts.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      ) : (
+        <input type={type} value={form[key]}
+          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+          style={{ width: "100%", background: inputBg, border: `1px solid ${errors[key] ? "#CC0000" : border}`,
+            color: textColor, borderRadius: "6px", padding: "8px 10px",
+            fontFamily: "Mulish, sans-serif", fontSize: "13px", outline: "none", boxSizing: "border-box" }} />
+      )}
+    </div>
+  );
+
+  const previewEmail = form.name ? generateEmail(form.name) : "—";
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: "12px",
+        width: "100%", maxWidth: "500px", maxHeight: "92vh", overflowY: "auto", padding: "24px" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textColor }}>
+            ADD NEW EMPLOYEE
+          </span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: labelColor, padding: "4px" }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Photo note */}
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "18px",
+          padding: "12px 14px", borderRadius: "8px", background: isDark ? "#0A0A0A" : "#F8F8F8",
+          border: `1px solid ${border}` }}>
+          <div style={{ width: "44px", height: "44px", borderRadius: "50%", flexShrink: 0,
+            background: "rgba(0,184,184,0.1)", border: "2px dashed rgba(0,184,184,0.4)",
+            display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ fontSize: "18px" }}>📷</span>
+          </div>
+          <div>
+            <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "12px",
+              color: labelColor, letterSpacing: "0.05em" }}>PHOTO UPLOAD</p>
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px",
+              color: isDark ? "#666666" : "#AAAAAA", marginTop: "2px" }}>
+              Photo can be added after the employee record is saved.
+            </p>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: "14px" }}>
+          {field("Full Name", "name")}
+          {field("Role / Designation", "role")}
+          {field("Department", "department", "text", departments.map(d => d.name))}
+          {field("Email Address", "email", "email")}
+          {field("Phone", "phone")}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            {field("Join Date", "joinDate", "date")}
+            {field("Completion Date", "completionDate", "date")}
+          </div>
+          {field("Status", "status", "text", ["Present", "Absent", "Leave", "WFH"])}
+          {field("Work Type", "workType", "text", ["WFO", "WFH", "Hybrid"])}
+          {field("Monthly Salary (₹)", "salary", "number")}
+        </div>
+
+        {/* Auto-credentials preview */}
+        <div style={{ marginTop: "18px", padding: "12px 14px", borderRadius: "8px",
+          background: "rgba(0,184,184,0.06)", border: "1px solid rgba(0,184,184,0.2)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "8px" }}>
+            <KeyRound size={13} style={{ color: "#00B8B8" }} />
+            <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 700,
+              color: "#00B8B8", letterSpacing: "0.15em" }}>AUTO-GENERATED LOGIN CREDENTIALS</span>
+          </div>
+          <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: labelColor, lineHeight: 1.7 }}>
+            <span style={{ color: textColor, fontWeight: 600 }}>Email: </span>{previewEmail}<br />
+            <span style={{ color: textColor, fontWeight: 600 }}>Password: </span>
+            <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8" }}>
+              EmpId@{new Date().getFullYear()}&nbsp;
+            </span>
+            <span style={{ fontSize: "11px" }}>(e.g. RWT013@{new Date().getFullYear()})</span>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+          <button onClick={onClose} disabled={saving} style={{
+            flex: 1, padding: "10px", background: "transparent",
+            border: `1px solid ${border}`, borderRadius: "6px",
+            color: labelColor, fontFamily: "Rajdhani, sans-serif", fontWeight: 600,
+            fontSize: "13px", cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.05em",
+          }}>CANCEL</button>
+          <button onClick={handleSave} disabled={saving} style={{
+            flex: 2, padding: "10px", background: saving ? "#880000" : "#CC0000",
+            border: "none", borderRadius: "6px", color: "#FFFFFF",
+            fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px",
+            cursor: saving ? "not-allowed" : "pointer", letterSpacing: "0.1em",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+          }}>
+            {saving ? (
+              <>
+                <div style={{ width: "14px", height: "14px", borderRadius: "50%",
+                  border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff",
+                  animation: "spin 0.7s linear infinite" }} />
+                CREATING ACCOUNT...
+              </>
+            ) : "ADD EMPLOYEE"}
+          </button>
+        </div>
+
+        {saveError && (
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#CC0000",
+            marginTop: "10px", textAlign: "center", background: "rgba(204,0,0,0.08)",
+            border: "1px solid rgba(204,0,0,0.2)", borderRadius: "6px", padding: "8px" }}>
+            ⚠ {saveError}
+          </p>
+        )}
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Dashboard ────────────────────────────────────
 function Dashboard() {
   const { theme } = useTheme();
@@ -199,6 +536,9 @@ function Dashboard() {
   const [leaves,            setLeaves]            = useState([]);
   const [weeklyAttendance,  setWeeklyAttendance]  = useState([]);
   const [loadingAttendance, setLoadingAttendance] = useState(true);
+  const [showModal,         setShowModal]         = useState(false);
+  const [newCredentials,    setNewCredentials]    = useState(null);
+  const [departments,       setDepartments]       = useState([]);
 
   useEffect(() => {
     const unsub = subscribeEmployees((list) => setEmployees(list));
@@ -236,8 +576,60 @@ function Dashboard() {
 
   const pendingLeaves = leaves.filter((l) => l.status === "Pending");
 
+  useEffect(() => {
+    getDepartments().then((list) => { if (list.length > 0) setDepartments(list); });
+  }, []);
+
   const handleApprove = async (id) => { await updateLeaveStatus(id, "Approved"); };
   const handleReject  = async (id) => { await updateLeaveStatus(id, "Rejected"); };
+
+  // ── Add Employee ──────────────────────────────────────
+  const handleAdd = async (form) => {
+    const empId = await addEmployee({ ...form, salary: Number(form.salary) });
+    const creds = await createEmployeeAccount({ empId, name: form.name, role: form.role }, firebaseConfig);
+    setShowModal(false);
+    setNewCredentials({ ...creds, empId, name: form.name });
+  };
+
+  // ── Export employees as CSV ───────────────────────────
+  const handleExport = () => {
+    if (employees.length === 0) return;
+
+    const escape = (val) => {
+      const s = val == null ? "" : String(val);
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const headers = [
+      "Name", "Role", "Department", "Email",
+      "Phone", "Join Date", "Status", "Salary (₹)",
+    ];
+
+    const rows = employees.map((e) =>
+      [
+        escape(e.name),
+        escape(e.role),
+        escape(e.department),
+        escape(e.email),
+        escape(e.phone),
+        escape(e.joinDate),
+        escape(e.status),
+        e.salary || 0,
+      ].join(",")
+    );
+
+    const csv  = "\uFEFF" + [headers.join(","), ...rows].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href     = url;
+    link.download = `employees_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   const spark1 = [28,30,28,31,29,32, employees.length].map((v) => ({ v }));
   const spark2 = [8,10,9,11,10,12,   present].map((v)            => ({ v }));
@@ -256,6 +648,7 @@ function Dashboard() {
   });
 
   return (
+    <>
     <div className="flex flex-col gap-4 sm:gap-6">
 
       {/* ── Greeting Card ── */}
@@ -299,7 +692,9 @@ function Dashboard() {
         {/* Action Buttons */}
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
           <button
+            onClick={handleExport}
             className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-md"
+            title={`Download ${employees.length} employee record(s) as CSV`}
             style={{
               fontFamily: "Rajdhani, sans-serif",
               fontWeight: 700,
@@ -309,14 +704,27 @@ function Dashboard() {
               background: "transparent",
               letterSpacing: "0.05em",
               whiteSpace: "nowrap",
+              cursor: employees.length === 0 ? "not-allowed" : "pointer",
+              opacity: employees.length === 0 ? 0.45 : 1,
+              transition: "all 150ms",
             }}
-            onMouseEnter={(e) => e.currentTarget.style.borderColor = "#00B8B8"}
-            onMouseLeave={(e) => e.currentTarget.style.borderColor = border}
+            onMouseEnter={(e) => {
+              if (employees.length === 0) return;
+              e.currentTarget.style.borderColor = "#00B8B8";
+              e.currentTarget.style.color = "#00B8B8";
+              e.currentTarget.style.background = "rgba(0,184,184,0.07)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = border;
+              e.currentTarget.style.color = textPri;
+              e.currentTarget.style.background = "transparent";
+            }}
           >
             <Download size={13} />
-            <span className="hidden sm:inline">Export</span>
+            <span className="hidden sm:inline">Export CSV</span>
           </button>
           <button
+            onClick={() => setShowModal(true)}
             className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-md"
             style={{
               fontFamily: "Rajdhani, sans-serif",
@@ -327,6 +735,7 @@ function Dashboard() {
               border: "none",
               letterSpacing: "0.05em",
               whiteSpace: "nowrap",
+              cursor: "pointer",
             }}
             onMouseEnter={(e) => e.currentTarget.style.background = "#AA0000"}
             onMouseLeave={(e) => e.currentTarget.style.background = "#CC0000"}
@@ -642,6 +1051,24 @@ function Dashboard() {
         </div>
       </div>
     </div>
+
+    {/* ── Modals ── */}
+    {showModal && (
+      <EmployeeModal
+        theme={theme}
+        onClose={() => setShowModal(false)}
+        onSave={handleAdd}
+        departments={departments}
+      />
+    )}
+    {newCredentials && (
+      <CredentialsModal
+        theme={theme}
+        credentials={newCredentials}
+        onClose={() => setNewCredentials(null)}
+      />
+    )}
+    </>
   );
 }
 

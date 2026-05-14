@@ -46,6 +46,8 @@ const pageTitles = {
 // ── Sidebar ───────────────────────────────────────────
 function Sidebar({ open, onClose }) {
   const navigate = useNavigate();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
 
   const userRaw = localStorage.getItem("rwt-user");
   const user = userRaw
@@ -92,8 +94,8 @@ function Sidebar({ open, onClose }) {
           top: 0,
           height: "100dvh",
           width: `${SIDEBAR_W}px`,
-          background: "#050505",
-          borderRight: "1px solid #1A1A1A",
+          background: isDark ? "#050505" : "#FFFFFF",
+          borderRight: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`,
           display: "flex",
           flexDirection: "column",
           zIndex: 50,
@@ -106,7 +108,7 @@ function Sidebar({ open, onClose }) {
         {/* Logo Area */}
         <div
           className="flex items-center gap-3 px-4"
-          style={{ height: "72px", borderBottom: "1px solid #1A1A1A", flexShrink: 0 }}
+          style={{ height: "72px", borderBottom: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`, flexShrink: 0 }}
         >
           <div
             className="flex items-center justify-center rounded-full flex-shrink-0"
@@ -117,10 +119,10 @@ function Sidebar({ open, onClose }) {
             </span>
           </div>
           <div className="flex flex-col flex-1 min-w-0">
-            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
+            <span style={{ fontFamily: "Rajdhani, sans-serif", color: isDark ? "#F0F0F0" : "#111111", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
               Royals Webtech
             </span>
-            <span style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px", lineHeight: 1.2 }}>
+            <span style={{ fontFamily: "Mulish, sans-serif", color: isDark ? "#666666" : "#888888", fontSize: "11px", lineHeight: 1.2 }}>
               Pvt. Ltd.
             </span>
             <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8", fontSize: "8px", letterSpacing: "0.1em", marginTop: "2px" }}>
@@ -132,9 +134,9 @@ function Sidebar({ open, onClose }) {
           <button
             onClick={onClose}
             className="flex-shrink-0 md:hidden"
-            style={{ color: "#555555", padding: "4px" }}
+            style={{ color: isDark ? "#555555" : "#AAAAAA", padding: "4px" }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#555555")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? "#555555" : "#AAAAAA")}
           >
             <X size={18} />
           </button>
@@ -146,7 +148,7 @@ function Sidebar({ open, onClose }) {
             <div key={section.label} className="mb-2">
               <div
                 className="px-4 py-2 flex items-center gap-2"
-                style={{ borderTop: "1px solid #1A1A1A" }}
+                style={{ borderTop: `1px solid ${isDark ? "#1A1A1A" : "#EEEEEE"}` }}
               >
                 <span
                   style={{
@@ -185,14 +187,14 @@ function Sidebar({ open, onClose }) {
                     <>
                       <Icon
                         size={18}
-                        style={{ color: isActive ? "#00B8B8" : "#333333", flexShrink: 0 }}
+                        style={{ color: isActive ? "#00B8B8" : (isDark ? "#333333" : "#AAAAAA"), flexShrink: 0 }}
                       />
                       <span
                         style={{
                           fontFamily: "Mulish, sans-serif",
                           fontSize: "13px",
                           fontWeight: isActive ? 700 : 500,
-                          color: isActive ? "#FFFFFF" : "#555555",
+                          color: isActive ? (isDark ? "#FFFFFF" : "#111111") : (isDark ? "#555555" : "#888888"),
                         }}
                       >
                         {label}
@@ -206,10 +208,10 @@ function Sidebar({ open, onClose }) {
         </nav>
 
         {/* Bottom User Card */}
-        <div className="p-3" style={{ borderTop: "1px solid #1A1A1A", flexShrink: 0 }}>
+        <div className="p-3" style={{ borderTop: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`, flexShrink: 0 }}>
           <div
             className="rounded-lg p-3 flex items-center gap-3"
-            style={{ background: "#111111", border: "1px solid #1E1E1E" }}
+            style={{ background: isDark ? "#111111" : "#F5F5F5", border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}` }}
           >
             <div
               className="rounded-full flex items-center justify-center flex-shrink-0"
@@ -221,10 +223,10 @@ function Sidebar({ open, onClose }) {
             </div>
 
             <div className="flex-1 min-w-0">
-              <p style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", color: isDark ? "#F0F0F0" : "#111111", fontWeight: 600, fontSize: "14px", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {user.name}
               </p>
-              <p style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px" }}>
+              <p style={{ fontFamily: "Mulish, sans-serif", color: isDark ? "#666666" : "#888888", fontSize: "11px" }}>
                 Super Admin
               </p>
               <div className="flex items-center gap-1 mt-1">
@@ -237,9 +239,9 @@ function Sidebar({ open, onClose }) {
               onClick={handleLogout}
               className="flex-shrink-0"
               title="Logout"
-              style={{ color: "#333333", transition: "color 150ms" }}
+              style={{ color: isDark ? "#333333" : "#AAAAAA", transition: "color 150ms" }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#333333")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? "#333333" : "#AAAAAA")}
             >
               <LogOut size={15} />
             </button>
@@ -412,7 +414,7 @@ function Header({ onMenuClick }) {
             width: "32px", height: "32px",
             background: "#CC0000",
             border: "2px solid #CC0000",
-            boxShadow: "0 0 0 2px #0A0A0A",
+            boxShadow: `0 0 0 2px ${theme === "dark" ? "#0A0A0A" : "#FFFFFF"}`,
           }}
         >
           <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>

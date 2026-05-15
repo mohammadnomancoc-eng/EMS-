@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────────────────
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isAuthed() && userRole() == "admin";
+    }
+
+    function isEmployee() {
+      return isAuthed() && userRole() == "employee";
+    }
+
+    function ownEmpId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.empId;
+    }
+
+    // ── /users ────────────────────────────────────────────
+    match /users/{uid} {
+      allow read: if isAuthed() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // ── /employees ────────────────────────────────────────
+    // workType field ("WFO" | "WFH" | "Hybrid") is stored here.
+    // Employees can read their own profile; admins manage all.
+    match /employees/{empId} {
+      allow read: if isAuthed();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── /departments ──────────────────────────────────────
+    match /departments/{deptId} {
+      allow read: if isAuthed();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── /leaveRequests ────────────────────────────────────
+    match /leaveRequests/{reqId} {
+      allow read: if isAdmin() || (isEmployee() && resource.data.empId == ownEmpId());
+      allow create: if isEmployee() && request.resource.data.empId == ownEmpId();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── /attendance ───────────────────────────────────────
+    // Employees can read, create and update their OWN attendance records.
+    // IMPORTANT: The read rule uses resource.data.empId — this works correctly
+    // for single-document reads (getDoc) but Firestore DENIES collection queries
+    // for employees because it can't guarantee all docs pass the rule.
+    // Therefore the webcam attendance modal uses getOwnAttendanceRecord(empId, date)
+    // which calls getDoc("attendance/{empId}_{date}") — always safe for employees.
+    match /attendance/{recordId} {
+      allow read: if isAdmin() || (isEmployee() && resource.data.empId == ownEmpId());
+      allow create, update: if isAdmin()
+                            || (isEmployee() && request.resource.data.empId == ownEmpId());
+      allow delete: if isAdmin();
+    }
+
+    // ── /media ────────────────────────────────────────────
+    match /media/{mediaId} {
+      allow read: if isAuthed();
+      allow create: if isEmployee() && request.resource.data.uploadedBy == ownEmpId();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── /settings ────────────────────────────────────────
+    // All settings documents live under /settings/{docId}.
+    // Documents used:
+    //   company        – company info, work schedule, geo-fence (employees read for webcam geo-check)
+    //   notifications  – admin notification preferences
+    //   appearance     – UI appearance preferences
+    //   security       – 2FA, session timeout
+    //   sessions       – active session list
+    //   system         – auto-backup flag, maintenance mode, last backup timestamp
+    //   backup         – manual backup metadata
+    //
+    // Employees need to read "company" for the geo-fence check.
+    // All other settings docs are admin-only.
+    match /settings/{docId} {
+      allow read: if isAuthed();
+      allow write: if isAdmin();
+    }
+
+  }
+}

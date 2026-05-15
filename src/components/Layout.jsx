@@ -47,215 +47,157 @@ const pageTitles = {
 function Sidebar({ open, onClose }) {
   const navigate = useNavigate();
 
-  const userRaw = localStorage.getItem("rwt-user");
-  const user = userRaw
-    ? JSON.parse(userRaw)
-    : { name: "Admin", initials: "AD" };
-
-  // BUG-01 FIX: call Firebase signOut + clear localStorage before navigating.
-  const handleLogout = async () => {
-    try {
-      await logoutUser();
-    } catch (err) {
-      console.warn("Firebase signOut error:", err.message);
-    } finally {
-      localStorage.removeItem("rwt-role");
-      localStorage.removeItem("rwt-user");
-      navigate("/login");
-    }
+  const handleLogout = () => {
+    navigate("/login");
   };
 
   return (
-    <>
-      {/* Mobile backdrop */}
+    <div
+      className="fixed left-0 top-0 h-screen flex flex-col z-50"
+      style={{
+        width: "252px",
+        background: "#050505",
+        borderRight: "1px solid #1A1A1A",
+      }}
+    >
+      {/* Logo Area */}
       <div
-        onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.65)",
-          backdropFilter: "blur(2px)",
-          WebkitBackdropFilter: "blur(2px)",
-          zIndex: 49,
-          opacity: open ? 1 : 0,
-          pointerEvents: open ? "auto" : "none",
-          transition: "opacity 280ms ease",
-        }}
-        className="md:hidden"
-      />
-
-      {/* Sidebar panel */}
-      <div
-        style={{
-          position: "fixed",
-          left: 0,
-          top: 0,
-          height: "100dvh",
-          width: `${SIDEBAR_W}px`,
-          background: "#050505",
-          borderRight: "1px solid #1A1A1A",
-          display: "flex",
-          flexDirection: "column",
-          zIndex: 50,
-          transform: open ? "translateX(0)" : "translateX(-100%)",
-          transition: "transform 280ms cubic-bezier(0.4,0,0.2,1)",
-        }}
-        // On md+ always show via a style override below
-        className="sidebar-panel"
+        className="flex items-center gap-3 px-4"
+        style={{ height: "72px", borderBottom: "1px solid #1A1A1A" }}
       >
-        {/* Logo Area */}
         <div
-          className="flex items-center gap-3 px-4"
-          style={{ height: "72px", borderBottom: "1px solid #1A1A1A", flexShrink: 0 }}
+          className="flex items-center justify-center rounded-full flex-shrink-0"
+          style={{
+            width: "38px", height: "38px",
+            border: "1px solid #CC0000",
+          }}
         >
-          <div
-            className="flex items-center justify-center rounded-full flex-shrink-0"
-            style={{ width: "38px", height: "38px", border: "1px solid #CC0000" }}
-          >
-            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#CC0000", fontWeight: 700, fontSize: "13px" }}>
-              RWT
-            </span>
-          </div>
-          <div className="flex flex-col flex-1 min-w-0">
-            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
-              Royals Webtech
-            </span>
-            <span style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px", lineHeight: 1.2 }}>
-              Pvt. Ltd.
-            </span>
-            <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8", fontSize: "8px", letterSpacing: "0.1em", marginTop: "2px" }}>
-              OPTIMIZED FOR WORK
-            </span>
-          </div>
-
-          {/* Close button — mobile only */}
-          <button
-            onClick={onClose}
-            className="flex-shrink-0 md:hidden"
-            style={{ color: "#555555", padding: "4px" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#555555")}
-          >
-            <X size={18} />
-          </button>
+          <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#CC0000", fontWeight: 700, fontSize: "13px" }}>
+            RWT
+          </span>
         </div>
-
-        {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-3" style={{ scrollbarWidth: "none" }}>
-          {navSections.map((section) => (
-            <div key={section.label} className="mb-2">
-              <div
-                className="px-4 py-2 flex items-center gap-2"
-                style={{ borderTop: "1px solid #1A1A1A" }}
-              >
-                <span
-                  style={{
-                    fontFamily: "Rajdhani, sans-serif",
-                    color: "#CC0000",
-                    fontSize: "9px",
-                    fontWeight: 700,
-                    letterSpacing: "0.2em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {section.label}
-                </span>
-              </div>
-
-              {section.items.map(({ to, icon: Icon, label }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  onClick={onClose}
-                  style={({ isActive }) => ({
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    padding: "10px 16px",
-                    margin: "1px 6px",
-                    borderRadius: "6px",
-                    textDecoration: "none",
-                    borderLeft: isActive ? "3px solid #CC0000" : "3px solid transparent",
-                    background: isActive ? "rgba(204,0,0,0.06)" : "transparent",
-                    transition: "all 150ms ease",
-                  })}
-                  className="nav-item group"
-                >
-                  {({ isActive }) => (
-                    <>
-                      <Icon
-                        size={18}
-                        style={{ color: isActive ? "#00B8B8" : "#333333", flexShrink: 0 }}
-                      />
-                      <span
-                        style={{
-                          fontFamily: "Mulish, sans-serif",
-                          fontSize: "13px",
-                          fontWeight: isActive ? 700 : 500,
-                          color: isActive ? "#FFFFFF" : "#555555",
-                        }}
-                      >
-                        {label}
-                      </span>
-                    </>
-                  )}
-                </NavLink>
-              ))}
-            </div>
-          ))}
-        </nav>
-
-        {/* Bottom User Card */}
-        <div className="p-3" style={{ borderTop: "1px solid #1A1A1A", flexShrink: 0 }}>
-          <div
-            className="rounded-lg p-3 flex items-center gap-3"
-            style={{ background: "#111111", border: "1px solid #1E1E1E" }}
-          >
-            <div
-              className="rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ width: "34px", height: "34px", background: "#CC0000" }}
-            >
-              <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>
-                {user.initials}
-              </span>
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <p style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {user.name}
-              </p>
-              <p style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px" }}>
-                Super Admin
-              </p>
-              <div className="flex items-center gap-1 mt-1">
-                <div className="rounded-full" style={{ width: "6px", height: "6px", background: "#00B8B8" }} />
-                <span style={{ fontFamily: "Mulish, sans-serif", color: "#00B8B8", fontSize: "10px" }}>Online</span>
-              </div>
-            </div>
-
-            <button
-              onClick={handleLogout}
-              className="flex-shrink-0"
-              title="Logout"
-              style={{ color: "#333333", transition: "color 150ms" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#333333")}
-            >
-              <LogOut size={15} />
-            </button>
-          </div>
+        <div className="flex flex-col">
+          <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
+            Royals Webtech
+          </span>
+          <span style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px", lineHeight: 1.2 }}>
+            Pvt. Ltd.
+          </span>
+          <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8", fontSize: "8px", letterSpacing: "0.1em", marginTop: "2px" }}>
+            OPTIMIZED FOR WORK
+          </span>
         </div>
       </div>
 
-      {/* ── Responsive override: always show sidebar on md+ ── */}
-      <style>{`
-        @media (min-width: 768px) {
-          .sidebar-panel {
-            transform: translateX(0) !important;
-          }
-        }
-      `}</style>
-    </>
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto py-3" style={{ scrollbarWidth: "none" }}>
+        {navSections.map((section) => (
+          <div key={section.label} className="mb-2">
+            {/* Section Label */}
+            <div
+              className="px-4 py-2 flex items-center gap-2"
+              style={{ borderTop: "1px solid #1A1A1A" }}
+            >
+              <span
+                style={{
+                  fontFamily: "Rajdhani, sans-serif",
+                  color: "#CC0000",
+                  fontSize: "9px",
+                  fontWeight: 700,
+                  letterSpacing: "0.2em",
+                  textTransform: "uppercase",
+                }}
+              >
+                {section.label}
+              </span>
+            </div>
+
+            {/* Nav Items */}
+            {section.items.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                style={({ isActive }) => ({
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  padding: "10px 16px",
+                  margin: "1px 6px",
+                  borderRadius: "6px",
+                  textDecoration: "none",
+                  borderLeft: isActive ? "3px solid #CC0000" : "3px solid transparent",
+                  background: isActive ? "rgba(204,0,0,0.06)" : "transparent",
+                  transition: "all 150ms ease",
+                })}
+                className="nav-item group"
+              >
+                {({ isActive }) => (
+                  <>
+                    <Icon
+                      size={18}
+                      style={{ color: isActive ? "#00B8B8" : "#333333", flexShrink: 0 }}
+                    />
+                    <span
+                      style={{
+                        fontFamily: "Mulish, sans-serif",
+                        fontSize: "13px",
+                        fontWeight: isActive ? 700 : 500,
+                        color: isActive ? "#FFFFFF" : "#555555",
+                      }}
+                    >
+                      {label}
+                    </span>
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </div>
+        ))}
+      </nav>
+
+      {/* Bottom User Card */}
+      <div className="p-3" style={{ borderTop: "1px solid #1A1A1A" }}>
+        <div
+          className="rounded-lg p-3 flex items-center gap-3"
+          style={{ background: "#111111", border: "1px solid #1E1E1E" }}
+        >
+          {/* Avatar */}
+          <div
+            className="rounded-full flex items-center justify-center flex-shrink-0"
+            style={{ width: "34px", height: "34px", background: "#CC0000" }}
+          >
+            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>
+              AD
+            </span>
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <p style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
+              Admin
+            </p>
+            <p style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px" }}>
+              Super Admin
+            </p>
+            <div className="flex items-center gap-1 mt-1">
+              <div className="rounded-full" style={{ width: "6px", height: "6px", background: "#00B8B8" }} />
+              <span style={{ fontFamily: "Mulish, sans-serif", color: "#00B8B8", fontSize: "10px" }}>Online</span>
+            </div>
+          </div>
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="flex-shrink-0"
+            title="Logout"
+            style={{ color: "#333333", transition: "color 150ms" }}
+            onMouseEnter={(e) => e.currentTarget.style.color = "#CC0000"}
+            onMouseLeave={(e) => e.currentTarget.style.color = "#333333"}
+          >
+            <LogOut size={15} />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -412,7 +354,7 @@ function Header({ onMenuClick }) {
             width: "32px", height: "32px",
             background: "#CC0000",
             border: "2px solid #CC0000",
-            boxShadow: "0 0 0 2px #0A0A0A",
+            boxShadow: `0 0 0 2px ${theme === "dark" ? "#0A0A0A" : "#FFFFFF"}`,
           }}
         >
           <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>

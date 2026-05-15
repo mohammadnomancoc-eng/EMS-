@@ -424,6 +424,66 @@ export default function Attendance() {
     setEditRecord(null);
   };
 
+  // ── CSV Export ────────────────────────────────────────
+  // Exports ALL currently-filtered records (not just the current page)
+  // as a downloadable .csv file named after the selected date.
+  const handleExport = useCallback(() => {
+    const rows = filtered.length > 0 ? filtered : mergedRecords;
+    if (rows.length === 0) return;
+
+    const headers = [
+      "Employee Name",
+      "Employee ID",
+      "Role",
+      "Department",
+      "Date",
+      "Status",
+      "Check In",
+      "Check Out",
+      "Hours Worked",
+      "Late Arrival",
+      "Marked By",
+    ];
+
+    const escape = (val) => {
+      const str = val == null ? "" : String(val);
+      // Wrap in quotes if it contains commas, quotes, or newlines
+      return str.includes(",") || str.includes('"') || str.includes("\n")
+        ? `"${str.replace(/"/g, '""')}"`
+        : str;
+    };
+
+    const csvRows = [
+      headers.join(","),
+      ...rows.map((r) =>
+        [
+          escape(r.empName),
+          escape(r.empId),
+          escape(r.role),
+          escape(r.department),
+          escape(r.date),
+          escape(r.status),
+          escape(r.checkIn),
+          escape(r.checkOut),
+          escape(r.hoursWorked),
+          r.isLate && r.status === "Present" ? "Yes" : "No",
+          escape(r.markedBy),
+        ].join(",")
+      ),
+    ];
+
+    const csvContent = "\uFEFF" + csvRows.join("\r\n"); // BOM for Excel UTF-8
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url  = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href     = url;
+    link.download = `attendance_${dateFilter}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, [filtered, mergedRecords, dateFilter]);
+
   const statCards = [
     { label: "Present",  value: presentCount, icon: UserCheck,    color: "#00B8B8" },
     { label: "Absent",   value: absentCount,  icon: UserX,        color: "#CC0000" },
@@ -483,16 +543,33 @@ export default function Attendance() {
             Track and manage daily employee attendance
           </p>
         </div>
-        <button style={{
-          display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px",
-          borderRadius: "7px", background: "transparent",
-          border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
-          color: isDark ? "#888888" : "#666666",
-          fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 600, cursor: "pointer",
-          whiteSpace: "nowrap",
-        }}>
+        <button
+          onClick={handleExport}
+          title={`Download ${filtered.length} record(s) as CSV`}
+          style={{
+            display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px",
+            borderRadius: "7px", background: "transparent",
+            border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
+            color: isDark ? "#888888" : "#666666",
+            fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 600,
+            cursor: filtered.length === 0 ? "not-allowed" : "pointer",
+            whiteSpace: "nowrap", transition: "all 150ms",
+            opacity: filtered.length === 0 ? 0.45 : 1,
+          }}
+          onMouseEnter={(e) => {
+            if (filtered.length === 0) return;
+            e.currentTarget.style.borderColor = "#00B8B8";
+            e.currentTarget.style.color = "#00B8B8";
+            e.currentTarget.style.background = "rgba(0,184,184,0.07)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = isDark ? "#2A2A2A" : "#E0E0E0";
+            e.currentTarget.style.color = isDark ? "#888888" : "#666666";
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
           <Download size={14} />
-          <span className="hidden sm:inline">Export</span>
+          <span className="hidden sm:inline">Export CSV</span>
         </button>
       </div>
 

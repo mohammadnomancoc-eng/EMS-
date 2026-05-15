@@ -69,20 +69,20 @@ function QuotaBar({ label, taken, total, color }) {
   return (
     <div className="mb-3">
       <div className="flex justify-between items-center mb-1">
-        <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#A0A0A0" }}>
+        <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#888888" }}>
           {label}
         </span>
         <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color }}>
           {remaining}/{total}
         </span>
       </div>
-      <div className="rounded-full overflow-hidden" style={{ height: "4px", background: "#1A1A1A" }}>
+      <div className="rounded-full overflow-hidden" style={{ height: "4px", background: "#DDDDDD" }}>
         <div
           className="h-full rounded-full"
           style={{ width: `${pct}%`, background: color, transition: "width 600ms ease" }}
         />
       </div>
-      <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: "#444444", marginTop: "2px" }}>
+      <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: "#888888", marginTop: "2px" }}>
         {taken} used · {remaining} left
       </p>
     </div>
@@ -92,6 +92,8 @@ function QuotaBar({ label, taken, total, color }) {
 // ── Employee Sidebar ──────────────────────────────────
 function EmployeeSidebar({ open, onClose }) {
   const navigate = useNavigate();
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const user = getStoredUser();
 
   // BUG-10 FIX: fetch real monthly quota from Firestore
@@ -155,8 +157,8 @@ function EmployeeSidebar({ open, onClose }) {
           top: 0,
           height: "100dvh",
           width: `${SIDEBAR_W}px`,
-          background: "#050505",
-          borderRight: "1px solid #1A1A1A",
+          background: isDark ? "#050505" : "#FFFFFF",
+          borderRight: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`,
           display: "flex",
           flexDirection: "column",
           zIndex: 50,
@@ -168,7 +170,7 @@ function EmployeeSidebar({ open, onClose }) {
         {/* Logo */}
         <div
           className="flex items-center gap-3 px-4"
-          style={{ height: "72px", borderBottom: "1px solid #1A1A1A", flexShrink: 0 }}
+          style={{ height: "72px", borderBottom: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`, flexShrink: 0 }}
         >
           <div
             className="flex items-center justify-center rounded-full flex-shrink-0"
@@ -179,10 +181,10 @@ function EmployeeSidebar({ open, onClose }) {
             </span>
           </div>
           <div className="flex flex-col flex-1 min-w-0">
-            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
+            <span style={{ fontFamily: "Rajdhani, sans-serif", color: isDark ? "#F0F0F0" : "#111111", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
               Royals Webtech
             </span>
-            <span style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px", lineHeight: 1.2 }}>
+            <span style={{ fontFamily: "Mulish, sans-serif", color: isDark ? "#666666" : "#888888", fontSize: "11px", lineHeight: 1.2 }}>
               Pvt. Ltd.
             </span>
             <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8", fontSize: "8px", letterSpacing: "0.1em", marginTop: "2px" }}>
@@ -194,9 +196,9 @@ function EmployeeSidebar({ open, onClose }) {
           <button
             onClick={onClose}
             className="flex-shrink-0 md:hidden"
-            style={{ color: "#555555", padding: "4px" }}
+            style={{ color: isDark ? "#555555" : "#AAAAAA", padding: "4px" }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#555555")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? "#555555" : "#AAAAAA")}
           >
             <X size={18} />
           </button>
@@ -206,7 +208,7 @@ function EmployeeSidebar({ open, onClose }) {
         <nav className="flex-1 overflow-y-auto py-3" style={{ scrollbarWidth: "none" }}>
           {sections.map((section) => (
             <div key={section} className="mb-2">
-              <div className="px-4 py-2" style={{ borderTop: "1px solid #1A1A1A" }}>
+              <div className="px-4 py-2" style={{ borderTop: `1px solid ${isDark ? "#1A1A1A" : "#EEEEEE"}` }}>
                 <span style={{
                   fontFamily: "Rajdhani, sans-serif", color: "#CC0000",
                   fontSize: "9px", fontWeight: 700, letterSpacing: "0.2em", textTransform: "uppercase",
@@ -230,11 +232,11 @@ function EmployeeSidebar({ open, onClose }) {
                 >
                   {({ isActive }) => (
                     <>
-                      <Icon size={18} style={{ color: isActive ? "#00B8B8" : "#333333", flexShrink: 0 }} />
+                      <Icon size={18} style={{ color: isActive ? "#00B8B8" : (isDark ? "#333333" : "#AAAAAA"), flexShrink: 0 }} />
                       <span style={{
                         fontFamily: "Mulish, sans-serif", fontSize: "13px",
                         fontWeight: isActive ? 700 : 500,
-                        color: isActive ? "#FFFFFF" : "#555555",
+                        color: isActive ? (isDark ? "#FFFFFF" : "#111111") : (isDark ? "#555555" : "#888888"),
                       }}>
                         {label}
                       </span>
@@ -247,7 +249,7 @@ function EmployeeSidebar({ open, onClose }) {
 
           {/* Monthly Quota Card — BUG-10 FIX: real Firestore counts */}
           <div className="mx-3 mt-4">
-            <div className="rounded-lg p-3" style={{ background: "#0D0D0D", border: "1px solid #1A1A1A" }}>
+            <div className="rounded-lg p-3" style={{ background: isDark ? "#0D0D0D" : "#F5F5F5", border: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}` }}>
               <p style={{
                 fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
                 color: "#CC0000", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "10px",
@@ -260,7 +262,7 @@ function EmployeeSidebar({ open, onClose }) {
                   <QuotaBar label="WFH"   taken={wfhTaken}   total={WFH_QUOTA}   color="#00B8B8" />
                 </>
               ) : (
-                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#444444" }}>
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#444444" : "#888888" }}>
                   Loading…
                 </p>
               )}
@@ -269,10 +271,10 @@ function EmployeeSidebar({ open, onClose }) {
         </nav>
 
         {/* User Card */}
-        <div className="p-3" style={{ borderTop: "1px solid #1A1A1A", flexShrink: 0 }}>
+        <div className="p-3" style={{ borderTop: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`, flexShrink: 0 }}>
           <div
             className="rounded-lg p-3 flex items-center gap-3"
-            style={{ background: "#111111", border: "1px solid #1E1E1E" }}
+            style={{ background: isDark ? "#111111" : "#F5F5F5", border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}` }}
           >
             <div
               className="rounded-full flex items-center justify-center flex-shrink-0"
@@ -283,10 +285,10 @@ function EmployeeSidebar({ open, onClose }) {
               </span>
             </div>
             <div className="flex-1 min-w-0">
-              <p style={{ fontFamily: "Rajdhani, sans-serif", color: "#F0F0F0", fontWeight: 600, fontSize: "14px", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", color: isDark ? "#F0F0F0" : "#111111", fontWeight: 600, fontSize: "14px", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {user.name}
               </p>
-              <p style={{ fontFamily: "Mulish, sans-serif", color: "#666666", fontSize: "11px" }}>
+              <p style={{ fontFamily: "Mulish, sans-serif", color: isDark ? "#666666" : "#888888", fontSize: "11px" }}>
                 {user.role}
               </p>
               <div className="flex items-center gap-1 mt-1">
@@ -297,9 +299,9 @@ function EmployeeSidebar({ open, onClose }) {
             <button
               onClick={handleLogout}
               title="Logout"
-              style={{ color: "#333333", transition: "color 150ms", flexShrink: 0 }}
+              style={{ color: isDark ? "#333333" : "#AAAAAA", transition: "color 150ms", flexShrink: 0 }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#333333")}
+              onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? "#333333" : "#AAAAAA")}
             >
               <LogOut size={15} />
             </button>
@@ -430,7 +432,7 @@ function EmployeeHeader({ onMenuClick }) {
           className="rounded-full flex items-center justify-center cursor-pointer flex-shrink-0"
           style={{
             width: "32px", height: "32px", background: "#CC0000",
-            border: "2px solid #CC0000", boxShadow: "0 0 0 2px #0A0A0A",
+            border: "2px solid #CC0000", boxShadow: `0 0 0 2px ${theme === "dark" ? "#0A0A0A" : "#FFFFFF"}`,
           }}
         >
           <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>

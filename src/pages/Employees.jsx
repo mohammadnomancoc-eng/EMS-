@@ -456,7 +456,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
   const isEdit = !!initial;
   const [form, setForm] = useState(initial || {
     name: "", role: "", department: "Engineering",
-    email: "", phone: "", joinDate: "", status: "Present", salary: "",
+    email: "", phone: "", joinDate: "", completionDate: "", status: "Present", salary: "",
     workType: "WFO", photoUrl: "", photoPublicId: "",
   });
   const [errors,    setErrors]    = useState({});
@@ -567,7 +567,10 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
           {field("Department", "department", "text", departments.map(d => d.name))}
           {field("Email Address", "email", "email")}
           {field("Phone", "phone")}
-          {field("Join Date", "joinDate", "date")}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            {field("Join Date", "joinDate", "date")}
+            {field("Completion Date", "completionDate", "date")}
+          </div>
           {field("Status", "status", "text", ["Present", "Absent", "Leave", "WFH"])}
           {field("Work Type", "workType", "text", ["WFO", "WFH", "Hybrid"])}
           {field("Monthly Salary (₹)", "salary", "number")}
@@ -740,7 +743,8 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
           {row("DEPARTMENT", emp.department)}
           {row("EMAIL", emp.email)}
           {row("PHONE", emp.phone)}
-          {row("JOIN DATE", new Date(emp.joinDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }))}
+          {row("JOIN DATE", emp.joinDate ? new Date(emp.joinDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")}
+          {row("COMPLETION DATE", emp.completionDate ? new Date(emp.completionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "Not set")}
           {row("MONTHLY SALARY", `₹${Number(emp.salary).toLocaleString("en-IN")}`)}
         </div>
 

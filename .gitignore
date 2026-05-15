@@ -11,6 +11,9 @@ node_modules
 dist
 dist-ssr
 *.local
+package-lock.json
+FIREBASE_SETUP.md
+.env
 
 # Editor directories and files
 .vscode/*
@@ -22,3 +25,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+Email: akshay.ink@royalswebtech.com
+Password: EmpId@2026  (e.g. RWT013@2026)
+
+
+
+
+
+RWT006@2026
+akshay.ink@royalswebtech.com

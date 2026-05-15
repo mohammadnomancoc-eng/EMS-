@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { useTheme } from "../../App";
 import {
   CalendarCheck, CalendarX, CalendarOff,
-  Home, TrendingUp, TrendingDown
+  Home, TrendingUp, TrendingDown, Camera,
 } from "lucide-react";
+import WebcamAttendance from "../../components/WebcamAttendance";
+import { getAttendanceByEmployee } from "../../firebase/firestoreService";
 
 // ── Count-up hook ─────────────────────────────────────
 function useCountUp(target, duration = 800) {
@@ -21,144 +23,39 @@ function useCountUp(target, duration = 800) {
   return val;
 }
 
-// ── Mock data for logged-in employee ─────────────────
-const employeeData = {
-  name: "Arjun Sharma",
-  role: "Frontend Developer",
-  department: "Engineering",
-  month: "May 2026",
-  workingDays: 22,
-  present: 18,
-  absent: 2,
-  leave: { taken: 1, total: 2 },
-  wfh: { taken: 2, total: 2 },
-  attendanceLog: [
-    { date: "2026-05-01", status: "Present" },
-    { date: "2026-05-02", status: "Present" },
-    { date: "2026-05-03", status: "WFH" },
-    { date: "2026-05-04", status: "WFH" },
-    { date: "2026-05-05", status: "Present" },
-    { date: "2026-05-06", status: "Present" },
-    { date: "2026-05-07", status: "Absent" },
-    { date: "2026-05-08", status: "Present" },
-    { date: "2026-05-09", status: "Leave" },
-    { date: "2026-05-10", status: "Present" },
-    { date: "2026-05-11", status: "Present" },
-    { date: "2026-05-12", status: "Present" },
-    { date: "2026-05-13", status: "Absent" },
-    { date: "2026-05-14", status: "Present" },
-    { date: "2026-05-15", status: "Present" },
-    { date: "2026-05-16", status: "Present" },
-    { date: "2026-05-17", status: "Present" },
-    { date: "2026-05-18", status: "Present" },
-  ],
-};
+// ── Helpers ───────────────────────────────────────────
+function getProfile() {
+  try {
+    const raw = localStorage.getItem("rwt-user");
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { name: "Employee", role: "", initials: "?", empId: null };
+}
 
-// ── Stat Card ─────────────────────────────────────────
-function StatCard({ label, value, suffix, subValue, subLabel, icon: Icon, valueColor, trendUp, trendText, theme, isQuota, taken, total, quotaColor }) {
-  const displayed = useCountUp(typeof value === "number" ? value : 0);
+function currentMonthLabel() {
+  return new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
 
-  const surface = theme === "dark" ? "#111111" : "#FFFFFF";
-  const border  = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
-  const textPri = theme === "dark" ? "#F0F0F0" : "#111111";
-  const textMuted = theme === "dark" ? "#A0A0A0" : "#888888";
-  const iconBg  = theme === "dark" ? "#1A1A1A" : "#F5F5F5";
+function workingDaysThisMonth() {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth();
+  const days  = new Date(year, month + 1, 0).getDate();
+  let count   = 0;
+  for (let d = 1; d <= days; d++) {
+    if (new Date(year, month, d).getDay() !== 0) count++;
+  }
+  return count;
+}
 
-  return (
-    <div
-      className="rounded-xl p-5 flex flex-col gap-3"
-      style={{
-        background: surface,
-        border: `1px solid ${border}`,
-        boxShadow: theme === "light" ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
-        transition: "border-color 200ms ease",
-        cursor: "default",
-      }}
-      onMouseEnter={(e) => e.currentTarget.style.borderColor = "#CC0000"}
-      onMouseLeave={(e) => e.currentTarget.style.borderColor = border}
-    >
-      {/* Top row */}
-      <div className="flex items-start justify-between">
-        <span style={{
-          fontFamily: "Rajdhani, sans-serif",
-          fontSize: "10px",
-          fontWeight: 700,
-          color: "#CC0000",
-          letterSpacing: "0.2em",
-          textTransform: "uppercase",
-        }}>
-          {label}
-        </span>
-        <div className="rounded-full flex items-center justify-center"
-          style={{ width: "36px", height: "36px", background: iconBg }}>
-          <Icon size={16} style={{ color: "#00B8B8" }} />
-        </div>
-      </div>
-
-      {/* Value */}
-      {isQuota ? (
-        <div className="flex flex-col gap-1">
-          <div className="flex items-end gap-1">
-            <span style={{
-              fontFamily: "Rajdhani, sans-serif",
-              fontSize: "52px",
-              fontWeight: 700,
-              lineHeight: 1,
-              color: quotaColor,
-            }}>
-              {taken}
-            </span>
-            <span style={{
-              fontFamily: "Rajdhani, sans-serif",
-              fontSize: "22px",
-              fontWeight: 600,
-              color: textMuted,
-              marginBottom: "6px",
-            }}>
-              /{total}
-            </span>
-          </div>
-          {/* Quota bar */}
-          <div className="rounded-full overflow-hidden" style={{ height: "4px", background: theme === "dark" ? "#1A1A1A" : "#E8E8E8" }}>
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${Math.round((taken / total) * 100)}%`,
-                background: quotaColor,
-                transition: "width 800ms ease",
-              }}
-            />
-          </div>
-          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>
-            {total - taken} remaining this month
-          </p>
-        </div>
-      ) : (
-        <div style={{
-          fontFamily: "Rajdhani, sans-serif",
-          fontSize: "54px",
-          fontWeight: 700,
-          lineHeight: 1,
-          color: valueColor || textPri,
-        }}>
-          {displayed}{suffix}
-        </div>
-      )}
-
-      {/* Trend */}
-      {trendText && (
-        <div className="flex items-center gap-1">
-          {trendUp
-            ? <TrendingUp  size={12} style={{ color: "#00B8B8" }} />
-            : <TrendingDown size={12} style={{ color: "#CC0000" }} />
-          }
-          <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>
-            {trendText}
-          </span>
-        </div>
-      )}
-    </div>
-  );
+function filterThisMonth(records) {
+  const now = new Date();
+  const y   = now.getFullYear();
+  const m   = now.getMonth();
+  return records.filter((r) => {
+    const d = new Date(r.date);
+    return d.getFullYear() === y && d.getMonth() === m;
+  });
 }
 
 // ── Status Badge ──────────────────────────────────────
@@ -177,20 +74,115 @@ function StatusBadge({ status, theme }) {
       WFH:     { bg: "#F0F0F0", border: "#888888", color: "#444444" },
     },
   };
-  const s = styles[theme][status] || styles[theme].WFH;
+  const s = styles[theme]?.[status] || styles[theme].WFH;
   return (
     <span style={{
-      background: s.bg,
-      border: `1px solid ${s.border}`,
-      color: s.color,
-      fontFamily: "Rajdhani, sans-serif",
-      fontSize: "11px",
-      fontWeight: 600,
-      borderRadius: "4px",
-      padding: "2px 8px",
+      background: s.bg, border: `1px solid ${s.border}`, color: s.color,
+      fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600,
+      borderRadius: "4px", padding: "2px 8px", whiteSpace: "nowrap",
     }}>
       {status}
     </span>
+  );
+}
+
+// ── Stat Card ─────────────────────────────────────────
+function StatCard({ label, value, suffix, icon: Icon, valueColor, trendUp, trendText, theme, isQuota, taken, total, quotaColor }) {
+  const displayed = useCountUp(typeof value === "number" ? value : 0);
+  const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
+  const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
+  const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
+  const textMuted = theme === "dark" ? "#A0A0A0" : "#888888";
+  const iconBg    = theme === "dark" ? "#1A1A1A" : "#F5F5F5";
+
+  return (
+    <div
+      className="rounded-xl p-4 sm:p-5 flex flex-col gap-2 sm:gap-3"
+      style={{
+        background: surface, border: `1px solid ${border}`,
+        boxShadow: theme === "light" ? "0 2px 8px rgba(0,0,0,0.06)" : "none",
+        transition: "border-color 200ms ease", cursor: "default",
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.borderColor = "#CC0000"}
+      onMouseLeave={(e) => e.currentTarget.style.borderColor = border}
+    >
+      {/* Top row */}
+      <div className="flex items-start justify-between gap-2">
+        <span style={{
+          fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+          color: "#CC0000", letterSpacing: "0.18em", textTransform: "uppercase", lineHeight: 1.3,
+        }}>
+          {label}
+        </span>
+        <div className="rounded-full flex items-center justify-center flex-shrink-0"
+          style={{ width: "30px", height: "30px", background: iconBg }}>
+          <Icon size={13} style={{ color: "#00B8B8" }} />
+        </div>
+      </div>
+
+      {/* Value */}
+      {isQuota ? (
+        <div className="flex flex-col gap-1">
+          <div className="flex items-end gap-1">
+            <span style={{
+              fontFamily: "Rajdhani, sans-serif",
+              fontSize: "clamp(32px, 4.5vw, 52px)",
+              fontWeight: 700, lineHeight: 1, color: quotaColor,
+            }}>
+              {taken}
+            </span>
+            <span style={{
+              fontFamily: "Rajdhani, sans-serif",
+              fontSize: "clamp(14px, 2vw, 22px)",
+              fontWeight: 600, color: textMuted, marginBottom: "4px",
+            }}>
+              /{total}
+            </span>
+          </div>
+          <div className="rounded-full overflow-hidden" style={{ height: "4px", background: theme === "dark" ? "#1A1A1A" : "#E8E8E8" }}>
+            <div className="h-full rounded-full" style={{
+              width: `${total > 0 ? Math.round((taken / total) * 100) : 0}%`,
+              background: quotaColor, transition: "width 800ms ease",
+            }} />
+          </div>
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textMuted }}>
+            {total - taken} remaining
+          </p>
+        </div>
+      ) : (
+        <div style={{
+          fontFamily: "Rajdhani, sans-serif",
+          fontSize: "clamp(32px, 4.5vw, 54px)",
+          fontWeight: 700, lineHeight: 1, color: valueColor || textPri,
+        }}>
+          {displayed}{suffix}
+        </div>
+      )}
+
+      {/* Trend */}
+      {trendText && (
+        <div className="flex items-center gap-1">
+          {trendUp
+            ? <TrendingUp  size={11} style={{ color: "#00B8B8", flexShrink: 0 }} />
+            : <TrendingDown size={11} style={{ color: "#CC0000", flexShrink: 0 }} />
+          }
+          <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textMuted, lineHeight: 1.3 }}>
+            {trendText}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Loading state ─────────────────────────────────────
+function LoadingRow({ theme }) {
+  return (
+    <div className="px-5 py-8 text-center">
+      <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: theme === "dark" ? "#A0A0A0" : "#888888" }}>
+        Loading attendance data…
+      </p>
+    </div>
   );
 }
 
@@ -204,67 +196,101 @@ function MyAttendance() {
   const headerBg  = theme === "dark" ? "#0D0D0D" : "#F5F5F5";
   const divider   = theme === "dark" ? "#1A1A1A" : "#EEEEEE";
 
-  const attendancePct = Math.round((employeeData.present / employeeData.workingDays) * 100);
+  const profile = getProfile();
+  const empId   = profile.empId;
 
-  const today = new Date().toLocaleDateString("en-IN", {
-    weekday: "long", year: "numeric", month: "long", day: "numeric",
-  });
+  const [showWebcam, setShowWebcam] = useState(false);
+  const [allRecords, setAllRecords] = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [fetchError, setFetchError] = useState("");
 
-  const getHour = new Date().getHours();
+  useEffect(() => {
+    if (!empId) { setLoading(false); setFetchError("Employee ID not found. Please log in again."); return; }
+    setLoading(true);
+    getAttendanceByEmployee(empId)
+      .then((records) => { setAllRecords(records); setLoading(false); })
+      .catch((err) => {
+        console.error("Failed to load attendance:", err);
+        setFetchError("Failed to load attendance. Please refresh.");
+        setLoading(false);
+      });
+  }, [empId]);
+
+  const refreshRecords = () => {
+    if (!empId) return;
+    setLoading(true);
+    import("../../firebase/firestoreService").then(({ getAttendanceByEmployee }) => {
+      getAttendanceByEmployee(empId)
+        .then((records) => { setAllRecords(records); setLoading(false); })
+        .catch(() => setLoading(false));
+    });
+  };
+
+  const monthRecords  = filterThisMonth(allRecords);
+  const workingDays   = workingDaysThisMonth();
+  const presentCount  = monthRecords.filter((r) => r.status === "Present").length;
+  const absentCount   = monthRecords.filter((r) => r.status === "Absent").length;
+  const leaveCount    = monthRecords.filter((r) => r.status === "Leave").length;
+  const wfhCount      = monthRecords.filter((r) => r.status === "WFH").length;
+  const attendancePct = workingDays > 0 ? Math.round((presentCount / workingDays) * 100) : 0;
+
+  const LEAVE_QUOTA = 2;
+  const WFH_QUOTA   = 2;
+
+  const today    = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const getHour  = new Date().getHours();
   const greeting = getHour < 12 ? "Good morning" : getHour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
 
-      {/* ── Greeting ── */}
+      {/* ── Greeting Card ── */}
       <div
-        className="rounded-xl p-6 flex items-center justify-between"
+        className="rounded-xl p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
         style={{ background: surface, border: `1px solid ${border}` }}
       >
-        <div>
+        {/* Text block */}
+        <div className="flex-1 min-w-0">
           <p style={{
-            fontFamily: "Rajdhani, sans-serif",
-            fontSize: "10px",
-            fontWeight: 700,
-            color: "#CC0000",
-            letterSpacing: "0.2em",
-            textTransform: "uppercase",
-            marginBottom: "6px",
+            fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+            color: "#CC0000", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "6px",
           }}>
             WORKSPACE
           </p>
-          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#00B8B8", marginBottom: "4px" }}>
+          <p style={{
+            fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8", marginBottom: "4px",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
             {today.toUpperCase()}
           </p>
           <h2 style={{
             fontFamily: "Rajdhani, sans-serif",
-            fontSize: "32px",
-            fontWeight: 700,
-            color: textPri,
-            lineHeight: 1.1,
+            fontSize: "clamp(20px, 5vw, 32px)",
+            fontWeight: 700, color: textPri, lineHeight: 1.1, wordBreak: "break-word",
           }}>
-            {greeting}, {employeeData.name} 👋
+            {greeting}, {profile.name} 👋
           </h2>
-          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", color: textMuted, marginTop: "4px" }}>
-            Here's your attendance summary for <span style={{ color: "#00B8B8" }}>{employeeData.month}</span>.
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted, marginTop: "4px" }}>
+            Attendance summary for{" "}
+            <span style={{ color: "#00B8B8" }}>{currentMonthLabel()}</span>.
           </p>
         </div>
 
-        {/* Attendance % ring */}
-        <div className="flex flex-col items-center gap-1">
-          <div className="relative flex items-center justify-center"
-            style={{ width: "80px", height: "80px" }}>
-            <svg width="80" height="80" style={{ transform: "rotate(-90deg)" }}>
-              <circle cx="40" cy="40" r="32" fill="none" stroke={theme === "dark" ? "#1A1A1A" : "#E8E8E8"} strokeWidth="6" />
-              <circle cx="40" cy="40" r="32" fill="none" stroke="#00B8B8" strokeWidth="6"
-                strokeDasharray={`${2 * Math.PI * 32}`}
-                strokeDashoffset={`${2 * Math.PI * 32 * (1 - attendancePct / 100)}`}
+        {/* Attendance ring — inline with text on mobile, stacked on sm+ */}
+        <div className="flex items-center gap-3 sm:flex-col sm:items-center sm:gap-1 flex-shrink-0">
+          <div className="relative flex items-center justify-center" style={{ width: "72px", height: "72px" }}>
+            <svg width="72" height="72" style={{ transform: "rotate(-90deg)" }}>
+              <circle cx="36" cy="36" r="28" fill="none"
+                stroke={theme === "dark" ? "#1A1A1A" : "#E8E8E8"} strokeWidth="6" />
+              <circle cx="36" cy="36" r="28" fill="none" stroke="#00B8B8" strokeWidth="6"
+                strokeDasharray={`${2 * Math.PI * 28}`}
+                strokeDashoffset={`${2 * Math.PI * 28 * (1 - attendancePct / 100)}`}
                 strokeLinecap="round"
                 style={{ transition: "stroke-dashoffset 1s ease" }}
               />
             </svg>
-            <div className="absolute flex flex-col items-center">
-              <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: "#00B8B8", lineHeight: 1 }}>
+            <div className="absolute flex items-center justify-center">
+              <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "15px", color: "#00B8B8", lineHeight: 1 }}>
                 {attendancePct}%
               </span>
             </div>
@@ -275,112 +301,208 @@ function MyAttendance() {
         </div>
       </div>
 
+      {/* ── Webcam Banner ── */}
+      <div
+        className="rounded-xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        style={{ background: surface, border: `1px solid ${border}` }}
+      >
+        <div className="flex-1 min-w-0">
+          <p style={{
+            fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+            color: "#CC0000", letterSpacing: "0.2em", marginBottom: "4px",
+          }}>
+            WEBCAM ATTENDANCE
+          </p>
+          <p style={{
+            fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+            fontSize: "clamp(15px, 3.5vw, 18px)", color: textPri, lineHeight: 1.2,
+          }}>
+            Mark Today's Attendance
+          </p>
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted, marginTop: "3px" }}>
+            Use your webcam to check in or check out. Your record goes directly to the admin panel.
+          </p>
+        </div>
+
+        {/* Full-width button on mobile, auto on sm+ */}
+        <button
+          onClick={() => setShowWebcam(true)}
+          className="flex items-center justify-center gap-2 rounded-lg w-full sm:w-auto"
+          style={{
+            flexShrink: 0, padding: "11px 22px", minHeight: "44px",
+            background: "#CC0000", border: "1px solid #CC0000", color: "#FFFFFF",
+            fontFamily: "Rajdhani, sans-serif", fontSize: "14px", fontWeight: 700,
+            cursor: "pointer", letterSpacing: "0.05em", transition: "all 150ms", whiteSpace: "nowrap",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#AA0000"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "#CC0000"; }}
+        >
+          <Camera size={16} />
+          Open Webcam
+        </button>
+      </div>
+
       {/* ── Stat Cards ── */}
-      <div className="grid grid-cols-5 gap-4">
+      {/* 2-col on mobile → 3-col on sm → 5-col on xl */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
         <StatCard
           theme={theme} label="Days Present"
-          value={employeeData.present} icon={CalendarCheck}
-          valueColor="#00B8B8" trendUp trendText={`out of ${employeeData.workingDays} working days`}
+          value={presentCount} icon={CalendarCheck}
+          valueColor="#00B8B8" trendUp trendText={`of ${workingDays} working days`}
         />
         <StatCard
           theme={theme} label="Days Absent"
-          value={employeeData.absent} icon={CalendarX}
+          value={absentCount} icon={CalendarX}
           valueColor="#CC0000" trendUp={false} trendText="this month"
         />
-        <StatCard
-          theme={theme} label="Attendance %"
-          value={attendancePct} suffix="%" icon={TrendingUp}
-          valueColor={attendancePct >= 80 ? "#00B8B8" : "#CC0000"}
-          trendUp={attendancePct >= 80} trendText={attendancePct >= 80 ? "Good standing" : "Below threshold"}
-        />
+        {/* On 2-col this is the 3rd item — spans both cols so it sits centred */}
+        <div className="col-span-2 sm:col-span-1">
+          <StatCard
+            theme={theme} label="Attendance %"
+            value={attendancePct} suffix="%" icon={TrendingUp}
+            valueColor={attendancePct >= 80 ? "#00B8B8" : "#CC0000"}
+            trendUp={attendancePct >= 80}
+            trendText={attendancePct >= 80 ? "Good standing" : "Below threshold"}
+          />
+        </div>
         <StatCard
           theme={theme} label="Leave This Month"
           icon={CalendarOff} isQuota
-          taken={employeeData.leave.taken} total={employeeData.leave.total}
+          taken={leaveCount} total={LEAVE_QUOTA}
           quotaColor="#C9922A"
         />
         <StatCard
           theme={theme} label="WFH This Month"
           icon={Home} isQuota
-          taken={employeeData.wfh.taken} total={employeeData.wfh.total}
+          taken={wfhCount} total={WFH_QUOTA}
           quotaColor="#00B8B8"
         />
       </div>
 
       {/* ── Attendance Log ── */}
-      <div
-        className="rounded-xl overflow-hidden"
-        style={{ background: surface, border: `1px solid ${border}` }}
-      >
-        <div className="px-5 py-4 flex items-center justify-between"
-          style={{ borderBottom: `1px solid ${border}` }}>
+      <div className="rounded-xl overflow-hidden" style={{ background: surface, border: `1px solid ${border}` }}>
+
+        {/* Header */}
+        <div
+          className="px-4 sm:px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+          style={{ borderBottom: `1px solid ${border}` }}
+        >
           <div>
             <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.2em" }}>
               ATTENDANCE
             </p>
-            <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textPri }}>
-              Daily Log — {employeeData.month}
+            <h3 style={{
+              fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+              fontSize: "clamp(15px, 3.5vw, 18px)", color: textPri,
+            }}>
+              Daily Log — {currentMonthLabel()}
             </h3>
           </div>
-          <div className="flex items-center gap-3">
+          {/* Legend badges — wrap on narrow screens */}
+          <div className="flex items-center gap-2 flex-wrap">
             {["Present", "Absent", "Leave", "WFH"].map((s) => (
-              <div key={s} className="flex items-center gap-1">
-                <StatusBadge status={s} theme={theme} />
-              </div>
+              <StatusBadge key={s} status={s} theme={theme} />
             ))}
           </div>
         </div>
 
-        {/* Table header */}
-        <div className="grid px-5 py-2"
+        {/* Column labels */}
+        <div
+          className="grid px-4 sm:px-5 py-2"
           style={{
-            gridTemplateColumns: "1fr 1fr 1fr",
+            gridTemplateColumns: "1.2fr 1fr 0.8fr",
             background: headerBg,
             borderBottom: `1px solid ${divider}`,
-          }}>
+          }}
+        >
           {["DATE", "DAY", "STATUS"].map((h) => (
-            <span key={h} style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em" }}>
+            <span key={h} style={{
+              fontFamily: "Rajdhani, sans-serif", fontSize: "10px",
+              fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em",
+            }}>
               {h}
             </span>
           ))}
         </div>
 
-        {employeeData.attendanceLog.map((entry, i) => {
-          const dateObj = new Date(entry.date);
-          const day = dateObj.toLocaleDateString("en-IN", { weekday: "long" });
-          return (
-            <div
-              key={entry.date}
-              className="grid px-5 items-center"
-              style={{
-                gridTemplateColumns: "1fr 1fr 1fr",
-                height: "52px",
-                borderBottom: i < employeeData.attendanceLog.length - 1 ? `1px solid ${divider}` : "none",
-                borderLeft: "3px solid transparent",
-                transition: "all 150ms",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = theme === "dark" ? "#161616" : "#F9F9F9";
-                e.currentTarget.style.borderLeftColor = "#00B8B8";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.borderLeftColor = "transparent";
-              }}
-            >
-              <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: textPri }}>
-                {entry.date}
-              </span>
-              <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
-                {day}
-              </span>
-              <div>
-                <StatusBadge status={entry.status} theme={theme} />
+        {/* Data rows */}
+        {loading ? (
+          <LoadingRow theme={theme} />
+        ) : fetchError ? (
+          <div className="px-5 py-8 text-center">
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: "#CC0000" }}>{fetchError}</p>
+          </div>
+        ) : monthRecords.length === 0 ? (
+          <div className="px-5 py-8 text-center">
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>
+              No attendance records found for this month.
+            </p>
+          </div>
+        ) : (
+          monthRecords.map((entry, i) => {
+            const dateObj  = new Date(entry.date);
+            const dayFull  = dateObj.toLocaleDateString("en-IN", { weekday: "long" });
+            const dayShort = dateObj.toLocaleDateString("en-IN", { weekday: "short" });
+
+            return (
+              <div
+                key={entry.id || entry.date}
+                className="grid px-4 sm:px-5 items-center"
+                style={{
+                  gridTemplateColumns: "1.2fr 1fr 0.8fr",
+                  height: "50px",
+                  borderBottom: i < monthRecords.length - 1 ? `1px solid ${divider}` : "none",
+                  borderLeft: "3px solid transparent",
+                  transition: "all 150ms",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = theme === "dark" ? "#161616" : "#F9F9F9";
+                  e.currentTarget.style.borderLeftColor = "#00B8B8";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.borderLeftColor = "transparent";
+                }}
+              >
+                {/* Date */}
+                <span style={{
+                  fontFamily: "Share Tech Mono, monospace",
+                  fontSize: "clamp(10px, 2.5vw, 12px)",
+                  color: textPri, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {entry.date}
+                </span>
+
+                {/* Weekday — full on sm+, abbreviated on mobile */}
+                <span className="hidden sm:inline" style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
+                  {dayFull}
+                </span>
+                <span className="sm:hidden" style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>
+                  {dayShort}
+                </span>
+
+                {/* Status */}
+                <div>
+                  <StatusBadge status={entry.status} theme={theme} />
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
+
+      {/* ── Webcam Modal ── */}
+      {showWebcam && (
+        <WebcamAttendance
+          empId={empId}
+          empName={profile.name}
+          onClose={() => setShowWebcam(false)}
+          onSuccess={() => {
+            setShowWebcam(false);
+            setTimeout(() => refreshRecords(), 800);
+          }}
+        />
+      )}
     </div>
   );
 }

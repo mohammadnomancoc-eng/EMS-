@@ -1,0 +1,21 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "leaveRequests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "empId", "order": "ASCENDING" },
+        { "fieldPath": "from",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "attendance",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "empId", "order": "ASCENDING" },
+        { "fieldPath": "date",  "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

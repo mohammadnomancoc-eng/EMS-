@@ -10,9 +10,12 @@ import {
   ResponsiveContainer, CartesianGrid
 } from "recharts";
 import {
-  employees, weeklyAttendance,
-  recentJoinings, leaveRequests
-} from "../data/mockdata";
+  subscribeEmployees,
+  subscribeLeaveRequests,
+  updateLeaveStatus,
+  getAttendanceByDate,
+} from "../firebase/firestoreService";
+
 
 // ── helpers ──────────────────────────────────────────
 function getInitials(name) {
@@ -46,6 +49,7 @@ function StatusBadge({ status, theme }) {
         fontWeight: 600,
         borderRadius: "4px",
         padding: "2px 8px",
+        whiteSpace: "nowrap",
       }}
     >
       {status}
@@ -73,7 +77,7 @@ function StatCard({ label, value, trend, trendUp, icon: Icon, valueColor, sparkD
 
   return (
     <div
-      className="rounded-xl p-5 flex flex-col gap-3"
+      className="rounded-xl p-4 sm:p-5 flex flex-col gap-2 sm:gap-3"
       style={{
         background: theme === "dark" ? "#111111" : "#FFFFFF",
         border: `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
@@ -89,7 +93,7 @@ function StatCard({ label, value, trend, trendUp, icon: Icon, valueColor, sparkD
         <span
           style={{
             fontFamily: "Rajdhani, sans-serif",
-            fontSize: "10px",
+            fontSize: "9px",
             fontWeight: 700,
             color: "#CC0000",
             letterSpacing: "0.2em",
@@ -99,13 +103,13 @@ function StatCard({ label, value, trend, trendUp, icon: Icon, valueColor, sparkD
           {label}
         </span>
         <div
-          className="rounded-full flex items-center justify-center"
+          className="rounded-full flex items-center justify-center flex-shrink-0"
           style={{
-            width: "36px", height: "36px",
+            width: "32px", height: "32px",
             background: theme === "dark" ? "#1A1A1A" : "#F5F5F5",
           }}
         >
-          <Icon size={16} style={{ color: "#00B8B8" }} />
+          <Icon size={14} style={{ color: "#00B8B8" }} />
         </div>
       </div>
 
@@ -113,7 +117,7 @@ function StatCard({ label, value, trend, trendUp, icon: Icon, valueColor, sparkD
       <div
         style={{
           fontFamily: "Rajdhani, sans-serif",
-          fontSize: "54px",
+          fontSize: "clamp(32px, 5vw, 48px)",
           fontWeight: 700,
           lineHeight: 1,
           color: valueColor || (theme === "dark" ? "#F0F0F0" : "#111111"),
@@ -128,13 +132,13 @@ function StatCard({ label, value, trend, trendUp, icon: Icon, valueColor, sparkD
           ? <TrendingUp size={12} style={{ color: "#00B8B8" }} />
           : <TrendingDown size={12} style={{ color: "#CC0000" }} />
         }
-        <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: theme === "dark" ? "#A0A0A0" : "#888888" }}>
+        <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: theme === "dark" ? "#A0A0A0" : "#888888" }}>
           {trend}
         </span>
       </div>
 
       {/* Sparkline */}
-      <div style={{ height: "36px" }}>
+      <div style={{ height: "32px" }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={sparkData}>
             <Line
@@ -176,25 +180,69 @@ function CustomTooltip({ active, payload, label, theme }) {
   );
 }
 
+// ── helpers ──────────────────────────────────────────
+function lastNDates(n) {
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (n - 1 - i));
+    return d.toISOString().slice(0, 10);
+  });
+}
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
 // ── Main Dashboard ────────────────────────────────────
 function Dashboard() {
   const { theme } = useTheme();
-  const [leaves, setLeaves] = useState(leaveRequests);
 
-  const present = employees.filter((e) => e.status === "Present").length;
-  const absent  = employees.filter((e) => e.status === "Absent").length;
-  const onLeave = employees.filter((e) => e.status === "Leave").length;
-  const totalPayroll = employees.reduce((s, e) => s + e.salary, 0);
+  const [employees,         setEmployees]         = useState([]);
+  const [leaves,            setLeaves]            = useState([]);
+  const [weeklyAttendance,  setWeeklyAttendance]  = useState([]);
+  const [loadingAttendance, setLoadingAttendance] = useState(true);
 
-  const handleApprove = (id) =>
-    setLeaves((prev) => prev.map((l) => l.id === id ? { ...l, status: "Approved" } : l));
-  const handleReject  = (id) =>
-    setLeaves((prev) => prev.map((l) => l.id === id ? { ...l, status: "Rejected" } : l));
+  useEffect(() => {
+    const unsub = subscribeEmployees((list) => setEmployees(list));
+    return unsub;
+  }, []);
 
-  const spark1 = [28,30,28,31,29,32,employees.length].map((v) => ({ v }));
-  const spark2 = [8,10,9,11,10,12,present].map((v) => ({ v }));
-  const spark3 = [2,3,2,4,3,3,onLeave].map((v) => ({ v }));
-  const spark4 = [600000,620000,615000,630000,628000,635000,totalPayroll].map((v) => ({ v }));
+  useEffect(() => {
+    const unsub = subscribeLeaveRequests((list) => setLeaves(list));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    const dates = lastNDates(6);
+    Promise.all(dates.map((d) => getAttendanceByDate(d))).then((results) => {
+      const chart = results.map((records, i) => {
+        const date = new Date(dates[i]);
+        return {
+          day: DAY_LABELS[date.getDay()],
+          present: records.filter((r) => r.status === "Present" || r.status === "WFH").length,
+          absent:  records.filter((r) => r.status === "Absent").length,
+        };
+      });
+      setWeeklyAttendance(chart);
+      setLoadingAttendance(false);
+    });
+  }, []);
+
+  const present      = employees.filter((e) => e.status === "Present").length;
+  const onLeave      = employees.filter((e) => e.status === "Leave").length;
+  const totalPayroll = employees.reduce((s, e) => s + (e.salary || 0), 0);
+
+  const recentJoinings = [...employees]
+    .sort((a, b) => (b.joinDate || "").localeCompare(a.joinDate || ""))
+    .slice(0, 4);
+
+  const pendingLeaves = leaves.filter((l) => l.status === "Pending");
+
+  const handleApprove = async (id) => { await updateLeaveStatus(id, "Approved"); };
+  const handleReject  = async (id) => { await updateLeaveStatus(id, "Rejected"); };
+
+  const spark1 = [28,30,28,31,29,32, employees.length].map((v) => ({ v }));
+  const spark2 = [8,10,9,11,10,12,   present].map((v)            => ({ v }));
+  const spark3 = [2,3,2,4,3,3,        onLeave].map((v)           => ({ v }));
+  const spark4 = [600000,620000,615000,630000,628000,635000, totalPayroll].map((v) => ({ v }));
 
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
@@ -208,11 +256,11 @@ function Dashboard() {
   });
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
 
       {/* ── Greeting Card ── */}
       <div
-        className="rounded-xl p-6 flex items-center justify-between"
+        className="rounded-xl p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
         style={{ background: surface, border: `1px solid ${border}` }}
       >
         <div>
@@ -229,13 +277,13 @@ function Dashboard() {
           >
             WORKSPACE
           </p>
-          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#00B8B8", marginBottom: "4px" }}>
+          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8", marginBottom: "4px" }}>
             {today.toUpperCase()}
           </p>
           <h2
             style={{
               fontFamily: "Rajdhani, sans-serif",
-              fontSize: "32px",
+              fontSize: "clamp(22px, 4vw, 32px)",
               fontWeight: 700,
               color: textPri,
               lineHeight: 1.1,
@@ -243,69 +291,79 @@ function Dashboard() {
           >
             Good morning, Admin 👋
           </h2>
-          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", color: textMuted, marginTop: "4px" }}>
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted, marginTop: "4px" }}>
             Here's what's happening across Royals Webtech today.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
           <button
-            className="flex items-center gap-2 px-4 py-2 rounded-md text-sm"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-md"
             style={{
               fontFamily: "Rajdhani, sans-serif",
               fontWeight: 700,
-              fontSize: "13px",
+              fontSize: "12px",
               border: `1px solid ${border}`,
               color: textPri,
               background: "transparent",
               letterSpacing: "0.05em",
+              whiteSpace: "nowrap",
             }}
             onMouseEnter={(e) => e.currentTarget.style.borderColor = "#00B8B8"}
             onMouseLeave={(e) => e.currentTarget.style.borderColor = border}
           >
-            <Download size={14} /> Export
+            <Download size={13} />
+            <span className="hidden sm:inline">Export</span>
           </button>
           <button
-            className="flex items-center gap-2 px-4 py-2 rounded-md text-sm"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-md"
             style={{
               fontFamily: "Rajdhani, sans-serif",
               fontWeight: 700,
-              fontSize: "13px",
+              fontSize: "12px",
               background: "#CC0000",
               color: "#FFFFFF",
               border: "none",
               letterSpacing: "0.05em",
+              whiteSpace: "nowrap",
             }}
             onMouseEnter={(e) => e.currentTarget.style.background = "#AA0000"}
             onMouseLeave={(e) => e.currentTarget.style.background = "#CC0000"}
           >
-            <Plus size={14} /> Add Employee
+            <Plus size={13} />
+            <span className="hidden sm:inline">Add Employee</span>
           </button>
         </div>
       </div>
 
       {/* ── KPI Cards ── */}
-      <div className="grid grid-cols-4 gap-4">
+      {/* 2-col on mobile, 4-col on lg+ */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard theme={theme} label="Total Employees" value={employees.length}
           icon={Users} trend="+2 this month" trendUp sparkData={spark1} />
         <StatCard theme={theme} label="Present Today" value={present}
-          icon={UserCheck} valueColor="#00B8B8" trend={`${Math.round(present/employees.length*100)}% attendance`} trendUp sparkData={spark2} />
+          icon={UserCheck} valueColor="#00B8B8"
+          trend={employees.length ? `${Math.round(present / employees.length * 100)}% attendance` : "—"}
+          trendUp sparkData={spark2} />
         <StatCard theme={theme} label="On Leave" value={onLeave}
-          icon={UserX} valueColor="#CC0000" trend="1 pending approval" trendUp={false} sparkData={spark3} />
-        <StatCard theme={theme} label="Payroll May" value={totalPayroll}
+          icon={UserX} valueColor="#CC0000"
+          trend={`${pendingLeaves.length} pending`} trendUp={false} sparkData={spark3} />
+        <StatCard theme={theme} label="Payroll" value={totalPayroll}
           icon={DollarSign} valueColor="#C9922A" prefix="₹" trend="+3.2% vs last month" trendUp sparkData={spark4} />
       </div>
 
       {/* ── Row 2: Chart + Team Today ── */}
-      <div className="grid gap-4" style={{ gridTemplateColumns: "62fr 38fr" }}>
+      {/* Stacked on mobile/tablet, side-by-side on lg+ */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
         {/* Weekly Attendance Chart */}
         <div
-          className="rounded-xl p-5"
+          className="lg:col-span-3 rounded-xl p-4 sm:p-5"
           style={{ background: surface, border: `1px solid ${border}` }}
         >
-          <div className="flex items-center justify-between mb-4">
-            <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textPri }}>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "17px", color: textPri }}>
               Weekly Attendance
             </h3>
             <div className="flex items-center gap-3">
@@ -323,7 +381,7 @@ function Dashboard() {
             <LineChart data={weeklyAttendance}>
               <CartesianGrid stroke={theme === "dark" ? "#1A1A1A" : "#E8E8E8"} strokeDasharray="0" />
               <XAxis dataKey="day" tick={{ fontFamily: "Share Tech Mono, monospace", fontSize: 10, fill: textMuted }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontFamily: "Share Tech Mono, monospace", fontSize: 10, fill: textMuted }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontFamily: "Share Tech Mono, monospace", fontSize: 10, fill: textMuted }} axisLine={false} tickLine={false} width={28} />
               <Tooltip content={<CustomTooltip theme={theme} />} />
               <Line type="monotone" dataKey="present" name="Present" stroke="#00B8B8" strokeWidth={2} dot={{ fill: "#00B8B8", r: 3 }} />
               <Line type="monotone" dataKey="absent"  name="Absent"  stroke="#CC0000" strokeWidth={2} dot={{ fill: "#CC0000",  r: 3 }} />
@@ -333,18 +391,18 @@ function Dashboard() {
 
         {/* Team Today */}
         <div
-          className="rounded-xl p-5"
+          className="lg:col-span-2 rounded-xl p-4 sm:p-5"
           style={{ background: surface, border: `1px solid ${border}` }}
         >
           <div className="flex items-center justify-between mb-4">
-            <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textPri }}>
+            <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "17px", color: textPri }}>
               Team Today
             </h3>
             <span
               style={{
                 fontFamily: "Rajdhani, sans-serif",
                 fontWeight: 700,
-                fontSize: "14px",
+                fontSize: "13px",
                 color: "#00B8B8",
                 background: "rgba(0,184,184,0.1)",
                 border: "1px solid rgba(0,184,184,0.3)",
@@ -352,7 +410,7 @@ function Dashboard() {
                 padding: "2px 8px",
               }}
             >
-              {present}/{employees.length}
+              {present} / {employees.length}
             </span>
           </div>
 
@@ -360,16 +418,16 @@ function Dashboard() {
             {employees.slice(0, 8).map((emp) => (
               <div
                 key={emp.id}
-                className="flex items-center gap-3 px-2 py-2 rounded-md"
+                className="flex items-center gap-2 sm:gap-3 px-2 py-2 rounded-md"
                 style={{ transition: "background 150ms" }}
                 onMouseEnter={(e) => e.currentTarget.style.background = theme === "dark" ? "#161616" : "#F5F5F5"}
                 onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
               >
                 <div
                   className="rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ width: "30px", height: "30px", background: "#CC0000" }}
+                  style={{ width: "28px", height: "28px", background: "#CC0000" }}
                 >
-                  <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "10px" }}>
+                  <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "9px" }}>
                     {getInitials(emp.name)}
                   </span>
                 </div>
@@ -377,7 +435,7 @@ function Dashboard() {
                   <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "13px", color: textPri, lineHeight: 1.2 }}>
                     {emp.name}
                   </p>
-                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>
+                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textMuted }}>
                     {emp.role}
                   </p>
                 </div>
@@ -389,79 +447,87 @@ function Dashboard() {
       </div>
 
       {/* ── Row 3: Recent Joinings + Pending Approvals ── */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Stacked on mobile, side-by-side on md+ */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
         {/* Recent Joinings */}
         <div
           className="rounded-xl overflow-hidden"
           style={{ background: surface, border: `1px solid ${border}` }}
         >
-          <div className="px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
-            <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textPri }}>
+          <div className="px-4 sm:px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
+            <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "17px", color: textPri }}>
               Recent Joinings
             </h3>
           </div>
 
-          {/* Table Header */}
-          <div
-            className="grid px-5 py-2"
-            style={{
-              gridTemplateColumns: "1fr 1fr 1fr",
-              background: headerBg,
-              borderBottom: `1px solid ${divider}`,
-            }}
-          >
-            {["EMPLOYEE", "DEPARTMENT", "JOINED"].map((h) => (
-              <span key={h} style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em" }}>
-                {h}
-              </span>
-            ))}
-          </div>
-
-          {recentJoinings.map((emp, i) => (
+          {/* Scrollable table wrapper for small screens */}
+          <div className="overflow-x-auto">
+            {/* Table Header */}
             <div
-              key={emp.id}
-              className="grid px-5 items-center"
+              className="grid px-4 sm:px-5 py-2 min-w-[400px]"
               style={{
                 gridTemplateColumns: "1fr 1fr 1fr",
-                height: "52px",
-                borderBottom: i < recentJoinings.length - 1 ? `1px solid ${divider}` : "none",
-                borderLeft: "3px solid transparent",
-                transition: "all 150ms",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = theme === "dark" ? "#161616" : "#F9F9F9";
-                e.currentTarget.style.borderLeftColor = "#00B8B8";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.borderLeftColor = "transparent";
+                background: headerBg,
+                borderBottom: `1px solid ${divider}`,
               }}
             >
-              <div className="flex items-center gap-2">
-                <div className="rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ width: "28px", height: "28px", background: "#CC0000" }}>
-                  <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "9px" }}>
-                    {getInitials(emp.name)}
-                  </span>
-                </div>
-                <div>
-                  <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "13px", color: textPri, lineHeight: 1.1 }}>
-                    {emp.name}
-                  </p>
-                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textMuted }}>
-                    {emp.role}
-                  </p>
-                </div>
-              </div>
-              <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
-                {emp.department}
-              </span>
-              <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: textMuted }}>
-                {emp.joinDate}
-              </span>
+              {["EMPLOYEE", "DEPARTMENT", "JOINED"].map((h) => (
+                <span key={h} style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em" }}>
+                  {h}
+                </span>
+              ))}
             </div>
-          ))}
+
+            {recentJoinings.length === 0 ? (
+              <div className="px-5 py-6 text-center" style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>
+                No employees yet.
+              </div>
+            ) : recentJoinings.map((emp, i) => (
+              <div
+                key={emp.id}
+                className="grid px-4 sm:px-5 items-center min-w-[400px]"
+                style={{
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  height: "52px",
+                  borderBottom: i < recentJoinings.length - 1 ? `1px solid ${divider}` : "none",
+                  borderLeft: "3px solid transparent",
+                  transition: "all 150ms",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = theme === "dark" ? "#161616" : "#F9F9F9";
+                  e.currentTarget.style.borderLeftColor = "#00B8B8";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.borderLeftColor = "transparent";
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ width: "26px", height: "26px", background: "#CC0000" }}>
+                    <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "9px" }}>
+                      {getInitials(emp.name)}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "12px", color: textPri, lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {emp.name}
+                    </p>
+                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textMuted }}>
+                      {emp.role}
+                    </p>
+                  </div>
+                </div>
+                <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {emp.department}
+                </span>
+                <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>
+                  {emp.joinDate}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Pending Approvals */}
@@ -469,101 +535,110 @@ function Dashboard() {
           className="rounded-xl overflow-hidden"
           style={{ background: surface, border: `1px solid ${border}` }}
         >
-          <div className="px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
-            <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color: textPri }}>
+          <div className="px-4 sm:px-5 py-4" style={{ borderBottom: `1px solid ${border}` }}>
+            <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "17px", color: textPri }}>
               Pending Approvals
             </h3>
           </div>
 
-          <div
-            className="grid px-5 py-2"
-            style={{
-              gridTemplateColumns: "1fr 1fr auto",
-              background: headerBg,
-              borderBottom: `1px solid ${divider}`,
-            }}
-          >
-            {["EMPLOYEE", "LEAVE TYPE", "ACTION"].map((h) => (
-              <span key={h} style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em" }}>
-                {h}
-              </span>
-            ))}
-          </div>
-
-          {leaves.map((req, i) => (
+          {/* Scrollable table wrapper for small screens */}
+          <div className="overflow-x-auto">
             <div
-              key={req.id}
-              className="grid px-5 items-center"
+              className="grid px-4 sm:px-5 py-2 min-w-[380px]"
               style={{
                 gridTemplateColumns: "1fr 1fr auto",
-                height: "60px",
-                borderBottom: i < leaves.length - 1 ? `1px solid ${divider}` : "none",
-                borderLeft: "3px solid transparent",
-                transition: "all 150ms",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = theme === "dark" ? "#161616" : "#F9F9F9";
-                e.currentTarget.style.borderLeftColor = "#00B8B8";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.borderLeftColor = "transparent";
+                background: headerBg,
+                borderBottom: `1px solid ${divider}`,
               }}
             >
-              <div>
-                <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "13px", color: textPri }}>
-                  {req.employee}
-                </p>
-                <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>
-                  {req.from} → {req.to}
-                </p>
-              </div>
-
-              <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
-                {req.type}
-              </span>
-
-              <div className="flex items-center gap-2">
-                {req.status === "Pending" ? (
-                  <>
-                    <button
-                      onClick={() => handleApprove(req.id)}
-                      className="rounded flex items-center justify-center"
-                      style={{ width: "28px", height: "28px", background: "rgba(0,184,184,0.1)", border: "1px solid rgba(0,184,184,0.3)", color: "#00B8B8" }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,184,184,0.2)"}
-                      onMouseLeave={(e) => e.currentTarget.style.background = "rgba(0,184,184,0.1)"}
-                    >
-                      <Check size={13} />
-                    </button>
-                    <button
-                      onClick={() => handleReject(req.id)}
-                      className="rounded flex items-center justify-center"
-                      style={{ width: "28px", height: "28px", background: "rgba(204,0,0,0.1)", border: "1px solid rgba(204,0,0,0.3)", color: "#CC0000" }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = "rgba(204,0,0,0.2)"}
-                      onMouseLeave={(e) => e.currentTarget.style.background = "rgba(204,0,0,0.1)"}
-                    >
-                      <X size={13} />
-                    </button>
-                  </>
-                ) : (
-                  <span
-                    style={{
-                      fontFamily: "Rajdhani, sans-serif",
-                      fontSize: "11px",
-                      fontWeight: 600,
-                      color: req.status === "Approved" ? "#00B8B8" : "#CC0000",
-                      background: req.status === "Approved" ? "rgba(0,184,184,0.1)" : "rgba(204,0,0,0.1)",
-                      border: `1px solid ${req.status === "Approved" ? "rgba(0,184,184,0.3)" : "rgba(204,0,0,0.3)"}`,
-                      borderRadius: "4px",
-                      padding: "2px 8px",
-                    }}
-                  >
-                    {req.status}
-                  </span>
-                )}
-              </div>
+              {["EMPLOYEE", "LEAVE TYPE", "ACTION"].map((h) => (
+                <span key={h} style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em" }}>
+                  {h}
+                </span>
+              ))}
             </div>
-          ))}
+
+            {leaves.filter(req => req.status === "Pending" || req.status === "Approved" || req.status === "Rejected").slice(0, 5).map((req, i, arr) => {
+              const empName = req.employee || req.name ||
+                employees.find(e => e.id === req.empId)?.name || req.empId || "—";
+              const leaveType = req.type || req.leaveType || req.requestType || "Leave";
+              return (
+                <div
+                  key={req.id}
+                  className="grid px-4 sm:px-5 items-center min-w-[380px]"
+                  style={{
+                    gridTemplateColumns: "1fr 1fr auto",
+                    height: "60px",
+                    borderBottom: i < arr.length - 1 ? `1px solid ${divider}` : "none",
+                    borderLeft: "3px solid transparent",
+                    transition: "all 150ms",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = theme === "dark" ? "#161616" : "#F9F9F9";
+                    e.currentTarget.style.borderLeftColor = "#00B8B8";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.borderLeftColor = "transparent";
+                  }}
+                >
+                  <div className="min-w-0">
+                    <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "12px", color: textPri, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {empName}
+                    </p>
+                    <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "9px", color: textMuted }}>
+                      {req.from} → {req.to}
+                    </p>
+                  </div>
+
+                  <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>
+                    {leaveType}
+                  </span>
+
+                  <div className="flex items-center gap-1 sm:gap-2">
+                    {req.status === "Pending" ? (
+                      <>
+                        <button
+                          onClick={() => handleApprove(req.id)}
+                          className="rounded flex items-center justify-center"
+                          style={{ width: "26px", height: "26px", background: "rgba(0,184,184,0.1)", border: "1px solid rgba(0,184,184,0.3)", color: "#00B8B8", flexShrink: 0 }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0,184,184,0.2)"}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "rgba(0,184,184,0.1)"}
+                        >
+                          <Check size={12} />
+                        </button>
+                        <button
+                          onClick={() => handleReject(req.id)}
+                          className="rounded flex items-center justify-center"
+                          style={{ width: "26px", height: "26px", background: "rgba(204,0,0,0.1)", border: "1px solid rgba(204,0,0,0.3)", color: "#CC0000", flexShrink: 0 }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = "rgba(204,0,0,0.2)"}
+                          onMouseLeave={(e) => e.currentTarget.style.background = "rgba(204,0,0,0.1)"}
+                        >
+                          <X size={12} />
+                        </button>
+                      </>
+                    ) : (
+                      <span
+                        style={{
+                          fontFamily: "Rajdhani, sans-serif",
+                          fontSize: "10px",
+                          fontWeight: 600,
+                          color: req.status === "Approved" ? "#00B8B8" : "#CC0000",
+                          background: req.status === "Approved" ? "rgba(0,184,184,0.1)" : "rgba(204,0,0,0.1)",
+                          border: `1px solid ${req.status === "Approved" ? "rgba(0,184,184,0.3)" : "rgba(204,0,0,0.3)"}`,
+                          borderRadius: "4px",
+                          padding: "2px 6px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {req.status}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

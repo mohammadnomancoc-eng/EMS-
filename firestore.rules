@@ -32,9 +32,17 @@ service cloud.firestore {
     // ── /employees ────────────────────────────────────────
     // workType field ("WFO" | "WFH" | "Hybrid") is stored here.
     // Employees can read their own profile; admins manage all.
+    // Employees can update ONLY the offer letter fields on their own doc
+    // (offerLetterUrl, offerLetterPublicId, offerLetterFileName, offerLetterUploadedAt, updatedAt).
+    // Any attempt to touch any other field is denied.
     match /employees/{empId} {
       allow read: if isAuthed();
-      allow create, update, delete: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+                    || (isEmployee()
+                        && empId == ownEmpId()
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['offerLetterUrl','offerLetterPublicId','offerLetterFileName','offerLetterUploadedAt','updatedAt']));
     }
 
     // ── /departments ──────────────────────────────────────

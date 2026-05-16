@@ -101,6 +101,46 @@ export async function updateEmployeePhoto(id, photoUrl, photoPublicId) {
   });
 }
 
+/**
+ * Update the employee's offer letter (Cloudinary URL).
+ * Stores the secure URL, Cloudinary public_id, original file name, and upload timestamp.
+ *
+ * The URL is stored exactly as Cloudinary returns it:
+ *   - PDFs  → /raw/upload/ URL  (correct Cloudinary resource type for documents)
+ *   - Images → /image/upload/ URL
+ *
+ * Display and download helpers in cloudinaryService.js handle URL transforms at
+ * read time (getOfferLetterViewUrl, getOfferLetterDownloadUrl, getGoogleDocsViewerUrl).
+ * We intentionally do NOT rewrite /raw/ → /image/ here because that produces a
+ * broken image-type URL for PDFs that Cloudinary cannot render inline.
+ *
+ * We DO strip any accidental transformation flags (fl_attachment, c_fill, etc.)
+ * that older app versions may have written to Firestore.
+ *
+ * @param {string} id                  – employee doc ID (e.g. "RWT013")
+ * @param {string} offerLetterUrl      – Cloudinary secure_url from uploadOfferLetter()
+ * @param {string} offerLetterPublicId – Cloudinary public_id
+ * @param {string} offerLetterFileName – original file name shown in the UI
+ */
+export async function updateEmployeeOfferLetter(id, offerLetterUrl, offerLetterPublicId, offerLetterFileName) {
+  let cleanUrl = offerLetterUrl || null;
+  if (cleanUrl) {
+    // Strip any accidental transformation segment between /upload/ and the version token.
+    // e.g. /upload/fl_attachment/v1234... → /upload/v1234...
+    // e.g. /upload/c_fill,w_200/v1234...  → /upload/v1234...
+    // Leaves /raw/upload/ and /image/upload/ paths untouched (no /raw/ ↔ /image/ rewriting).
+    cleanUrl = cleanUrl.replace(/\/upload\/(?!v\d)([^/]+\/)+/, "/upload/");
+  }
+
+  await updateDoc(doc(db, "employees", id), {
+    offerLetterUrl:        cleanUrl,
+    offerLetterPublicId,
+    offerLetterFileName,
+    offerLetterUploadedAt: serverTimestamp(),
+    updatedAt:             serverTimestamp(),
+  });
+}
+
 /** Delete an employee */
 export async function deleteEmployee(id) {
   await deleteDoc(doc(db, "employees", id));

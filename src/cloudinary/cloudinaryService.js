@@ -1,53 +1,17 @@
 // ─────────────────────────────────────────────────────────────
 //  src/cloudinary/cloudinaryService.js
-//
-//  Handles all Cloudinary uploads (images & videos) via the
-//  unsigned upload API — no server required.
-//
-//  Setup:
-//    1. Create a free account at https://cloudinary.com
-//    2. Go to Settings → Upload → Upload Presets → Add preset
-//       → set Signing Mode = "Unsigned" → save
-//    3. Copy your Cloud Name and the preset name into
-//       src/cloudinary/config.js (see below)
-//
-//  Firestore stores only the returned `secure_url` (and
-//  optionally `public_id` for future deletion/transforms).
 // ─────────────────────────────────────────────────────────────
 
 // ── Config ────────────────────────────────────────────────────
-// Replace these with your own Cloudinary credentials.
-// Alternatively, move them into a .env file:
-//   VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
-//   VITE_CLOUDINARY_UPLOAD_PRESET=your_unsigned_preset
 export const CLOUDINARY_CLOUD_NAME =
   import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "YOUR_CLOUD_NAME";
 
 export const CLOUDINARY_UPLOAD_PRESET =
   import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "YOUR_UNSIGNED_PRESET";
 
-// Base URL for Cloudinary's unsigned upload endpoint
 const CLOUDINARY_BASE_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}`;
 
-// ── Types ─────────────────────────────────────────────────────
-/**
- * @typedef {Object} UploadResult
- * @property {string} secure_url  - HTTPS URL to the uploaded asset
- * @property {string} public_id   - Cloudinary public ID (use for deletions/transforms)
- * @property {string} resource_type - "image" | "video" | "raw"
- * @property {number} width       - (images only)
- * @property {number} height      - (images only)
- * @property {number} bytes       - File size in bytes
- * @property {string} format      - e.g. "jpg", "mp4"
- */
-
 // ── Helpers ───────────────────────────────────────────────────
-
-/**
- * Validate file before uploading.
- * @param {File} file
- * @param {"image"|"video"} type
- */
 function validateFile(file, type) {
   if (type === "image") {
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"];
@@ -73,18 +37,6 @@ function validateFile(file, type) {
 }
 
 // ── Core Upload ───────────────────────────────────────────────
-
-/**
- * Upload a File to Cloudinary via unsigned upload preset.
- *
- * @param {File}   file              - The File object from an <input type="file">
- * @param {"image"|"video"} type     - Resource type
- * @param {Object} [options]
- * @param {string} [options.folder]  - Cloudinary folder path, e.g. "ems/employees"
- * @param {string} [options.publicId] - Custom public_id (without extension)
- * @param {Function} [options.onProgress] - Progress callback: (percent: number) => void
- * @returns {Promise<UploadResult>}
- */
 export async function uploadToCloudinary(file, type = "image", options = {}) {
   if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === "YOUR_CLOUD_NAME") {
     throw new Error(
@@ -103,7 +55,6 @@ export async function uploadToCloudinary(file, type = "image", options = {}) {
 
   const url = `${CLOUDINARY_BASE_URL}/${type}/upload`;
 
-  // Use XMLHttpRequest so we can track upload progress
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url, true);
@@ -118,8 +69,7 @@ export async function uploadToCloudinary(file, type = "image", options = {}) {
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        const data = JSON.parse(xhr.responseText);
-        resolve(data);
+        resolve(JSON.parse(xhr.responseText));
       } else {
         let errMsg = `Upload failed (HTTP ${xhr.status})`;
         try {
@@ -137,15 +87,6 @@ export async function uploadToCloudinary(file, type = "image", options = {}) {
 
 // ── Convenience Wrappers ──────────────────────────────────────
 
-/**
- * Upload an employee profile photo.
- * Stored under folder: "ems/employees/{empId}"
- *
- * @param {File}   file
- * @param {string} empId            - e.g. "RWT013"
- * @param {Function} [onProgress]   - (percent: number) => void
- * @returns {Promise<UploadResult>}
- */
 export async function uploadEmployeePhoto(file, empId, onProgress) {
   return uploadToCloudinary(file, "image", {
     folder:     `ems/employees/${empId}`,
@@ -154,15 +95,6 @@ export async function uploadEmployeePhoto(file, empId, onProgress) {
   });
 }
 
-/**
- * Upload a document or company-related image.
- * Stored under folder: "ems/documents"
- *
- * @param {File}   file
- * @param {string} docName           - Identifier for the document
- * @param {Function} [onProgress]
- * @returns {Promise<UploadResult>}
- */
 export async function uploadDocument(file, docName, onProgress) {
   return uploadToCloudinary(file, "image", {
     folder:     "ems/documents",
@@ -171,15 +103,6 @@ export async function uploadDocument(file, docName, onProgress) {
   });
 }
 
-/**
- * Upload a video (e.g. training material, announcements).
- * Stored under folder: "ems/videos"
- *
- * @param {File}   file
- * @param {string} videoName         - Identifier for the video
- * @param {Function} [onProgress]
- * @returns {Promise<UploadResult>}
- */
 export async function uploadVideo(file, videoName, onProgress) {
   return uploadToCloudinary(file, "video", {
     folder:     "ems/videos",
@@ -188,14 +111,85 @@ export async function uploadVideo(file, videoName, onProgress) {
   });
 }
 
-// ── URL Transform Helpers ─────────────────────────────────────
-// Build optimised Cloudinary URLs without re-uploading.
+/**
+ * Upload an employee's offer letter.
+ *
+ * PDFs  → uploaded as "raw" resource type (the correct Cloudinary type for PDFs).
+ *          The raw URL is stored as-is. We use Google Docs Viewer to display it,
+ *          which works perfectly with public Cloudinary raw URLs — no CORS, no auth issues.
+ *
+ * Images → uploaded as "image" resource type as normal.
+ *
+ * @param {File}     file
+ * @param {string}   empId       - e.g. "RWT013"
+ * @param {Function} onProgress  - (percent: number) => void
+ * @returns {Promise<{secure_url, public_id, resource_type, ...}>}
+ */
+export async function uploadOfferLetter(file, empId, onProgress) {
+  const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+  if (!allowed.includes(file.type)) {
+    throw new Error("Unsupported format. Please upload a PDF, JPG, PNG, or WEBP file.");
+  }
+  const maxMB = 20;
+  if (file.size > maxMB * 1024 * 1024) {
+    throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max ${maxMB} MB.`);
+  }
+  if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === "YOUR_CLOUD_NAME") {
+    throw new Error(
+      "Cloudinary is not configured. Set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET in your .env file."
+    );
+  }
+
+  const isPdf = file.type === "application/pdf";
+  // PDFs must be uploaded as "raw" — Cloudinary's correct resource type for documents.
+  // Images go as "image" as normal.
+  const resourceType = isPdf ? "raw" : "image";
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  formData.append("folder",      `ems/offer-letters/${empId}`);
+  formData.append("public_id",   `${empId}_offer_letter_${Date.now()}`);
+
+  const uploadUrl = `${CLOUDINARY_BASE_URL}/${resourceType}/upload`;
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", uploadUrl, true);
+
+    if (onProgress) {
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      });
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const data = JSON.parse(xhr.responseText);
+        // Store the URL exactly as Cloudinary returns it.
+        // For PDFs this is a /raw/upload/ URL — that's correct and intentional.
+        // getOfferLetterDownloadUrl() will add fl_attachment when needed for downloads.
+        // Google Docs Viewer handles display without needing URL transforms.
+        resolve(data);
+      } else {
+        let errMsg = `Upload failed (HTTP ${xhr.status})`;
+        try {
+          const err = JSON.parse(xhr.responseText);
+          errMsg = err?.error?.message || errMsg;
+        } catch (_) {}
+        reject(new Error(errMsg));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error during upload."));
+    xhr.send(formData);
+  });
+}
+
+// ── URL Helpers ───────────────────────────────────────────────
 
 /**
- * Generate a thumbnail URL for a Cloudinary image.
- * @param {string} secureUrl  - Original secure_url from Cloudinary
- * @param {number} [size=150] - Square size in pixels
- * @returns {string}
+ * Thumbnail URL for Cloudinary images.
  */
 export function getThumbnailUrl(secureUrl, size = 150) {
   if (!secureUrl || !secureUrl.includes("cloudinary.com")) return secureUrl;
@@ -206,11 +200,60 @@ export function getThumbnailUrl(secureUrl, size = 150) {
 }
 
 /**
- * Generate an auto-quality, auto-format URL for any Cloudinary asset.
- * @param {string} secureUrl
- * @returns {string}
+ * Auto-quality, auto-format URL for any Cloudinary image.
  */
 export function getOptimizedUrl(secureUrl) {
   if (!secureUrl || !secureUrl.includes("cloudinary.com")) return secureUrl;
   return secureUrl.replace("/upload/", "/upload/q_auto,f_auto/");
+}
+
+/**
+ * Returns the clean, publicly-accessible offer letter URL (no transforms).
+ * Safe to pass to Google Docs Viewer or use as an <img> src.
+ *
+ * Strips any transformation flags (fl_attachment, c_fill, etc.) that may
+ * have been written to Firestore by older app versions.
+ *
+ * @param {string} url - Raw URL stored in Firestore
+ * @returns {string}
+ */
+export function getOfferLetterViewUrl(url) {
+  if (!url) return url;
+  let clean = url;
+  // Strip any transform segment between /upload/ and the version token (v1234567890)
+  // This removes fl_attachment/, c_fill,.../ or any other flags stored by mistake.
+  // Matches: /upload/anything_here/v1234567890 → /upload/v1234567890
+  clean = clean.replace(/\/upload\/(?!v\d)([^/]+\/)+/, "/upload/");
+  return clean;
+}
+
+/**
+ * Returns a force-download URL for the offer letter.
+ * Works for both raw (PDF) and image URLs stored in Firestore.
+ *
+ * For PDFs (raw URLs):  adds fl_attachment so browser downloads the PDF.
+ * For images:           adds fl_attachment so browser downloads the image.
+ *
+ * @param {string} url - Raw URL stored in Firestore
+ * @returns {string}
+ */
+export function getOfferLetterDownloadUrl(url) {
+  if (!url) return url;
+  const clean = getOfferLetterViewUrl(url);
+  // Insert fl_attachment after /upload/
+  return clean.replace("/upload/", "/upload/fl_attachment/");
+}
+
+/**
+ * Wraps any public URL in Google Docs Viewer for reliable in-browser PDF viewing.
+ * Works cross-origin, no CORS issues, no plugins needed, works on mobile too.
+ *
+ * Use this for both Cloudinary raw PDF URLs and image URLs stored as PDFs.
+ *
+ * @param {string} url - The clean offer letter URL (from getOfferLetterViewUrl)
+ * @returns {string}   - Google Docs Viewer iframe src
+ */
+export function getGoogleDocsViewerUrl(url) {
+  if (!url) return "";
+  return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
 }

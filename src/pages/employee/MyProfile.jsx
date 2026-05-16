@@ -5,12 +5,14 @@ import {
   Calendar, Shield, Edit3, Save, X,
   KeyRound, Eye, EyeOff, CheckCircle2, AlertCircle,
   Camera, Hash, MapPin, DollarSign, Loader,
+  FileText, Upload, Download,
 } from "lucide-react";
-import { uploadEmployeePhoto, getThumbnailUrl } from "../../cloudinary/cloudinaryService";
+import { uploadEmployeePhoto, uploadOfferLetter, getThumbnailUrl, getOfferLetterViewUrl, getOfferLetterDownloadUrl, getGoogleDocsViewerUrl } from "../../cloudinary/cloudinaryService";
 import {
   getEmployee,
   updateEmployee,
   updateEmployeePhoto,
+  updateEmployeeOfferLetter,
 } from "../../firebase/firestoreService";
 import {
   updatePassword,
@@ -102,7 +104,6 @@ function PasswordField({ label, value, onChange, show, onToggle, theme }) {
           onFocus={(e) => e.target.style.borderColor = "#CC0000"}
           onBlur={(e)  => e.target.style.borderColor = border}
         />
-        {/* Full-height tap target */}
         <button type="button" onClick={onToggle}
           className="absolute right-0 top-0 h-full flex items-center justify-center"
           style={{ width: "44px", color: textMuted, background: "none", border: "none", cursor: "pointer" }}>
@@ -134,6 +135,134 @@ function Toast({ msg, type }) {
   );
 }
 
+// ── Offer Letter Viewer Modal ─────────────────────────────────
+// Uses Google Docs Viewer inside an iframe — works cross-origin with Cloudinary
+// raw URLs without any CORS issues, no plugins, no pdfjs-dist needed.
+function OfferLetterModal({ url, fileName, theme, onClose }) {
+  const isDark    = theme === "dark";
+  const surface   = isDark ? "#111111" : "#FFFFFF";
+  const border    = isDark ? "#1E1E1E" : "#E0E0E0";
+  const textPri   = isDark ? "#F0F0F0" : "#111111";
+  const textMuted = isDark ? "#666666" : "#888888";
+
+  const cleanUrl    = getOfferLetterViewUrl(url);
+  const downloadUrl = getOfferLetterDownloadUrl(url);
+  const isImage     = /\.(jpe?g|png|webp)(\?|$)/i.test(cleanUrl);
+  const viewerUrl   = isImage ? cleanUrl : getGoogleDocsViewerUrl(cleanUrl);
+
+  // Close on Escape key
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(0,0,0,0.80)", backdropFilter: "blur(4px)",
+        display: "flex", flexDirection: "column",
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {/* Modal header */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "10px 14px", background: surface,
+        borderBottom: `1px solid ${border}`, flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <FileText size={15} style={{ color: "#00B8B8" }} />
+          <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: textPri, letterSpacing: "0.04em" }}>
+            {fileName || "Offer Letter"}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Download button */}
+          <a
+            href={downloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "flex", alignItems: "center", gap: "5px",
+              padding: "6px 12px", borderRadius: "7px",
+              background: "rgba(0,184,184,0.10)", border: "1px solid rgba(0,184,184,0.3)",
+              color: "#00B8B8", textDecoration: "none",
+              fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "12px",
+              letterSpacing: "0.05em",
+            }}>
+            <Download size={13} /> DOWNLOAD
+          </a>
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            style={{
+              width: "32px", height: "32px", borderRadius: "7px",
+              background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.2)",
+              color: "#CC0000", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+            <X size={15} />
+          </button>
+        </div>
+      </div>
+
+      {/* Viewer body */}
+      <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+        {/* Loading background (shown behind iframe until it loads) */}
+        <div style={{
+          position: "absolute", inset: 0,
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "12px",
+          background: isDark ? "#0D0D0D" : "#F0F0F0",
+        }}>
+          <div style={{
+            width: "22px", height: "22px", borderRadius: "50%",
+            border: "2px solid #00B8B8", borderTopColor: "transparent",
+            animation: "spin 0.8s linear infinite",
+          }} />
+          <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted }}>
+            Loading document…
+          </span>
+        </div>
+
+        {isImage ? (
+          <img
+            src={viewerUrl}
+            alt="Offer Letter"
+            style={{
+              position: "relative", zIndex: 1,
+              maxWidth: "100%", maxHeight: "100%",
+              margin: "auto", display: "block", objectFit: "contain",
+            }}
+          />
+        ) : (
+          <iframe
+            src={viewerUrl}
+            title="Offer Letter"
+            style={{
+              position: "relative", zIndex: 1,
+              width: "100%", height: "100%",
+              border: "none", display: "block",
+            }}
+            allowFullScreen
+          />
+        )}
+      </div>
+
+      {/* Footer hint */}
+      <div style={{
+        padding: "7px 14px", background: surface,
+        borderTop: `1px solid ${border}`, textAlign: "center", flexShrink: 0,
+      }}>
+        <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>
+          If the document doesn't load, click DOWNLOAD to open it directly.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────
 export default function MyProfile() {
   const { theme }  = useTheme();
@@ -157,6 +286,14 @@ export default function MyProfile() {
   const [photoProgress,  setPhotoProgress]  = useState(0);
   const [photoErr,       setPhotoErr]       = useState("");
 
+  const offerLetterInputRef                             = useRef(null);
+  const [offerLetterUrl,      setOfferLetterUrl]      = useState(null);
+  const [offerLetterFileName, setOfferLetterFileName] = useState(null);
+  const [offerUploading,      setOfferUploading]      = useState(false);
+  const [offerProgress,       setOfferProgress]       = useState(0);
+  const [offerErr,            setOfferErr]            = useState("");
+  const [offerViewerOpen,     setOfferViewerOpen]     = useState(false);
+
   const [toast, setToast] = useState({ msg: "", type: "" });
 
   useEffect(() => {
@@ -175,6 +312,8 @@ export default function MyProfile() {
         }
         setProfile(doc);
         setPhotoUrl(doc.photoUrl || null);
+        setOfferLetterUrl(doc.offerLetterUrl || null);
+        setOfferLetterFileName(doc.offerLetterFileName || null);
         setEditData({ phone: doc.phone || "", location: doc.location || "", bio: doc.bio || "" });
         setLoading(false);
       })
@@ -205,6 +344,34 @@ export default function MyProfile() {
       setPhotoUrl(profile.photoUrl || null);
     } finally {
       setPhotoUploading(false); setPhotoProgress(0); URL.revokeObjectURL(objUrl);
+    }
+  }
+
+  async function handleOfferLetterUpload(file) {
+    if (!file || !profile) return;
+    setOfferErr(""); setOfferUploading(true); setOfferProgress(0);
+    try {
+      const result = await uploadOfferLetter(file, profile.id, (pct) => setOfferProgress(pct));
+      // Save to Firestore — stores the URL exactly as Cloudinary returns it
+      await updateEmployeeOfferLetter(
+        profile.id,
+        result.secure_url,
+        result.public_id,
+        file.name,
+      );
+      setOfferLetterUrl(result.secure_url);
+      setOfferLetterFileName(file.name);
+      setProfile((p) => ({
+        ...p,
+        offerLetterUrl:       result.secure_url,
+        offerLetterPublicId:  result.public_id,
+        offerLetterFileName:  file.name,
+      }));
+      showToast("Offer letter uploaded successfully");
+    } catch (err) {
+      setOfferErr(err.message || "Upload failed.");
+    } finally {
+      setOfferUploading(false); setOfferProgress(0);
     }
   }
 
@@ -319,10 +486,7 @@ export default function MyProfile() {
         </div>
 
         {/* Profile row */}
-        <div
-          className="flex items-end gap-3 sm:gap-5 px-4 sm:px-6 pb-4 sm:pb-5"
-          style={{ marginTop: "-28px" }}
-        >
+        <div className="flex items-end gap-3 sm:gap-5 px-4 sm:px-6 pb-4 sm:pb-5" style={{ marginTop: "-28px" }}>
           {/* Avatar */}
           <div style={{ position: "relative", flexShrink: 0 }}>
             <div className="rounded-full flex items-center justify-center"
@@ -397,7 +561,7 @@ export default function MyProfile() {
         </div>
       )}
 
-      {/* ── Two-column grid: stacks on mobile, side-by-side on lg ── */}
+      {/* ── Two-column grid ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
 
         {/* ── LEFT COLUMN ── */}
@@ -507,7 +671,6 @@ export default function MyProfile() {
           {/* Quick Stats */}
           <div className="rounded-2xl p-4 sm:p-5" style={card}>
             <SectionLabel>This Month at a Glance</SectionLabel>
-            {/* 2×2 grid always — compact enough on all screens */}
             <div className="grid grid-cols-2 gap-3">
               {[
                 { label: "Days Present", value: "—", color: "#00B8B8" },
@@ -545,10 +708,156 @@ export default function MyProfile() {
               ))}
             </div>
           </div>
+
+          {/* ── Offer Letter ── */}
+          <div className="rounded-2xl p-4 sm:p-5" style={card}>
+            <SectionLabel>Offer Letter</SectionLabel>
+
+            {offerLetterUrl ? (
+              /* Letter uploaded — show chip with View + Download + Replace */
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-3 rounded-xl p-3"
+                  style={{ background: theme === "dark" ? "#0D0D0D" : "#F5F5F5", border: `1px solid ${border}` }}>
+                  {/* Icon */}
+                  <div className="flex-shrink-0 rounded-lg flex items-center justify-center"
+                    style={{ width: "40px", height: "40px", background: "rgba(0,184,184,0.10)", border: "1px solid rgba(0,184,184,0.25)" }}>
+                    <FileText size={18} style={{ color: "#00B8B8" }} />
+                  </div>
+                  {/* Name */}
+                  <div className="flex-1 min-w-0">
+                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", fontWeight: 600, color: textPri,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {offerLetterFileName || "Offer Letter"}
+                    </p>
+                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, marginTop: "2px" }}>
+                      Uploaded successfully
+                    </p>
+                  </div>
+                  {/* View button — opens Google Docs Viewer modal */}
+                  <button
+                    onClick={() => setOfferViewerOpen(true)}
+                    title="View offer letter"
+                    style={{
+                      flexShrink: 0, width: "34px", height: "34px", borderRadius: "8px",
+                      background: "rgba(0,184,184,0.08)", border: "1px solid rgba(0,184,184,0.25)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "#00B8B8", cursor: "pointer",
+                    }}>
+                    <Eye size={14} />
+                  </button>
+                  {/* Download button */}
+                  <a
+                    href={getOfferLetterDownloadUrl(offerLetterUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Download offer letter"
+                    style={{
+                      flexShrink: 0, width: "34px", height: "34px", borderRadius: "8px",
+                      background: "rgba(201,146,42,0.08)", border: "1px solid rgba(201,146,42,0.25)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "#C9922A", textDecoration: "none",
+                    }}>
+                    <Download size={14} />
+                  </a>
+                </div>
+
+                {/* Replace button */}
+                <button
+                  onClick={() => offerLetterInputRef.current?.click()}
+                  disabled={offerUploading}
+                  className="flex items-center justify-center gap-2 rounded-xl py-2.5"
+                  style={{
+                    background: "transparent", border: `1px solid ${border}`,
+                    color: textMuted, fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+                    fontSize: "13px", letterSpacing: "0.06em",
+                    cursor: offerUploading ? "not-allowed" : "pointer", minHeight: "40px",
+                  }}>
+                  <Upload size={13} /> REPLACE OFFER LETTER
+                </button>
+              </div>
+            ) : (
+              /* Not uploaded yet — drop zone */
+              <button
+                onClick={() => offerLetterInputRef.current?.click()}
+                disabled={offerUploading}
+                style={{
+                  width: "100%", padding: "24px 16px", borderRadius: "12px",
+                  cursor: offerUploading ? "not-allowed" : "pointer",
+                  background: theme === "dark" ? "#0D0D0D" : "#F8F8F8",
+                  border: `2px dashed ${offerUploading ? "#00B8B8" : (theme === "dark" ? "#2A2A2A" : "#D0D0D0")}`,
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: "10px",
+                  transition: "border-color 200ms",
+                }}
+                onMouseEnter={(e) => { if (!offerUploading) e.currentTarget.style.borderColor = "#CC0000"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = offerUploading ? "#00B8B8" : (theme === "dark" ? "#2A2A2A" : "#D0D0D0"); }}>
+                <div style={{
+                  width: "44px", height: "44px", borderRadius: "10px",
+                  background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.2)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <FileText size={20} style={{ color: "#CC0000" }} />
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color: textPri, letterSpacing: "0.04em" }}>
+                    Upload your Offer Letter
+                  </p>
+                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, marginTop: "4px" }}>
+                    PDF, JPG, PNG or WEBP · Max 20 MB
+                  </p>
+                </div>
+              </button>
+            )}
+
+            {/* Upload progress bar */}
+            {offerUploading && (
+              <div style={{ marginTop: "12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#00B8B8" }}>Uploading…</span>
+                  <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#00B8B8" }}>{offerProgress}%</span>
+                </div>
+                <div style={{ height: "4px", borderRadius: "2px", background: theme === "dark" ? "#1E1E1E" : "#E0E0E0", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${offerProgress}%`, background: "#00B8B8", borderRadius: "2px", transition: "width 300ms" }} />
+                </div>
+              </div>
+            )}
+
+            {/* Error */}
+            {offerErr && (
+              <div className="flex items-center gap-2 rounded-lg px-3 py-2 mt-3"
+                style={{ background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.2)" }}>
+                <AlertCircle size={13} style={{ color: "#CC0000", flexShrink: 0 }} />
+                <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#CC0000" }}>{offerErr}</span>
+              </div>
+            )}
+
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, marginTop: "12px", lineHeight: 1.5 }}>
+              Your offer letter issued by Royals Webtech. Visible to HR/Admin for verification only.
+            </p>
+
+            {/* Hidden file input */}
+            <input
+              ref={offerLetterInputRef}
+              type="file"
+              accept=".pdf,image/jpeg,image/png,image/webp"
+              style={{ display: "none" }}
+              onChange={(e) => { handleOfferLetterUpload(e.target.files?.[0]); e.target.value = ""; }}
+            />
+          </div>
+
         </div>
       </div>
 
       <Toast msg={toast.msg} type={toast.type} />
+
+      {/* ── Offer Letter Viewer Modal ── */}
+      {offerViewerOpen && offerLetterUrl && (
+        <OfferLetterModal
+          url={offerLetterUrl}
+          fileName={offerLetterFileName}
+          theme={theme}
+          onClose={() => setOfferViewerOpen(false)}
+        />
+      )}
     </div>
   );
 }

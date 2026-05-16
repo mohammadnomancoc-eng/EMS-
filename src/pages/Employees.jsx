@@ -4,7 +4,7 @@ import {
   Search, Plus, Filter, Download, Edit2, Trash2,
   Mail, Phone, X, Check, ChevronDown, Users,
   UserCheck, UserX, Clock, Copy, CheckCheck, KeyRound, ShieldCheck,
-  Camera, Upload, Image as ImageIcon,
+  Camera, Upload, Image as ImageIcon, FileText, ExternalLink,
 } from "lucide-react";
 
 import {
@@ -16,7 +16,126 @@ import {
 } from "../firebase/firestoreService";
 import { createEmployeeAccount, deleteEmployeeAccount, generateEmail, generatePassword } from "../firebase/employeeAuthService";
 import { firebaseConfig } from "../firebase/config";
-import { uploadEmployeePhoto, getThumbnailUrl } from "../cloudinary/cloudinaryService";
+import { uploadEmployeePhoto, getThumbnailUrl, getOfferLetterViewUrl, getOfferLetterDownloadUrl, getGoogleDocsViewerUrl } from "../cloudinary/cloudinaryService";
+
+// ── Offer Letter Viewer ────────────────────────────────────────
+// Uses Google Docs Viewer inside an iframe for PDFs, and <img> for images.
+// Google Docs Viewer works cross-origin with Cloudinary raw/image URLs without
+// any CORS or plugin issues — works on all browsers and mobile.
+// Admin gets a VIEW toggle and a DOWNLOAD button.
+function OfferLetterViewer({ url, fileName, uploadedAt, theme, border, isDark, labelColor, textColor }) {
+  const [open, setOpen] = useState(false);
+
+  const cleanUrl    = getOfferLetterViewUrl(url);
+  const downloadUrl = getOfferLetterDownloadUrl(url);
+  const isImage     = /\.(jpe?g|png|webp)(\?|$)/i.test(cleanUrl);
+  // Google Docs Viewer handles both raw and image Cloudinary URLs for PDFs
+  const viewerUrl   = isImage ? cleanUrl : getGoogleDocsViewerUrl(cleanUrl);
+
+  const uploadDate = uploadedAt
+    ? new Date(uploadedAt.toDate?.() ?? uploadedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    : "Uploaded";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      {/* File chip row */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: "10px", padding: "12px",
+        borderRadius: "10px", background: isDark ? "#0A0A0A" : "#F5F5F5", border: `1px solid ${border}`,
+      }}>
+        {/* File icon */}
+        <div style={{
+          width: "36px", height: "36px", borderRadius: "8px", flexShrink: 0,
+          background: "rgba(0,184,184,0.10)", border: "1px solid rgba(0,184,184,0.25)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <FileText size={16} style={{ color: "#00B8B8" }} />
+        </div>
+        {/* Name + date */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", fontWeight: 600,
+            color: textColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {fileName || "Offer Letter"}
+          </div>
+          <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: labelColor, marginTop: "1px" }}>
+            {uploadDate}
+          </div>
+        </div>
+        {/* Action buttons */}
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          {/* Download — force-downloads the file */}
+          <a
+            href={downloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Download"
+            style={{
+              width: "30px", height: "30px", borderRadius: "6px", cursor: "pointer",
+              background: "rgba(201,146,42,0.08)", border: "1px solid rgba(201,146,42,0.3)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#C9922A", textDecoration: "none",
+            }}>
+            <Download size={13} />
+          </a>
+          {/* View toggle — opens Google Docs Viewer inline */}
+          <button
+            onClick={() => setOpen(v => !v)}
+            style={{
+              padding: "0 12px", height: "30px", borderRadius: "6px", cursor: "pointer",
+              background: open ? "rgba(0,184,184,0.15)" : "rgba(0,184,184,0.08)",
+              border: "1px solid rgba(0,184,184,0.3)", color: "#00B8B8",
+              fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px",
+              letterSpacing: "0.06em", whiteSpace: "nowrap",
+            }}>
+            {open ? "HIDE" : "VIEW"}
+          </button>
+        </div>
+      </div>
+
+      {/* Inline viewer — only mounts when open */}
+      {open && (
+        <div style={{
+          borderRadius: "10px", overflow: "hidden", border: `1px solid ${border}`,
+          background: isDark ? "#0D0D0D" : "#F0F0F0", position: "relative",
+        }}>
+          {/* Loading shimmer shown behind iframe */}
+          <div style={{
+            position: "absolute", inset: 0,
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px",
+          }}>
+            <div style={{
+              width: "18px", height: "18px", borderRadius: "50%",
+              border: "2px solid #00B8B8", borderTopColor: "transparent",
+              animation: "spin 0.8s linear infinite",
+            }} />
+            <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: labelColor }}>
+              Loading…
+            </span>
+          </div>
+          {isImage ? (
+            <img
+              src={viewerUrl}
+              alt="Offer Letter"
+              style={{ width: "100%", display: "block", objectFit: "contain", maxHeight: "420px", position: "relative", zIndex: 1 }}
+            />
+          ) : (
+            <iframe
+              src={viewerUrl}
+              title="Offer Letter"
+              style={{ width: "100%", height: "500px", border: "none", display: "block", position: "relative", zIndex: 1 }}
+              allowFullScreen
+            />
+          )}
+        </div>
+      )}
+      {open && !isImage && (
+        <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: labelColor, textAlign: "center" }}>
+          If the document doesn't load, use the Download button above to open it directly.
+        </p>
+      )}
+    </div>
+  );
+}
 
 // ── Responsive hook ────────────────────────────────────────────
 function useIsMobile() {
@@ -746,6 +865,44 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
           {row("JOIN DATE", emp.joinDate ? new Date(emp.joinDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")}
           {row("COMPLETION DATE", emp.completionDate ? new Date(emp.completionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "Not set")}
           {row("MONTHLY SALARY", `₹${Number(emp.salary).toLocaleString("en-IN")}`)}
+
+          {/* ── Offer Letter section ── */}
+          <div style={{ marginTop: "20px" }}>
+            <div style={{
+              fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+              color: "#CC0000", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "10px",
+            }}>
+              OFFER LETTER
+            </div>
+
+            {emp.offerLetterUrl ? (
+              <OfferLetterViewer
+                url={emp.offerLetterUrl}
+                fileName={emp.offerLetterFileName}
+                uploadedAt={emp.offerLetterUploadedAt}
+                theme={theme}
+                border={border}
+                isDark={isDark}
+                labelColor={labelColor}
+                textColor={textColor}
+              />
+            ) : (
+              /* No letter uploaded yet */
+              <div style={{
+                padding: "14px", borderRadius: "10px", textAlign: "center",
+                background: isDark ? "#0A0A0A" : "#F8F8F8",
+                border: `1px dashed ${isDark ? "#2A2A2A" : "#D8D8D8"}`,
+              }}>
+                <FileText size={20} style={{ color: labelColor, margin: "0 auto 6px" }} />
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: labelColor }}>
+                  No offer letter uploaded yet
+                </p>
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#444444" : "#BBBBBB", marginTop: "3px" }}>
+                  Employee can upload it from their profile
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Action buttons */}

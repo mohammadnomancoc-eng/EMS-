@@ -1,13 +1,20 @@
 // ─────────────────────────────────────────────────────────────
-//  src/components/EmployeeLayout.jsx  (Responsive)
+//  src/components/EmployeeLayout.jsx  (Fully Responsive)
 //
-//  All original bug fixes preserved (BUG-01, BUG-08, BUG-09, BUG-10).
-//  Added mobile responsiveness:
-//  - Sidebar becomes a slide-in drawer on <768px
-//  - Hamburger menu button in header on mobile
-//  - Mobile search toggle
-//  - Body scroll lock when drawer is open
-//  - Sidebar auto-closes on route change
+//  Mobile (<768px):
+//   • Sidebar hidden by default, slides in from left on hamburger tap
+//   • Dim backdrop closes sidebar on tap-outside
+//   • X close button inside sidebar header
+//   • Bottom nav bar for one-tap page switching
+//   • Body scroll locked while drawer is open
+//   • Sidebar auto-closes on route change
+//
+//  Desktop (≥768px):
+//   • Sidebar permanently visible, fixed left
+//   • Header and main content offset by SIDEBAR_W
+//   • Full breadcrumb and controls visible
+//
+//  Bug fixes preserved: BUG-01, BUG-08, BUG-09, BUG-10
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -28,18 +35,21 @@ const WFH_QUOTA   = 2;
 const navItems = [
   { to: "/my-attendance", icon: CalendarCheck, label: "My Attendance", section: "WORKSPACE" },
   { to: "/my-leave",      icon: CalendarOff,   label: "Leave & WFH",   section: "WORKSPACE" },
-  { to: "/my-profile",    icon: User,           label: "My Profile",    section: "PERSONAL"  },
-  { to: "/announcements", icon: Megaphone,      label: "Announcements", section: "COMPANY"   },
+  { to: "/my-profile",    icon: User,          label: "My Profile",    section: "PERSONAL"  },
+  { to: "/announcements", icon: Megaphone,     label: "Announcements", section: "COMPANY"   },
 ];
 
+// Bottom nav shows all 4 items
+const bottomNavItems = navItems;
+
 const pageTitles = {
-  "/my-attendance": { title: "My Attendance", crumb: "WORKSPACE / ATTENDANCE" },
+  "/my-attendance": { title: "My Attendance", crumb: "WORKSPACE / ATTENDANCE"  },
   "/my-leave":      { title: "Leave & WFH",   crumb: "WORKSPACE / LEAVE & WFH" },
-  "/my-profile":    { title: "My Profile",     crumb: "PERSONAL / PROFILE" },
-  "/announcements": { title: "Announcements",  crumb: "COMPANY / ANNOUNCEMENTS" },
+  "/my-profile":    { title: "My Profile",    crumb: "PERSONAL / PROFILE"      },
+  "/announcements": { title: "Announcements", crumb: "COMPANY / ANNOUNCEMENTS" },
 };
 
-// ── Helpers ───────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────
 function getStoredUser() {
   try {
     const raw = localStorage.getItem("rwt-user");
@@ -51,7 +61,6 @@ function getStoredUser() {
   }
 }
 
-// Count requests of a given requestType (Leave | WFH) in the current calendar month.
 function countThisMonth(requests, type) {
   const now = new Date();
   const y   = now.getFullYear();
@@ -62,10 +71,10 @@ function countThisMonth(requests, type) {
   }).length;
 }
 
-// ── Quota Bar ─────────────────────────────────────────
+// ── Quota Bar ─────────────────────────────────────────────────
 function QuotaBar({ label, taken, total, color }) {
   const remaining = total - taken;
-  const pct = total > 0 ? Math.round((taken / total) * 100) : 0;
+  const pct       = total > 0 ? Math.round((taken / total) * 100) : 0;
   return (
     <div className="mb-3">
       <div className="flex justify-between items-center mb-1">
@@ -89,23 +98,20 @@ function QuotaBar({ label, taken, total, color }) {
   );
 }
 
-// ── Employee Sidebar ──────────────────────────────────
+// ── Employee Sidebar ──────────────────────────────────────────
 function EmployeeSidebar({ open, onClose }) {
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
   const { theme } = useTheme();
-  const isDark = theme === "dark";
-  const user = getStoredUser();
+  const isDark    = theme === "dark";
+  const user      = getStoredUser();
 
   // BUG-10 FIX: fetch real monthly quota from Firestore
-  const [leaveTaken, setLeaveTaken]   = useState(0);
-  const [wfhTaken, setWfhTaken]       = useState(0);
+  const [leaveTaken,  setLeaveTaken]  = useState(0);
+  const [wfhTaken,    setWfhTaken]    = useState(0);
   const [quotaLoaded, setQuotaLoaded] = useState(false);
 
   useEffect(() => {
-    if (!user.empId) {
-      setQuotaLoaded(true);
-      return;
-    }
+    if (!user.empId) { setQuotaLoaded(true); return; }
     getLeaveRequestsByEmployee(user.empId)
       .then((requests) => {
         setLeaveTaken(countThisMonth(requests, "Leave"));
@@ -117,11 +123,8 @@ function EmployeeSidebar({ open, onClose }) {
 
   // BUG-01 FIX: call Firebase signOut before clearing localStorage
   const handleLogout = async () => {
-    try {
-      await logoutUser();
-    } catch (err) {
-      console.warn("Firebase signOut error:", err.message);
-    } finally {
+    try { await logoutUser(); } catch (err) { console.warn("SignOut error:", err.message); }
+    finally {
       localStorage.removeItem("rwt-role");
       localStorage.removeItem("rwt-user");
       navigate("/login");
@@ -132,42 +135,42 @@ function EmployeeSidebar({ open, onClose }) {
 
   return (
     <>
-      {/* Mobile backdrop */}
+      {/* ── Backdrop (mobile only) ── */}
       <div
         onClick={onClose}
         style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.65)",
-          backdropFilter: "blur(2px)",
+          position:             "fixed",
+          inset:                0,
+          background:           "rgba(0,0,0,0.65)",
+          backdropFilter:       "blur(2px)",
           WebkitBackdropFilter: "blur(2px)",
-          zIndex: 49,
-          opacity: open ? 1 : 0,
-          pointerEvents: open ? "auto" : "none",
-          transition: "opacity 280ms ease",
+          zIndex:               49,
+          opacity:              open ? 1 : 0,
+          pointerEvents:        open ? "auto" : "none",
+          transition:           "opacity 280ms ease",
         }}
         className="md:hidden"
       />
 
-      {/* Sidebar panel */}
+      {/* ── Sidebar panel ── */}
       <div
-        style={{
-          position: "fixed",
-          left: 0,
-          top: 0,
-          height: "100dvh",
-          width: `${SIDEBAR_W}px`,
-          background: isDark ? "#050505" : "#FFFFFF",
-          borderRight: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`,
-          display: "flex",
-          flexDirection: "column",
-          zIndex: 50,
-          transform: open ? "translateX(0)" : "translateX(-100%)",
-          transition: "transform 280ms cubic-bezier(0.4,0,0.2,1)",
-        }}
         className="emp-sidebar-panel"
+        style={{
+          position:      "fixed",
+          left:          0,
+          top:           0,
+          height:        "100dvh",
+          width:         `${SIDEBAR_W}px`,
+          background:    isDark ? "#050505" : "#FFFFFF",
+          borderRight:   `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`,
+          display:       "flex",
+          flexDirection: "column",
+          zIndex:        50,
+          transform:     open ? "translateX(0)" : "translateX(-100%)",
+          transition:    "transform 280ms cubic-bezier(0.4,0,0.2,1)",
+        }}
       >
-        {/* Logo */}
+        {/* Logo + Close */}
         <div
           className="flex items-center gap-3 px-4"
           style={{ height: "72px", borderBottom: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`, flexShrink: 0 }}
@@ -195,7 +198,7 @@ function EmployeeSidebar({ open, onClose }) {
           {/* Close button — mobile only */}
           <button
             onClick={onClose}
-            className="flex-shrink-0 md:hidden"
+            className="md:hidden flex-shrink-0"
             style={{ color: isDark ? "#555555" : "#AAAAAA", padding: "4px" }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
             onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? "#555555" : "#AAAAAA")}
@@ -216,6 +219,7 @@ function EmployeeSidebar({ open, onClose }) {
                   {section}
                 </span>
               </div>
+
               {navItems.filter((n) => n.section === section).map(({ to, icon: Icon, label }) => (
                 <NavLink
                   key={to}
@@ -226,8 +230,8 @@ function EmployeeSidebar({ open, onClose }) {
                     padding: "10px 16px", margin: "1px 6px", borderRadius: "6px",
                     textDecoration: "none",
                     borderLeft: isActive ? "3px solid #CC0000" : "3px solid transparent",
-                    background: isActive ? "rgba(204,0,0,0.06)" : "transparent",
-                    transition: "all 150ms ease",
+                    background:  isActive ? "rgba(204,0,0,0.06)" : "transparent",
+                    transition:  "all 150ms ease",
                   })}
                 >
                   {({ isActive }) => (
@@ -249,7 +253,10 @@ function EmployeeSidebar({ open, onClose }) {
 
           {/* Monthly Quota Card — BUG-10 FIX: real Firestore counts */}
           <div className="mx-3 mt-4">
-            <div className="rounded-lg p-3" style={{ background: isDark ? "#0D0D0D" : "#F5F5F5", border: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}` }}>
+            <div
+              className="rounded-lg p-3"
+              style={{ background: isDark ? "#0D0D0D" : "#F5F5F5", border: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}` }}
+            >
               <p style={{
                 fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
                 color: "#CC0000", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "10px",
@@ -309,7 +316,7 @@ function EmployeeSidebar({ open, onClose }) {
         </div>
       </div>
 
-      {/* Always show sidebar on md+ */}
+      {/* Desktop: always show sidebar */}
       <style>{`
         @media (min-width: 768px) {
           .emp-sidebar-panel {
@@ -321,34 +328,30 @@ function EmployeeSidebar({ open, onClose }) {
   );
 }
 
-// ── Employee Header ───────────────────────────────────
+// ── Employee Header ───────────────────────────────────────────
 function EmployeeHeader({ onMenuClick }) {
   const { theme, toggleTheme } = useTheme();
-  const [searchOpen, setSearchOpen] = useState(false);
-
-  // BUG-08 FIX: useLocation() is reactive
-  const { pathname } = useLocation();
+  const { pathname }           = useLocation();
   const page = pageTitles[pathname] || { title: "Employee Portal", crumb: "EMPLOYEE / PORTAL" };
-
   const user = getStoredUser();
 
   return (
     <div
-      style={{
-        position: "fixed",
-        top: 0,
-        right: 0,
-        left: 0,
-        height: "56px",
-        background: theme === "dark" ? "#0A0A0A" : "#FFFFFF",
-        borderBottom: `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
-        display: "flex",
-        alignItems: "center",
-        zIndex: 40,
-        paddingLeft: "16px",
-        paddingRight: "16px",
-      }}
       className="emp-header-bar"
+      style={{
+        position:    "fixed",
+        top:         0,
+        right:       0,
+        left:        0,
+        height:      "56px",
+        background:  theme === "dark" ? "#0A0A0A" : "#FFFFFF",
+        borderBottom:`1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
+        display:     "flex",
+        alignItems:  "center",
+        zIndex:      40,
+        paddingLeft: "16px",
+        paddingRight:"16px",
+      }}
     >
       {/* Hamburger — mobile only */}
       <button
@@ -362,12 +365,13 @@ function EmployeeHeader({ onMenuClick }) {
       {/* Page Title */}
       <div className="flex-1 min-w-0">
         <h1 style={{
-          fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
-          fontSize: "clamp(15px, 2.5vw, 22px)",
-          color: theme === "dark" ? "#F0F0F0" : "#111111",
-          lineHeight: 1,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
+          fontFamily:   "Rajdhani, sans-serif",
+          fontWeight:   700,
+          fontSize:     "clamp(15px, 2.5vw, 22px)",
+          color:        theme === "dark" ? "#F0F0F0" : "#111111",
+          lineHeight:   1,
+          whiteSpace:   "nowrap",
+          overflow:     "hidden",
           textOverflow: "ellipsis",
         }}>
           {page.title}
@@ -375,26 +379,27 @@ function EmployeeHeader({ onMenuClick }) {
         <p
           className="hidden sm:block"
           style={{
-            fontFamily: "Share Tech Mono, monospace", fontSize: "10px",
-            color: theme === "dark" ? "#555555" : "#999999", marginTop: "2px",
+            fontFamily: "Share Tech Mono, monospace",
+            fontSize:   "10px",
+            color:      theme === "dark" ? "#555555" : "#999999",
+            marginTop:  "2px",
           }}
         >
           {page.crumb}
         </p>
       </div>
 
-      {/* Right Controls */}
+      {/* Right controls */}
       <div className="flex items-center gap-2 sm:gap-3">
 
-        {/* Employee Portal Badge — hidden on very small screens */}
+        {/* Employee Portal Badge — hidden on small screens */}
         <span
           className="hidden sm:inline"
           style={{
-            fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
-            color: "#00B8B8", background: "rgba(0,184,184,0.08)",
-            border: "1px solid rgba(0,184,184,0.25)", borderRadius: "4px",
-            padding: "3px 10px", letterSpacing: "0.1em",
-            whiteSpace: "nowrap",
+            fontFamily:  "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+            color:       "#00B8B8", background: "rgba(0,184,184,0.08)",
+            border:      "1px solid rgba(0,184,184,0.25)", borderRadius: "4px",
+            padding:     "3px 10px", letterSpacing: "0.1em", whiteSpace: "nowrap",
           }}
         >
           EMPLOYEE PORTAL
@@ -411,13 +416,13 @@ function EmployeeHeader({ onMenuClick }) {
           </span>
         </button>
 
-        {/* Theme Toggle */}
+        {/* Theme toggle */}
         <button
           onClick={toggleTheme}
           className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-full"
           style={{
             background: theme === "dark" ? "#111111" : "#F0F0F0",
-            border: `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
+            border:     `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
             transition: "all 250ms ease",
           }}
         >
@@ -431,8 +436,9 @@ function EmployeeHeader({ onMenuClick }) {
         <div
           className="rounded-full flex items-center justify-center cursor-pointer flex-shrink-0"
           style={{
-            width: "32px", height: "32px", background: "#CC0000",
-            border: "2px solid #CC0000", boxShadow: `0 0 0 2px ${theme === "dark" ? "#0A0A0A" : "#FFFFFF"}`,
+            width:     "32px", height: "32px", background: "#CC0000",
+            border:    "2px solid #CC0000",
+            boxShadow: `0 0 0 2px ${theme === "dark" ? "#0A0A0A" : "#FFFFFF"}`,
           }}
         >
           <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>
@@ -446,7 +452,7 @@ function EmployeeHeader({ onMenuClick }) {
         @media (min-width: 768px) {
           .emp-header-bar {
             left: ${SIDEBAR_W}px !important;
-            padding-left: 24px !important;
+            padding-left:  24px !important;
             padding-right: 24px !important;
           }
         }
@@ -455,16 +461,71 @@ function EmployeeHeader({ onMenuClick }) {
   );
 }
 
-// ── Layout Wrapper ────────────────────────────────────
-function EmployeeLayout() {
-  const { theme } = useTheme();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+// ── Mobile Bottom Nav ─────────────────────────────────────────
+function EmpBottomNav() {
+  const { theme }    = useTheme();
   const { pathname } = useLocation();
+  const isDark       = theme === "dark";
+
+  return (
+    <div
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40"
+      style={{
+        background:  isDark ? "#0A0A0A" : "#FFFFFF",
+        borderTop:   `1px solid ${isDark ? "#1E1E1E" : "#E8E8E8"}`,
+        display:     "flex",
+        alignItems:  "stretch",
+        height:      "60px",
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      }}
+    >
+      {bottomNavItems.map(({ to, icon: Icon, label }) => {
+        const isActive = pathname === to;
+        return (
+          <NavLink
+            key={to}
+            to={to}
+            style={{
+              flex:           1,
+              display:        "flex",
+              flexDirection:  "column",
+              alignItems:     "center",
+              justifyContent: "center",
+              gap:            "3px",
+              textDecoration: "none",
+              borderTop:      isActive ? "2px solid #CC0000" : "2px solid transparent",
+              background:     isActive ? "rgba(204,0,0,0.04)" : "transparent",
+              transition:     "all 150ms ease",
+            }}
+          >
+            <Icon
+              size={20}
+              style={{ color: isActive ? "#CC0000" : (isDark ? "#444444" : "#BBBBBB") }}
+            />
+            <span style={{
+              fontFamily:    "Mulish, sans-serif",
+              fontSize:      "9px",
+              fontWeight:    isActive ? 700 : 500,
+              color:         isActive ? "#CC0000" : (isDark ? "#444444" : "#BBBBBB"),
+              letterSpacing: "0.02em",
+            }}>
+              {label}
+            </span>
+          </NavLink>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Layout Wrapper ────────────────────────────────────────────
+function EmployeeLayout() {
+  const { theme }                     = useTheme();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { pathname }                  = useLocation();
 
   // Close sidebar on route change
-  useEffect(() => {
-    setSidebarOpen(false);
-  }, [pathname]);
+  useEffect(() => { setSidebarOpen(false); }, [pathname]);
 
   // Lock body scroll when mobile sidebar is open
   useEffect(() => {
@@ -475,26 +536,27 @@ function EmployeeLayout() {
   return (
     <div style={{ background: "var(--page-bg)", minHeight: "100vh" }}>
       <EmployeeSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <EmployeeHeader onMenuClick={() => setSidebarOpen(true)} />
+      <EmployeeHeader  onMenuClick={() => setSidebarOpen(true)} />
 
       <main
-        style={{
-          paddingTop: "56px",
-          minHeight: "100vh",
-          background: "var(--page-bg)",
-        }}
         className="emp-main-content"
+        style={{
+          paddingTop:    "56px",
+          paddingBottom: "60px",   // room for bottom nav on mobile
+          minHeight:     "100vh",
+          background:    "var(--page-bg)",
+        }}
       >
         {/* RWT Watermark */}
         <div
           className="fixed pointer-events-none select-none"
           style={{
-            top: "56px", right: "0", zIndex: 0,
+            top:        "56px", right: "0", zIndex: 0,
             fontFamily: "Rajdhani, sans-serif",
-            fontSize: "clamp(80px, 18vw, 280px)",
+            fontSize:   "clamp(80px, 18vw, 280px)",
             fontWeight: 700,
-            color: theme === "dark" ? "#FFFFFF" : "#CCCCCC",
-            opacity: theme === "dark" ? 0.025 : 0.35,
+            color:      theme === "dark" ? "#FFFFFF" : "#CCCCCC",
+            opacity:    theme === "dark" ? 0.025 : 0.35,
             lineHeight: 1, letterSpacing: "-0.02em", userSelect: "none",
           }}
         >
@@ -506,11 +568,15 @@ function EmployeeLayout() {
         </div>
       </main>
 
-      {/* Push main content right of sidebar on md+ */}
+      {/* Bottom nav — mobile only */}
+      <EmpBottomNav />
+
+      {/* Desktop: offset main content, remove bottom padding */}
       <style>{`
         @media (min-width: 768px) {
           .emp-main-content {
-            margin-left: ${SIDEBAR_W}px;
+            margin-left:    ${SIDEBAR_W}px;
+            padding-bottom: 0 !important;
           }
         }
       `}</style>

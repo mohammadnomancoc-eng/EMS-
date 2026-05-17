@@ -17,6 +17,7 @@ import {
 import { createEmployeeAccount, deleteEmployeeAccount, generateEmail, generatePassword } from "../firebase/employeeAuthService";
 import { firebaseConfig } from "../firebase/config";
 import { uploadEmployeePhoto, getThumbnailUrl, getOfferLetterViewUrl, getOfferLetterDownloadUrl, getGoogleDocsViewerUrl } from "../cloudinary/cloudinaryService";
+import { generateOfferLetter } from "../utils/generateOfferLetter";
 
 // ── Offer Letter Viewer ────────────────────────────────────────
 // Uses Google Docs Viewer inside an iframe for PDFs, and <img> for images.
@@ -354,6 +355,25 @@ function CredentialsModal({ theme, credentials, onClose }) {
     copy(msg, setCopiedAll);
   };
 
+  const handleDownloadOfferLetter = async () => {
+    setGenLoading(true);
+    try {
+      await generateOfferLetter({
+        empId:          credentials.empId,
+        name:           credentials.name,
+        role:           credentials.role        || "Jr. Software Developer Intern",
+        joinDate:       credentials.joinDate    || "",
+        completionDate: credentials.completionDate || "",
+        department:     credentials.department  || "",
+      });
+    } catch (err) {
+      console.error("Offer letter generation failed:", err);
+      alert("Could not generate offer letter: " + (err.message || "Unknown error"));
+    } finally {
+      setGenLoading(false);
+    }
+  };
+
   const CopyBtn = ({ value, copied, setter, label }) => (
     <button
       onClick={() => copy(value, setter)}
@@ -459,7 +479,34 @@ function CredentialsModal({ theme, credentials, onClose }) {
           💡 Ask the employee to change their password after first login. These credentials are auto-generated.
         </div>
 
-        <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+        {/* ── Download Offer Letter ── */}
+        <button
+          onClick={handleDownloadOfferLetter}
+          disabled={genLoading}
+          style={{
+            width: "100%", marginTop: "14px", padding: "11px", borderRadius: "7px",
+            cursor: genLoading ? "not-allowed" : "pointer",
+            background: genLoading ? "rgba(0,184,184,0.06)" : "rgba(0,184,184,0.12)",
+            border: "1px solid rgba(0,184,184,0.35)", color: "#00B8B8",
+            fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px",
+            letterSpacing: "0.1em",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+            transition: "all 200ms",
+          }}
+        >
+          {genLoading ? (
+            <>
+              <div style={{ width: "13px", height: "13px", borderRadius: "50%",
+                border: "2px solid rgba(0,184,184,0.3)", borderTopColor: "#00B8B8",
+                animation: "spin 0.7s linear infinite" }} />
+              GENERATING PDF…
+            </>
+          ) : (
+            <><Download size={14} /> DOWNLOAD OFFER LETTER (PDF)</>
+          )}
+        </button>
+
+        <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
           <button onClick={copyAll} style={{
             flex: 1, padding: "10px", borderRadius: "6px", cursor: "pointer",
             background: copiedAll ? "rgba(0,184,184,0.15)" : "transparent",
@@ -798,6 +845,7 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
   const [uploading,       setUploading]       = useState(false);
   const [uploadProgress,  setUploadProgress]  = useState(0);
   const [uploadErr,       setUploadErr]       = useState("");
+  const [offerGenLoading, setOfferGenLoading] = useState(false);
 
   const handlePhotoChange = async (file) => {
     if (!file) return;
@@ -936,6 +984,51 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
                 </p>
               </div>
             )}
+          </div>
+
+          {/* ── Generate Offer Letter button ── */}
+          <div style={{ marginTop: "14px" }}>
+            <button
+              onClick={async () => {
+                setOfferGenLoading(true);
+                try {
+                  await generateOfferLetter({
+                    empId:          emp.id,
+                    name:           emp.name,
+                    role:           emp.role           || "Jr. Software Developer Intern",
+                    joinDate:       emp.joinDate       || "",
+                    completionDate: emp.completionDate || "",
+                    department:     emp.department     || "",
+                  });
+                } catch (err) {
+                  console.error("Offer letter error:", err);
+                  alert("Could not generate: " + (err.message || "Unknown error"));
+                } finally {
+                  setOfferGenLoading(false);
+                }
+              }}
+              disabled={offerGenLoading}
+              style={{
+                width: "100%", padding: "10px", borderRadius: "8px",
+                cursor: offerGenLoading ? "not-allowed" : "pointer",
+                background: offerGenLoading ? "rgba(0,184,184,0.06)" : "rgba(0,184,184,0.10)",
+                border: "1px solid rgba(0,184,184,0.35)", color: "#00B8B8",
+                fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "12px",
+                letterSpacing: "0.1em",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "7px",
+              }}
+            >
+              {offerGenLoading ? (
+                <>
+                  <div style={{ width: "12px", height: "12px", borderRadius: "50%",
+                    border: "2px solid rgba(0,184,184,0.3)", borderTopColor: "#00B8B8",
+                    animation: "spin 0.7s linear infinite" }} />
+                  GENERATING…
+                </>
+              ) : (
+                <><Download size={13} /> DOWNLOAD OFFER LETTER</>
+              )}
+            </button>
           </div>
         </div>
 
@@ -1094,7 +1187,7 @@ export default function Employees() {
     const empId = await addEmployee({ ...form, salary: Number(form.salary) });
     const creds = await createEmployeeAccount({ empId, name: form.name, role: form.role }, firebaseConfig);
     setShowModal(false);
-    setNewCredentials({ ...creds, empId, name: form.name });
+    setNewCredentials({ ...creds, empId, name: form.name, role: form.role, joinDate: form.joinDate, completionDate: form.completionDate, department: form.department });
   };
 
   const handleEdit = async (form) => {

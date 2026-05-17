@@ -88,9 +88,13 @@ export async function uploadToCloudinary(file, type = "image", options = {}) {
 // ── Convenience Wrappers ──────────────────────────────────────
 
 export async function uploadEmployeePhoto(file, empId, onProgress) {
+  // No fixed public_id — use timestamp so each upload gets a unique URL.
+  // Unsigned presets block overwriting the same public_id, causing the old
+  // asset URL to be returned instead of the new photo. A fresh public_id
+  // also busts the browser and CDN cache automatically.
   return uploadToCloudinary(file, "image", {
     folder:     `ems/employees/${empId}`,
-    publicId:   `${empId}_profile`,
+    publicId:   `${empId}_profile_${Date.now()}`,
     onProgress,
   });
 }
@@ -190,13 +194,20 @@ export async function uploadOfferLetter(file, empId, onProgress) {
 
 /**
  * Thumbnail URL for Cloudinary images.
+ * Extracts the version segment (v1234567890) from the URL and uses it as a
+ * cache-buster query param so the browser always fetches the latest photo
+ * when the underlying asset changes.
  */
 export function getThumbnailUrl(secureUrl, size = 150) {
   if (!secureUrl || !secureUrl.includes("cloudinary.com")) return secureUrl;
-  return secureUrl.replace(
+  const transformed = secureUrl.replace(
     "/upload/",
     `/upload/c_fill,g_face,h_${size},w_${size},q_auto,f_auto/`
   );
+  // Extract version token (e.g. v1718000000000) and append as ?v= so the
+  // browser treats each new upload as a distinct resource.
+  const vMatch = secureUrl.match(/\/v(\d+)\//);
+  return vMatch ? `${transformed}?v=${vMatch[1]}` : transformed;
 }
 
 /**

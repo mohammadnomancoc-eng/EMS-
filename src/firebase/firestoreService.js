@@ -297,18 +297,22 @@ export async function upsertAttendance({
   webcamTimestamp = null,
   geoDistance = null,
   geoVerified = null,
+  faceVerified = null,
+  faceDistance = null,
 }) {
   const id = `${empId}_${date}`;
   const payload = {
     empId, date, status, checkIn, checkOut, hoursWorked, markedBy,
     updatedAt: serverTimestamp(),
   };
-  // Only store optional fields when provided — manual admin edits never wipe webcam/geo data
+  // Only store optional fields when provided — manual admin edits never wipe webcam/geo/face data
   if (webcamSnapshotUrl)      payload.webcamSnapshotUrl      = webcamSnapshotUrl;
   if (webcamSnapshotPublicId) payload.webcamSnapshotPublicId = webcamSnapshotPublicId;
   if (webcamTimestamp)        payload.webcamTimestamp        = webcamTimestamp;
   if (geoDistance !== null)   payload.geoDistance            = geoDistance;
   if (geoVerified !== null)   payload.geoVerified            = geoVerified;
+  if (faceVerified !== null)  payload.faceVerified           = faceVerified;
+  if (faceDistance !== null)  payload.faceDistance           = faceDistance;
 
   await setDoc(doc(db, "attendance", id), payload, { merge: true });
 }

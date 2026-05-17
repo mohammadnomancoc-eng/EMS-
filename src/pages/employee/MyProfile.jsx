@@ -5,7 +5,7 @@ import {
   Calendar, Shield, Edit3, Save, X,
   KeyRound, Eye, EyeOff, CheckCircle2, AlertCircle,
   Camera, Hash, MapPin, DollarSign, Loader,
-  FileText, Upload, Download,
+  FileText, Upload, Download, Users, Tag,
 } from "lucide-react";
 import { uploadEmployeePhoto, uploadOfferLetter, getThumbnailUrl, getOfferLetterViewUrl, getOfferLetterDownloadUrl, getGoogleDocsViewerUrl } from "../../cloudinary/cloudinaryService";
 import {
@@ -457,9 +457,14 @@ export default function MyProfile() {
   const displayDept     = profile.department || "—";
   const displayEmail    = profile.email      || "—";
   const displayStatus   = profile.status     || "Active";
-  const displaySalary   = profile.salary     ? `₹${Number(profile.salary).toLocaleString("en-IN")}` : "—";
-  const joinDisplay     = profile.joinDate
+  const displaySalary       = profile.salary       ? `₹${Number(profile.salary).toLocaleString("en-IN")}` : "—";
+  const displayGender       = profile.gender       || "—";
+  const displayEmployeeType = profile.employeeType || "—";
+  const joinDisplay       = profile.joinDate
     ? new Date(profile.joinDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+    : "—";
+  const completionDisplay = profile.completionDate
+    ? new Date(profile.completionDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
     : "—";
 
   const st = ({
@@ -627,12 +632,15 @@ export default function MyProfile() {
           {/* Employment Details */}
           <div className="rounded-2xl p-4 sm:p-5" style={card}>
             <SectionLabel>Employment Details</SectionLabel>
-            <InfoRow icon={Briefcase}  label="Job Role"     value={displayRole}   theme={theme} />
-            <InfoRow icon={Building2}  label="Department"   value={displayDept}   theme={theme} />
-            <InfoRow icon={Hash}       label="Employee ID"  value={displayEmpId}  theme={theme} />
-            <InfoRow icon={Calendar}   label="Date Joined"  value={joinDisplay}   theme={theme} />
-            <InfoRow icon={DollarSign} label="Salary (CTC)" value={displaySalary} theme={theme} />
-            <InfoRow icon={Shield}     label="Access Level" value="Employee"       theme={theme} />
+            <InfoRow icon={Briefcase}  label="Job Role"        value={displayRole}         theme={theme} />
+            <InfoRow icon={Building2}  label="Department"      value={displayDept}         theme={theme} />
+            <InfoRow icon={Hash}       label="Employee ID"     value={displayEmpId}        theme={theme} />
+            <InfoRow icon={Calendar}   label="Date Joined"     value={joinDisplay}         theme={theme} />
+            <InfoRow icon={Calendar}   label="Completion Date" value={completionDisplay}   theme={theme} />
+            <InfoRow icon={Tag}        label="Employee Type"   value={displayEmployeeType} theme={theme} />
+            <InfoRow icon={Users}      label="Gender"          value={displayGender}       theme={theme} />
+            <InfoRow icon={DollarSign} label="Salary (CTC)"   value={displaySalary}       theme={theme} />
+            <InfoRow icon={Shield}     label="Access Level"   value="Employee"             theme={theme} />
           </div>
         </div>
 

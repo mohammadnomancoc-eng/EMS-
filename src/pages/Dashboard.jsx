@@ -22,6 +22,13 @@ import { firebaseConfig } from "../firebase/config";
 
 
 // ── helpers ──────────────────────────────────────────
+/** Display format: RWTPVTLTD-IT-OFLT-122025-05 → RWTPVTLTD/IT/OFLT/122025/05 */
+function formatEmpId(id) {
+  if (!id) return id;
+  if (id.startsWith("RWTPVTLTD-")) return id.replace(/-/g, "/");
+  return id;
+}
+
 function getInitials(name) {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase();
 }
@@ -220,7 +227,7 @@ function CredentialsModal({ theme, credentials, onClose }) {
       `---------------------------\n` +
       `Email:    ${credentials.email}\n` +
       `Password: ${credentials.password}\n` +
-      `Emp ID:   ${credentials.empId}\n` +
+      `Emp ID:   ${formatEmpId(credentials.empId)}\n` +
       `\nLogin at: ${window.location.origin}/login`;
     copy(msg, setCopiedAll);
   };
@@ -285,7 +292,7 @@ function CredentialsModal({ theme, credentials, onClose }) {
             <div style={{ background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
               padding: "9px 12px", fontFamily: "Share Tech Mono, monospace", fontSize: "14px",
               color: "#00B8B8", letterSpacing: "0.08em" }}>
-              {credentials.empId}
+              {formatEmpId(credentials.empId)}
             </div>
           </div>
           {/* Email */}
@@ -486,7 +493,7 @@ function EmployeeModal({ theme, onClose, onSave, departments }) {
             <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8" }}>
               EmpId@{new Date().getFullYear()}&nbsp;
             </span>
-            <span style={{ fontSize: "11px" }}>(e.g. RWT013@{new Date().getFullYear()})</span>
+            <span style={{ fontSize: "11px" }}>(e.g. RWTPVTLTD/IT/OFLT/122025/05@{new Date().getFullYear()})</span>
           </div>
         </div>
 

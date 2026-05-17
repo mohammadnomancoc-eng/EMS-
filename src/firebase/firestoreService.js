@@ -56,18 +56,45 @@ export function subscribeEmployees(callback) {
 
 /** Add a new employee with a generated RWT-style ID.
  *
+ *  ID format: RWTPVTLTD-IT-OFLT-MMYYYY-DD
+ *    MM   = month of offer letter generation (2 digits, e.g. 12)
+ *    YYYY = year  of offer letter generation (4 digits, e.g. 2025)
+ *    DD   = day   of offer letter generation (2 digits, e.g. 05)
+ *
+ *  Display format (for UI): RWTPVTLTD/IT/OFLT/122025/05
+ *  Storage format (Firestore doc ID): RWTPVTLTD-IT-OFLT-122025-05
+ *
+ *  IMPORTANT: Firestore treats forward-slashes (“/”) in document IDs as
+ *  subcollection separators, which breaks writes and causes permission errors.
+ *  We store hyphens in Firestore and convert to slashes only for display in the UI.
+ *
+ *  If multiple employees are added on the same date, a numeric suffix
+ *  (_2, _3, …) is appended to keep IDs unique.
+ *
  *  Accepted fields (in addition to existing ones):
  *    photoUrl      {string}  – Cloudinary secure_url for profile photo
  *    photoPublicId {string}  – Cloudinary public_id (for future transforms/deletes)
  */
 export async function addEmployee(data) {
-  // Find the next available RWT number
+  // Build the date-based ID from the current date (offer-letter generation date)
+  const now  = new Date();
+  const mm   = String(now.getMonth() + 1).padStart(2, "0"); // 01–12
+  const yyyy = String(now.getFullYear());                    // e.g. 2025
+  const dd   = String(now.getDate()).padStart(2, "0");       // 01–31
+  // Hyphens used in Firestore doc ID (slashes are path separators in Firestore).
+  // formatEmpId() converts hyphens back to slashes for display in the UI.
+  const baseId = `RWTPVTLTD-IT-OFLT-${mm}${yyyy}-${dd}`;
+
+  // Ensure uniqueness: check if any doc with this base ID (or suffix) exists
   const snap = await getDocs(col("employees"));
-  const existingNums = snap.docs
-    .map((d) => parseInt(d.id.replace("RWT", "")) || 0)
-    .filter((n) => !isNaN(n));
-  const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
-  const newId   = `RWT${String(nextNum).padStart(3, "0")}`;
+  const existingIds = new Set(snap.docs.map((d) => d.id));
+
+  let newId = baseId;
+  let counter = 2;
+  while (existingIds.has(newId)) {
+    newId = `${baseId}_${counter}`;
+    counter++;
+  }
 
   await setDoc(doc(db, "employees", newId), {
     id: newId,

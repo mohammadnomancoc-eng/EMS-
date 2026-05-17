@@ -149,6 +149,17 @@ function useIsMobile() {
 }
 
 // ── Helpers ────────────────────────────────────────────────────
+/** Convert stored Firestore ID (hyphens) to the display format (slashes).
+ *  e.g. "RWTPVTLTD-IT-OFLT-122025-05" → "RWTPVTLTD/IT/OFLT/122025/05"
+ *  Old-style IDs like "RWT001" are returned unchanged.
+ */
+function formatEmpId(id) {
+  if (!id) return id;
+  // New-style IDs start with RWTPVTLTD- and use hyphens as separators
+  if (id.startsWith("RWTPVTLTD-")) return id.replace(/-/g, "/");
+  return id;
+}
+
 function getInitials(name) {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase();
 }
@@ -158,8 +169,12 @@ const avatarColors = [
   "#EF4444", "#8B5CF6", "#06B6D4", "#84CC16",
 ];
 function getAvatarColor(id) {
-  const idx = parseInt(id.replace("RWT", "")) % avatarColors.length;
-  return avatarColors[idx];
+  // String hash — works for any ID format (old RWT### or new RWTPVTLTD/…)
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return avatarColors[hash % avatarColors.length];
 }
 
 // ── Status Badge ───────────────────────────────────────────────
@@ -249,7 +264,7 @@ function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
               {emp.name}
             </div>
             <div style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#00B8B8", marginTop: "1px" }}>
-              {emp.id} · {emp.role}
+              {formatEmpId(emp.id)} · {emp.role}
             </div>
           </div>
         </div>
@@ -334,7 +349,7 @@ function CredentialsModal({ theme, credentials, onClose }) {
       `---------------------------\n` +
       `Email:    ${credentials.email}\n` +
       `Password: ${credentials.password}\n` +
-      `Emp ID:   ${credentials.empId}\n` +
+      `Emp ID:   ${formatEmpId(credentials.empId)}\n` +
       `\nLogin at: ${window.location.origin}/login`;
     copy(msg, setCopiedAll);
   };
@@ -399,7 +414,7 @@ function CredentialsModal({ theme, credentials, onClose }) {
             <div style={{ background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
               padding: "9px 12px", fontFamily: "Share Tech Mono, monospace", fontSize: "14px",
               color: "#00B8B8", letterSpacing: "0.08em" }}>
-              {credentials.empId}
+              {formatEmpId(credentials.empId)}
             </div>
           </div>
 
@@ -573,11 +588,25 @@ function PhotoUploader({ theme, currentUrl, empName, onUploaded, empId }) {
 // ── Add / Edit Employee Modal ──────────────────────────────────
 function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
   const isEdit = !!initial;
-  const [form, setForm] = useState(initial || {
+  // Always merge with defaults so every field has a defined value.
+  // Older Firestore docs may be missing newer fields — those arrive as undefined,
+  // which makes React treat the input as uncontrolled (the warning in the console).
+  const defaults = {
     name: "", role: "", department: "Engineering",
     email: "", phone: "", joinDate: "", completionDate: "", status: "Present", salary: "",
     workType: "WFO", gender: "Male", employeeType: "Full Time",
     photoUrl: null, photoPublicId: null,
+  };
+  const [form, setForm] = useState(() => {
+    if (!initial) return defaults;
+    const merged = { ...defaults, ...initial };
+    // Coerce any remaining undefined string fields to "" so inputs stay controlled
+    Object.keys(defaults).forEach(k => {
+      if (merged[k] === undefined || merged[k] === null) {
+        merged[k] = defaults[k];
+      }
+    });
+    return merged;
   });
   const [errors,    setErrors]    = useState({});
   const [saving,    setSaving]    = useState(false);
@@ -714,7 +743,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
               <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8" }}>
                 EmpId@{new Date().getFullYear()}&nbsp;
               </span>
-              <span style={{ fontSize: "11px" }}>(e.g. RWT013@{new Date().getFullYear()})</span>
+              <span style={{ fontSize: "11px" }}>(e.g. RWTPVTLTD/IT/OFLT/122025/05@{new Date().getFullYear()})</span>
             </div>
           </div>
         )}
@@ -863,7 +892,7 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
             )}
           </div>
 
-          {row("EMPLOYEE ID", emp.id)}
+          {row("EMPLOYEE ID", formatEmpId(emp.id))}
           {row("DEPARTMENT", emp.department)}
           {row("EMAIL", emp.email)}
           {row("PHONE", emp.phone)}
@@ -978,7 +1007,7 @@ function EmployeeCard({ emp, theme, onTap, onEdit, onDelete }) {
           {emp.role} · {emp.department}
         </div>
         <div style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8", marginTop: "1px" }}>
-          {emp.id}
+          {formatEmpId(emp.id)}
         </div>
       </div>
 
@@ -1292,7 +1321,7 @@ export default function Employees() {
                       {emp.name}
                     </div>
                     <div style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8" }}>
-                      {emp.id}
+                      {formatEmpId(emp.id)}
                     </div>
                   </div>
                 </div>

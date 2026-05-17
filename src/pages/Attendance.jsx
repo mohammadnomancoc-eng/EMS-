@@ -25,8 +25,19 @@ const avatarColors = [
   "#EF4444", "#8B5CF6", "#06B6D4", "#84CC16",
 ];
 function getAvatarColor(id = "") {
-  const idx = parseInt(id.replace("RWT", "") || "0") % avatarColors.length;
-  return avatarColors[idx];
+  // String hash — works for any ID format (old RWT### or new RWTPVTLTD/…)
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return avatarColors[hash % avatarColors.length];
+}
+
+/** Display format: RWTPVTLTD-IT-OFLT-122025-05 → RWTPVTLTD/IT/OFLT/122025/05 */
+function formatEmpId(id) {
+  if (!id) return id;
+  if (id.startsWith("RWTPVTLTD-")) return id.replace(/-/g, "/");
+  return id;
 }
 
 function todayString() {
@@ -236,7 +247,7 @@ function AttendanceMobileCard({ rec, theme, isDark, textPri, textMuted, border, 
             {rec.empName}
           </p>
           <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>
-            {rec.empId} · {rec.role}
+            {formatEmpId(rec.empId)} · {rec.role}
           </p>
         </div>
         {/* Status badge top-right */}
@@ -708,7 +719,7 @@ export default function Attendance() {
                           </div>
                           <div>
                             <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", fontWeight: 600, color: textPri, lineHeight: 1.2 }}>{rec.empName}</p>
-                            <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>{rec.empId} · {rec.role}</p>
+                            <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>{formatEmpId(rec.empId)} · {rec.role}</p>
                           </div>
                         </div>
                       </td>

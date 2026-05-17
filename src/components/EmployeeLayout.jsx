@@ -5,7 +5,6 @@
 //   • Sidebar hidden by default, slides in from left on hamburger tap
 //   • Dim backdrop closes sidebar on tap-outside
 //   • X close button inside sidebar header
-//   • Bottom nav bar for one-tap page switching
 //   • Body scroll locked while drawer is open
 //   • Sidebar auto-closes on route change
 //
@@ -26,7 +25,8 @@ import {
 import { logoutUser } from "../firebase/authService";
 import { getLeaveRequestsByEmployee } from "../firebase/firestoreService";
 
-const SIDEBAR_W = 252;
+const SIDEBAR_W        = 252; // desktop
+const SIDEBAR_W_TABLET = 220; // 768–1023px
 
 // Monthly quota limits — must match MyLeave.jsx constants
 const LEAVE_QUOTA = 2;
@@ -38,9 +38,6 @@ const navItems = [
   { to: "/my-profile",    icon: User,          label: "My Profile",    section: "PERSONAL"  },
   { to: "/announcements", icon: Megaphone,     label: "Announcements", section: "COMPANY"   },
 ];
-
-// Bottom nav shows all 4 items
-const bottomNavItems = navItems;
 
 const pageTitles = {
   "/my-attendance": { title: "My Attendance", crumb: "WORKSPACE / ATTENDANCE"  },
@@ -76,7 +73,7 @@ function QuotaBar({ label, taken, total, color }) {
   const remaining = total - taken;
   const pct       = total > 0 ? Math.round((taken / total) * 100) : 0;
   return (
-    <div className="mb-3">
+    <div style={{ marginBottom: "12px" }}>
       <div className="flex justify-between items-center mb-1">
         <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#888888" }}>
           {label}
@@ -160,7 +157,7 @@ function EmployeeSidebar({ open, onClose }) {
           left:          0,
           top:           0,
           height:        "100dvh",
-          width:         `${SIDEBAR_W}px`,
+          width:         `${SIDEBAR_W}px`, /* overridden to SIDEBAR_W_TABLET on tablet via CSS */
           background:    isDark ? "#050505" : "#FFFFFF",
           borderRight:   `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`,
           display:       "flex",
@@ -227,7 +224,7 @@ function EmployeeSidebar({ open, onClose }) {
                   onClick={onClose}
                   style={({ isActive }) => ({
                     display: "flex", alignItems: "center", gap: "10px",
-                    padding: "10px 16px", margin: "1px 6px", borderRadius: "6px",
+                    padding: "10px 13px 10px 16px", margin: "1px 6px", borderRadius: "6px",
                     textDecoration: "none",
                     borderLeft: isActive ? "3px solid #CC0000" : "3px solid transparent",
                     background:  isActive ? "rgba(204,0,0,0.06)" : "transparent",
@@ -316,11 +313,31 @@ function EmployeeSidebar({ open, onClose }) {
         </div>
       </div>
 
+      {/* Global responsive tweaks */}
+      <style>{`
+        /* Sidebar nav link active — no layout shift from left border */
+        .emp-nav-link { border-left: 3px solid transparent; }
+        /* Quota card: hide on very small sidebar */
+        @media (max-width: 767px) {
+          .emp-quota-card { display: none; }
+        }
+        }
+      `}</style>
+
       {/* Desktop: always show sidebar */}
       <style>{`
-        @media (min-width: 768px) {
+        /* Tablet: sidebar narrower, always visible */
+        @media (min-width: 768px) and (max-width: 1023px) {
           .emp-sidebar-panel {
             transform: translateX(0) !important;
+            width: ${SIDEBAR_W_TABLET}px !important;
+          }
+        }
+        /* Desktop: full width, always visible */
+        @media (min-width: 1024px) {
+          .emp-sidebar-panel {
+            transform: translateX(0) !important;
+            width: ${SIDEBAR_W}px !important;
           }
         }
       `}</style>
@@ -389,8 +406,8 @@ function EmployeeHeader({ onMenuClick }) {
         </p>
       </div>
 
-      {/* Right controls */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      {/* Right controls — shrink gracefully on tiny phones */}
+      <div className="flex items-center gap-1 sm:gap-2 md:gap-3" style={{ flexShrink: 0 }}>
 
         {/* Employee Portal Badge — hidden on small screens */}
         <span
@@ -449,11 +466,20 @@ function EmployeeHeader({ onMenuClick }) {
 
       {/* Push header right of sidebar on md+ */}
       <style>{`
-        @media (min-width: 768px) {
+        /* Tablet: offset by tablet sidebar width */
+        @media (min-width: 768px) and (max-width: 1023px) {
+          .emp-header-bar {
+            left: ${SIDEBAR_W_TABLET}px !important;
+            padding-left:  20px !important;
+            padding-right: 20px !important;
+          }
+        }
+        /* Desktop: offset by full sidebar width */
+        @media (min-width: 1024px) {
           .emp-header-bar {
             left: ${SIDEBAR_W}px !important;
-            padding-left:  24px !important;
-            padding-right: 24px !important;
+            padding-left:  28px !important;
+            padding-right: 28px !important;
           }
         }
       `}</style>
@@ -461,62 +487,6 @@ function EmployeeHeader({ onMenuClick }) {
   );
 }
 
-// ── Mobile Bottom Nav ─────────────────────────────────────────
-function EmpBottomNav() {
-  const { theme }    = useTheme();
-  const { pathname } = useLocation();
-  const isDark       = theme === "dark";
-
-  return (
-    <div
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40"
-      style={{
-        background:  isDark ? "#0A0A0A" : "#FFFFFF",
-        borderTop:   `1px solid ${isDark ? "#1E1E1E" : "#E8E8E8"}`,
-        display:     "flex",
-        alignItems:  "stretch",
-        height:      "60px",
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
-      }}
-    >
-      {bottomNavItems.map(({ to, icon: Icon, label }) => {
-        const isActive = pathname === to;
-        return (
-          <NavLink
-            key={to}
-            to={to}
-            style={{
-              flex:           1,
-              display:        "flex",
-              flexDirection:  "column",
-              alignItems:     "center",
-              justifyContent: "center",
-              gap:            "3px",
-              textDecoration: "none",
-              borderTop:      isActive ? "2px solid #CC0000" : "2px solid transparent",
-              background:     isActive ? "rgba(204,0,0,0.04)" : "transparent",
-              transition:     "all 150ms ease",
-            }}
-          >
-            <Icon
-              size={20}
-              style={{ color: isActive ? "#CC0000" : (isDark ? "#444444" : "#BBBBBB") }}
-            />
-            <span style={{
-              fontFamily:    "Mulish, sans-serif",
-              fontSize:      "9px",
-              fontWeight:    isActive ? 700 : 500,
-              color:         isActive ? "#CC0000" : (isDark ? "#444444" : "#BBBBBB"),
-              letterSpacing: "0.02em",
-            }}>
-              {label}
-            </span>
-          </NavLink>
-        );
-      })}
-    </div>
-  );
-}
 
 // ── Layout Wrapper ────────────────────────────────────────────
 function EmployeeLayout() {
@@ -529,8 +499,14 @@ function EmployeeLayout() {
 
   // Lock body scroll when mobile sidebar is open
   useEffect(() => {
-    document.body.style.overflow = sidebarOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    document.body.style.overflow  = sidebarOpen ? "hidden" : "";
+    document.body.style.position  = sidebarOpen ? "fixed"  : "";
+    document.body.style.width     = sidebarOpen ? "100%"   : "";
+    return () => {
+      document.body.style.overflow = "";
+      document.body.style.position = "";
+      document.body.style.width    = "";
+    };
   }, [sidebarOpen]);
 
   return (
@@ -542,7 +518,7 @@ function EmployeeLayout() {
         className="emp-main-content"
         style={{
           paddingTop:    "56px",
-          paddingBottom: "60px",   // room for bottom nav on mobile
+          paddingBottom: "0",
           minHeight:     "100vh",
           background:    "var(--page-bg)",
         }}
@@ -551,7 +527,7 @@ function EmployeeLayout() {
         <div
           className="fixed pointer-events-none select-none"
           style={{
-            top:        "56px", right: "0", zIndex: 0,
+            top: "56px", right: "0", bottom: "0", zIndex: 0, overflow: "hidden",
             fontFamily: "Rajdhani, sans-serif",
             fontSize:   "clamp(80px, 18vw, 280px)",
             fontWeight: 700,
@@ -563,20 +539,25 @@ function EmployeeLayout() {
           RWT
         </div>
 
-        <div className="relative z-10 p-4 sm:p-6">
+        <div className="relative z-10 p-3 sm:p-5 md:p-6 lg:p-8">
           <Outlet />
         </div>
       </main>
 
-      {/* Bottom nav — mobile only */}
-      <EmpBottomNav />
-
-      {/* Desktop: offset main content, remove bottom padding */}
+      {/* Desktop/Tablet: offset main content, remove bottom nav padding */}
       <style>{`
-        @media (min-width: 768px) {
+        /* Tablet */
+        @media (min-width: 768px) and (max-width: 1023px) {
+          .emp-main-content {
+            margin-left:    ${SIDEBAR_W_TABLET}px;
+            padding-bottom: 0;
+          }
+        }
+        /* Desktop */
+        @media (min-width: 1024px) {
           .emp-main-content {
             margin-left:    ${SIDEBAR_W}px;
-            padding-bottom: 0 !important;
+            padding-bottom: 0;
           }
         }
       `}</style>

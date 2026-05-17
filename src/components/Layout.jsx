@@ -5,7 +5,6 @@
 //   • Sidebar hidden by default, slides in from left on hamburger tap
 //   • Dim backdrop closes sidebar on tap-outside
 //   • X close button inside sidebar header
-//   • Bottom nav bar for one-tap page switching
 //   • Body scroll locked while drawer is open
 //   • Sidebar auto-closes on route change
 //
@@ -51,14 +50,6 @@ const navSections = [
 ];
 
 // Flat list for the bottom mobile nav (only show key pages)
-const bottomNavItems = [
-  { to: "/dashboard",  icon: LayoutDashboard, label: "Home"       },
-  { to: "/employees",  icon: Users,           label: "Employees"  },
-  { to: "/attendance", icon: CalendarCheck,   label: "Attendance" },
-  { to: "/leave",      icon: CalendarOff,     label: "Leave"      },
-  { to: "/settings",   icon: Settings,        label: "Settings"   },
-];
-
 const pageTitles = {
   "/dashboard":   { title: "Dashboard",       crumb: "WORKSPACE / DASHBOARD"  },
   "/employees":   { title: "Employees",        crumb: "PEOPLE / EMPLOYEES"     },
@@ -463,63 +454,6 @@ function Header({ onMenuClick }) {
   );
 }
 
-// ── Mobile Bottom Nav ─────────────────────────────────────────
-function BottomNav() {
-  const { theme }    = useTheme();
-  const { pathname } = useLocation();
-  const isDark       = theme === "dark";
-
-  return (
-    <div
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40"
-      style={{
-        background:  isDark ? "#0A0A0A" : "#FFFFFF",
-        borderTop:   `1px solid ${isDark ? "#1E1E1E" : "#E8E8E8"}`,
-        display:     "flex",
-        alignItems:  "stretch",
-        height:      "60px",
-        paddingBottom: "env(safe-area-inset-bottom, 0px)",
-      }}
-    >
-      {bottomNavItems.map(({ to, icon: Icon, label }) => {
-        const isActive = pathname === to;
-        return (
-          <NavLink
-            key={to}
-            to={to}
-            style={{
-              flex:           1,
-              display:        "flex",
-              flexDirection:  "column",
-              alignItems:     "center",
-              justifyContent: "center",
-              gap:            "3px",
-              textDecoration: "none",
-              borderTop:      isActive ? "2px solid #CC0000" : "2px solid transparent",
-              background:     isActive ? "rgba(204,0,0,0.04)" : "transparent",
-              transition:     "all 150ms ease",
-            }}
-          >
-            <Icon
-              size={20}
-              style={{ color: isActive ? "#CC0000" : (isDark ? "#444444" : "#BBBBBB") }}
-            />
-            <span style={{
-              fontFamily:  "Mulish, sans-serif",
-              fontSize:    "9px",
-              fontWeight:  isActive ? 700 : 500,
-              color:       isActive ? "#CC0000" : (isDark ? "#444444" : "#BBBBBB"),
-              letterSpacing: "0.02em",
-            }}>
-              {label}
-            </span>
-          </NavLink>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Layout Wrapper ────────────────────────────────────────────
 function Layout() {
   const { theme }                         = useTheme();
@@ -545,7 +479,7 @@ function Layout() {
         style={{
           paddingTop:    "56px",
           // On mobile add bottom padding so content isn't hidden behind bottom nav
-          paddingBottom: "60px",
+          paddingBottom: "0",
           minHeight:     "100vh",
           background:    "var(--page-bg)",
         }}
@@ -575,8 +509,6 @@ function Layout() {
         </div>
       </main>
 
-      {/* Bottom nav — mobile only */}
-      <BottomNav />
 
       {/* Desktop: offset main content right of sidebar, remove bottom padding */}
       <style>{`

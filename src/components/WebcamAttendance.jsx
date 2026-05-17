@@ -417,46 +417,74 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
   // ── Success screen ────────────────────────────────────────
   if (saved && savedRecord) return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background:"rgba(0,0,0,0.85)", backdropFilter:"blur(4px)" }} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{ width:"min(420px,95vw)", maxHeight:"90dvh", overflowY:"auto", background:cardBg, border:`1px solid ${border}`, borderRadius:"16px", overflow:"hidden" }}>
-        <div style={{ padding:"16px 20px", borderBottom:`1px solid ${border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background:"rgba(0,0,0,0.85)", backdropFilter:"blur(4px)", padding:"16px" }}
+      onClick={onClose}
+    >
+      <div
+        onClick={e=>e.stopPropagation()}
+        style={{
+          width:"min(440px,100%)",
+          maxHeight:"min(600px,90dvh)",
+          display:"flex",
+          flexDirection:"column",
+          background:cardBg,
+          border:`1px solid ${border}`,
+          borderRadius:"16px",
+          overflow:"hidden",
+        }}
+      >
+        {/* Success Header */}
+        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${border}`, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
           <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-            <div style={{ width:"34px", height:"34px", borderRadius:"8px", background:"rgba(0,184,184,0.12)", border:"1px solid rgba(0,184,184,0.3)", display:"flex", alignItems:"center", justifyContent:"center" }}>
-              <Camera size={16} style={{ color:"#00B8B8" }} />
+            <div style={{ width:"32px", height:"32px", borderRadius:"8px", background:"rgba(0,184,184,0.12)", border:"1px solid rgba(0,184,184,0.3)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <Camera size={15} style={{ color:"#00B8B8" }} />
             </div>
-            <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"clamp(14px,4vw,16px)", color:textPri }}>Webcam Attendance</p>
+            <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"15px", color:textPri }}>Webcam Attendance</p>
           </div>
-          <button onClick={onClose} style={{ color:textMuted, background:"none", border:"none", cursor:"pointer" }}><X size={18}/></button>
+          <button onClick={onClose} style={{ color:textMuted, background:"none", border:"none", cursor:"pointer", padding:"4px" }}><X size={18}/></button>
         </div>
-        <div style={{ padding:"20px 16px", display:"flex", flexDirection:"column", alignItems:"center", gap:"16px" }}>
-          <div style={{ width:"56px", height:"56px", borderRadius:"50%", background:"rgba(0,184,184,0.12)", border:"2px solid #00B8B8", display:"flex", alignItems:"center", justifyContent:"center" }}>
-            <CheckCircle size={28} style={{ color:"#00B8B8" }} />
+
+        {/* Success Body */}
+        <div style={{ flex:1, overflowY:"auto", padding:"20px 18px", display:"flex", flexDirection:"column", alignItems:"center", gap:"16px" }}>
+          <div style={{ width:"52px", height:"52px", borderRadius:"50%", background:"rgba(0,184,184,0.12)", border:"2px solid #00B8B8", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <CheckCircle size={26} style={{ color:"#00B8B8" }} />
           </div>
           <div style={{ textAlign:"center" }}>
-            <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"clamp(16px,5vw,20px)", color:"#00B8B8" }}>
+            <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"clamp(17px,5vw,22px)", color:"#00B8B8", lineHeight:1 }}>
               {savedRecord.action==="checkin" ? "Checked In!" : "Checked Out!"}
             </p>
-            <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"clamp(11px,3vw,13px)", color:textMuted, marginTop:"4px" }}>
-              Attendance recorded at <span style={{ color:textPri, fontWeight:600 }}>{savedRecord.time}</span>
+            <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"clamp(11px,3vw,13px)", color:textMuted, marginTop:"6px" }}>
+              Recorded at <span style={{ color:textPri, fontWeight:600 }}>{savedRecord.time}</span>
             </p>
           </div>
-          <div style={{ width:"100%", background:isDark?"#0D0D0D":"#F5F5F5", border:`1px solid ${border}`, borderRadius:"10px", padding:"12px 14px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px" }}>
+
+          <div style={{ width:"100%", background:isDark?"#0D0D0D":"#F5F5F5", border:`1px solid ${border}`, borderRadius:"10px", padding:"14px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"14px" }}>
             {[
-              { label:"DATE",         val:savedRecord.date },
-              { label:"STATUS",       val:savedRecord.status },
-              { label:"CHECK IN",     val:savedRecord.checkIn },
-              { label:"CHECK OUT",    val:savedRecord.checkOut },
-              { label:"HOURS WORKED", val:savedRecord.hoursWorked },
-              { label:"FACE VERIFIED",val:faceStatus==="matched" ? "Yes ✓" : "Skipped" },
+              { label:"DATE",          val:savedRecord.date },
+              { label:"STATUS",        val:savedRecord.status },
+              { label:"CHECK IN",      val:savedRecord.checkIn },
+              { label:"CHECK OUT",     val:savedRecord.checkOut },
+              { label:"HOURS WORKED",  val:savedRecord.hoursWorked },
+              { label:"FACE VERIFIED", val:faceStatus==="matched" ? "Yes ✓" : "Skipped" },
             ].map(({label,val}) => (
               <div key={label}>
                 <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"9px", fontWeight:700, color:"#CC0000", letterSpacing:"0.15em" }}>{label}</p>
-                <p style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"clamp(11px,3vw,13px)", color:textPri, marginTop:"2px", wordBreak:"break-word" }}>{val}</p>
+                <p style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"clamp(11px,3vw,13px)", color:textPri, marginTop:"3px", wordBreak:"break-word" }}>{val}</p>
               </div>
             ))}
           </div>
-          <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"11px", color:textMuted, textAlign:"center" }}>This record has been sent to the admin panel automatically.</p>
-          <button onClick={onClose} style={{ padding:"10px 32px", borderRadius:"8px", background:"#CC0000", border:"1px solid #CC0000", color:"#FFFFFF", fontFamily:"Rajdhani,sans-serif", fontSize:"14px", fontWeight:700, cursor:"pointer", letterSpacing:"0.05em", width:"100%" }}>DONE</button>
+
+          <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"11px", color:textMuted, textAlign:"center", lineHeight:1.5 }}>
+            This record has been sent to the admin panel automatically.
+          </p>
+          <button
+            onClick={onClose}
+            style={{ width:"100%", padding:"11px", borderRadius:"8px", background:"#CC0000", border:"none", color:"#FFFFFF", fontFamily:"Rajdhani,sans-serif", fontSize:"14px", fontWeight:700, cursor:"pointer", letterSpacing:"0.08em" }}
+          >
+            DONE
+          </button>
         </div>
       </div>
     </div>
@@ -464,47 +492,187 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
   // ── Main modal ────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background:"rgba(0,0,0,0.85)", backdropFilter:"blur(4px)" }} onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50"
+      style={{
+        background:"rgba(0,0,0,0.85)",
+        backdropFilter:"blur(4px)",
+        display:"flex",
+        alignItems:"flex-end",
+        justifyContent:"center",
+      }}
+      onClick={onClose}
+    >
       <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes facePulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
-        @media (max-width:640px) {
-          .webcam-modal-card { width:100%!important; border-radius:16px 16px 0 0!important; max-height:96dvh!important; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        /* ── Modal card ── */
+        .wc-card {
+          width: 100%;
+          max-height: 96dvh;
+          border-radius: 18px 18px 0 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        /* Tablet: centred, capped width, rounded all corners */
+        @media (min-width: 600px) {
+          .wc-outer {
+            align-items: center !important;
+            padding: 20px;
+          }
+          .wc-card {
+            width: min(520px, 100%);
+            max-height: 92dvh;
+            border-radius: 16px;
+          }
+        }
+
+        /* Desktop / laptop: slightly wider, more padding */
+        @media (min-width: 1024px) {
+          .wc-card {
+            width: min(560px, 100%);
+            max-height: 90dvh;
+          }
+        }
+
+        /* ── Footer buttons ── */
+        .wc-btn {
+          padding: 10px 16px;
+          border-radius: 7px;
+          font-family: "Rajdhani", sans-serif;
+          font-weight: 700;
+          font-size: 13px;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: all 150ms;
+        }
+        /* On very small phones, shrink button text */
+        @media (max-width: 360px) {
+          .wc-btn { padding: 9px 10px; font-size: 11px; }
+        }
+
+        /* ── Action selector ── */
+        .wc-action-row { display: flex; gap: 8px; }
+        .wc-action-btn {
+          flex: 1;
+          padding: 10px 8px;
+          border-radius: 8px;
+          font-family: "Rajdhani", sans-serif;
+          font-weight: 700;
+          transition: all 150ms;
+        }
+        .wc-action-label { font-size: clamp(12px, 3.8vw, 14px); display: block; }
+        .wc-action-sub   { font-size: clamp(9px, 2.5vw, 10px); display: block; margin-top: 3px; font-weight: 400; }
+
+        /* ── Camera area: fixed aspect ratio, max height so it never dominates ── */
+        .wc-camera-wrap {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 4 / 3;
+          max-height: 280px;
+          border-radius: 10px;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        @media (min-width: 600px) {
+          .wc-camera-wrap { max-height: 320px; }
+        }
+        @media (min-width: 1024px) {
+          .wc-camera-wrap { max-height: 360px; }
+        }
+
+        /* ── Clock: compact on phone, normal on larger ── */
+        .wc-clock-time { font-family:"Share Tech Mono",monospace; font-weight:700; color:#00B8B8; letter-spacing:0.05em; line-height:1; font-size:clamp(20px,6vw,30px); }
+        .wc-clock-date { font-family:"Mulish",sans-serif; margin-top:3px; font-size:clamp(9px,2.5vw,11px); }
+
+        /* ── Banners ── */
+        .wc-banner {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 10px 12px;
+          border-radius: 8px;
+          font-size: 12px;
+          line-height: 1.5;
+        }
+        @media (max-width: 360px) {
+          .wc-banner { font-size: 11px; padding: 8px 10px; }
         }
       `}</style>
-      <div onClick={e=>e.stopPropagation()} className="webcam-modal-card" style={{ width:"min(520px,96vw)", maxHeight:"95dvh", display:"flex", flexDirection:"column", background:cardBg, border:`1px solid ${border}`, borderRadius:"16px", overflow:"hidden" }}>
 
-        {/* Header */}
-        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${border}`, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-            <div style={{ width:"36px", height:"36px", borderRadius:"8px", background:"rgba(204,0,0,0.10)", border:"1px solid rgba(204,0,0,0.3)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-              <Camera size={16} style={{ color:"#CC0000" }}/>
+      <div
+        onClick={e=>e.stopPropagation()}
+        className="wc-card"
+        style={{ background:cardBg, border:`1px solid ${border}` }}
+      >
+
+        {/* ── Header ── */}
+        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${border}`, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"10px", minWidth:0 }}>
+            <div style={{ width:"34px", height:"34px", borderRadius:"8px", background:"rgba(204,0,0,0.10)", border:"1px solid rgba(204,0,0,0.3)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <Camera size={15} style={{ color:"#CC0000" }}/>
             </div>
-            <div>
-              <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"clamp(14px,4vw,16px)", color:textPri, lineHeight:1 }}>Webcam Attendance</p>
-              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"clamp(10px,2.5vw,11px)", color:textMuted, marginTop:"2px" }}>{empName} · {todayString()}</p>
+            <div style={{ minWidth:0 }}>
+              <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"clamp(13px,4vw,16px)", color:textPri, lineHeight:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                Webcam Attendance
+              </p>
+              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"clamp(9px,2.5vw,11px)", color:textMuted, marginTop:"2px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                {empName} · {todayString()}
+              </p>
             </div>
           </div>
-          <button onClick={onClose} style={{ color:textMuted, background:"none", border:"none", cursor:"pointer" }}><X size={18}/></button>
+          <button
+            onClick={onClose}
+            style={{ color:textMuted, background:"none", border:"none", cursor:"pointer", padding:"4px", flexShrink:0, marginLeft:"8px" }}
+          >
+            <X size={18}/>
+          </button>
         </div>
 
-        {/* Body */}
-        <div style={{ padding:"14px 18px", display:"flex", flexDirection:"column", gap:"12px", overflowY:"auto", flex:1 }}>
-          <LiveClock isDark={isDark}/>
+        {/* ── Scrollable Body ── */}
+        <div style={{ flex:1, overflowY:"auto", padding:"12px 16px", display:"flex", flexDirection:"column", gap:"10px" }}>
+
+          {/* Clock */}
+          <div style={{ textAlign:"center", paddingBottom:"2px" }}>
+            <LiveClock isDark={isDark}/>
+          </div>
 
           {/* Action selector */}
           <div>
-            <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"10px", fontWeight:700, color:"#CC0000", letterSpacing:"0.15em", marginBottom:"8px" }}>MARK ATTENDANCE AS</p>
-            <div style={{ display:"flex", gap:"8px" }}>
+            <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"9px", fontWeight:700, color:"#CC0000", letterSpacing:"0.18em", marginBottom:"7px" }}>
+              MARK ATTENDANCE AS
+            </p>
+            <div className="wc-action-row">
               {["checkin","checkout"].map(a => {
                 const label    = a==="checkin" ? "Check In" : "Check Out";
                 const disabled = a==="checkin" ? alreadyCheckedIn : (!alreadyCheckedIn||alreadyCheckedOut);
                 const isSel    = action===a;
                 return (
-                  <button key={a} onClick={()=>!disabled&&setAction(a)} disabled={disabled} style={{ flex:1, padding:"10px 0", borderRadius:"8px", fontFamily:"Rajdhani,sans-serif", fontSize:"14px", fontWeight:700, cursor:disabled?"not-allowed":"pointer", border:isSel?"1px solid #CC0000":`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`, background:isSel?"rgba(204,0,0,0.12)":"transparent", color:disabled?(isDark?"#333333":"#CCCCCC"):isSel?"#CC0000":(isDark?"#666666":"#888888"), opacity:disabled?0.5:1, transition:"all 150ms" }}>
-                    {label}
-                    {a==="checkin"  && alreadyCheckedIn  && <span style={{ fontSize:"10px", display:"block", marginTop:"2px", fontWeight:400 }}>{alreadyCheckedOut?"Already done":`Done at ${todayRecord?.checkIn}`}</span>}
-                    {a==="checkout" && alreadyCheckedOut && <span style={{ fontSize:"10px", display:"block", marginTop:"2px", fontWeight:400 }}>Done at {todayRecord?.checkOut}</span>}
+                  <button
+                    key={a}
+                    onClick={()=>!disabled&&setAction(a)}
+                    disabled={disabled}
+                    className="wc-action-btn"
+                    style={{
+                      cursor:    disabled?"not-allowed":"pointer",
+                      border:    isSel?"1px solid #CC0000":`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`,
+                      background:isSel?"rgba(204,0,0,0.12)":"transparent",
+                      color:     disabled?(isDark?"#333333":"#CCCCCC"):isSel?"#CC0000":(isDark?"#666666":"#888888"),
+                      opacity:   disabled?0.5:1,
+                    }}
+                  >
+                    <span className="wc-action-label">{label}</span>
+                    {a==="checkin"  && alreadyCheckedIn  && (
+                      <span className="wc-action-sub">{alreadyCheckedOut?"Already done":`Done · ${todayRecord?.checkIn}`}</span>
+                    )}
+                    {a==="checkout" && alreadyCheckedOut && (
+                      <span className="wc-action-sub">Done · {todayRecord?.checkOut}</span>
+                    )}
                   </button>
                 );
               })}
@@ -513,15 +681,15 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
           {/* Geo banners */}
           {geoRequired && geoStatus==="checking" && (
-            <div style={{ display:"flex", alignItems:"center", gap:"10px", padding:"10px 14px", borderRadius:"8px", background:"rgba(201,146,42,0.08)", border:"1px solid rgba(201,146,42,0.3)" }}>
-              <Navigation size={14} style={{ color:"#C9922A", flexShrink:0 }}/>
-              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:"#C9922A" }}>Verifying your location…</p>
+            <div className="wc-banner" style={{ background:"rgba(201,146,42,0.08)", border:"1px solid rgba(201,146,42,0.3)" }}>
+              <Navigation size={14} style={{ color:"#C9922A", flexShrink:0, marginTop:"1px" }}/>
+              <p style={{ fontFamily:"Mulish,sans-serif", color:"#C9922A" }}>Verifying your location…</p>
             </div>
           )}
           {geoRequired && geoStatus==="blocked" && (
-            <div style={{ padding:"14px 16px", borderRadius:"8px", background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"6px" }}>
-                <MapPin size={14} style={{ color:"#CC0000", flexShrink:0 }}/>
+            <div style={{ padding:"12px 14px", borderRadius:"8px", background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"7px", marginBottom:"5px" }}>
+                <MapPin size={13} style={{ color:"#CC0000", flexShrink:0 }}/>
                 <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"13px", fontWeight:700, color:"#CC0000" }}>Outside Office Premises</p>
               </div>
               <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:isDark?"#888888":"#666666", lineHeight:1.5 }}>
@@ -530,50 +698,66 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             </div>
           )}
           {geoRequired && geoStatus==="allowed" && geoDistance!==null && (
-            <div style={{ display:"flex", alignItems:"center", gap:"10px", padding:"10px 14px", borderRadius:"8px", background:"rgba(0,184,184,0.07)", border:"1px solid rgba(0,184,184,0.25)" }}>
-              <ShieldCheck size={14} style={{ color:"#00B8B8", flexShrink:0 }}/>
-              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:"#00B8B8" }}>Location verified — <strong>{geoDistance}m</strong> from office ✓</p>
+            <div className="wc-banner" style={{ background:"rgba(0,184,184,0.07)", border:"1px solid rgba(0,184,184,0.25)" }}>
+              <ShieldCheck size={14} style={{ color:"#00B8B8", flexShrink:0, marginTop:"1px" }}/>
+              <p style={{ fontFamily:"Mulish,sans-serif", color:"#00B8B8" }}>Location verified — <strong>{geoDistance}m</strong> from office ✓</p>
             </div>
           )}
           {geoRequired && geoStatus==="error" && (
-            <div style={{ display:"flex", alignItems:"center", gap:"10px", padding:"10px 14px", borderRadius:"8px", background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)" }}>
-              <AlertCircle size={14} style={{ color:"#CC0000", flexShrink:0 }}/>
-              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:"#CC0000" }}>Could not access your location. Please enable GPS and try again.</p>
+            <div className="wc-banner" style={{ background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)" }}>
+              <AlertCircle size={14} style={{ color:"#CC0000", flexShrink:0, marginTop:"1px" }}/>
+              <p style={{ fontFamily:"Mulish,sans-serif", color:"#CC0000" }}>Could not access your location. Please enable GPS and try again.</p>
             </div>
           )}
 
           {/* Camera area */}
           {geoStatus!=="blocked" && geoStatus!=="checking" && (
-            <div style={{ position:"relative", borderRadius:"10px", overflow:"hidden", background:isDark?"#0D0D0D":"#F0F0F0", border:`1px solid ${border}`, aspectRatio:"4/3", display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <div
+              className="wc-camera-wrap"
+              style={{ background:isDark?"#0D0D0D":"#F0F0F0", border:`1px solid ${border}` }}
+            >
               <canvas ref={canvasRef} style={{ display:"none" }}/>
-              <video ref={videoRef} muted playsInline style={{ width:"100%", height:"100%", objectFit:"cover", transform:"scaleX(-1)", display:camStatus==="active"?"block":"none" }}/>
+              <video
+                ref={videoRef}
+                muted
+                playsInline
+                style={{ width:"100%", height:"100%", objectFit:"cover", transform:"scaleX(-1)", display:camStatus==="active"?"block":"none" }}
+              />
 
-              {snapshotObjectUrl && <img src={snapshotObjectUrl} alt="Captured" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>}
+              {snapshotObjectUrl && (
+                <img src={snapshotObjectUrl} alt="Captured" style={{ width:"100%", height:"100%", objectFit:"cover", position:"absolute", inset:0 }}/>
+              )}
 
               {!snapshotObjectUrl && camStatus!=="active" && (
-                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"12px", padding:"24px", textAlign:"center" }}>
+                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"10px", padding:"20px", textAlign:"center" }}>
                   {camStatus==="loading" && (
                     <>
-                      <div style={{ width:"40px", height:"40px", borderRadius:"50%", border:"3px solid rgba(0,184,184,0.2)", borderTopColor:"#00B8B8", animation:"spin 0.8s linear infinite" }}/>
-                      <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"13px", color:textMuted }}>Starting camera…</p>
+                      <div style={{ width:"36px", height:"36px", borderRadius:"50%", border:"3px solid rgba(0,184,184,0.2)", borderTopColor:"#00B8B8", animation:"spin 0.8s linear infinite" }}/>
+                      <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:textMuted }}>Starting camera…</p>
                     </>
                   )}
                   {camStatus==="idle" && (
                     <>
-                      <VideoOff size={40} style={{ color:isDark?"#333333":"#CCCCCC" }}/>
-                      <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"13px", color:textMuted }}>Camera is off. Click "Open Camera" to start.</p>
-                      <button onClick={startCamera} style={{ padding:"9px 20px", borderRadius:"7px", background:"transparent", border:`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`, color:isDark?"#888888":"#666666", fontFamily:"Rajdhani,sans-serif", fontSize:"13px", fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:"6px" }}>
-                        <Video size={14}/> Open Camera
+                      <VideoOff size={36} style={{ color:isDark?"#333333":"#CCCCCC" }}/>
+                      <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:textMuted, maxWidth:"220px" }}>Camera is off. Tap "Open Camera" to start.</p>
+                      <button
+                        onClick={startCamera}
+                        style={{ padding:"8px 18px", borderRadius:"7px", background:"transparent", border:`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`, color:isDark?"#888888":"#666666", fontFamily:"Rajdhani,sans-serif", fontSize:"12px", fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:"6px" }}
+                      >
+                        <Video size={13}/> Open Camera
                       </button>
                     </>
                   )}
                   {(camStatus==="error"||camStatus==="denied") && (
                     <>
-                      <AlertCircle size={36} style={{ color:"#CC0000" }}/>
-                      <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:"#CC0000", maxWidth:"280px" }}>{errorMsg}</p>
+                      <AlertCircle size={32} style={{ color:"#CC0000" }}/>
+                      <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"11px", color:"#CC0000", maxWidth:"240px", lineHeight:1.5 }}>{errorMsg}</p>
                       {camStatus==="error" && (
-                        <button onClick={startCamera} style={{ padding:"8px 16px", borderRadius:"7px", background:"rgba(204,0,0,0.10)", border:"1px solid rgba(204,0,0,0.3)", color:"#CC0000", fontFamily:"Rajdhani,sans-serif", fontSize:"12px", fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:"6px" }}>
-                          <RefreshCw size={13}/> Retry
+                        <button
+                          onClick={startCamera}
+                          style={{ padding:"7px 14px", borderRadius:"7px", background:"rgba(204,0,0,0.10)", border:"1px solid rgba(204,0,0,0.3)", color:"#CC0000", fontFamily:"Rajdhani,sans-serif", fontSize:"11px", fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:"5px" }}
+                        >
+                          <RefreshCw size={12}/> Retry
                         </button>
                       )}
                     </>
@@ -583,23 +767,26 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
               {/* Clock overlay on live feed */}
               {camStatus==="active" && !snapshotObjectUrl && (
-                <div style={{ position:"absolute", bottom:"10px", left:"10px", background:"rgba(0,0,0,0.65)", borderRadius:"6px", padding:"4px 10px" }}>
+                <div style={{ position:"absolute", bottom:"8px", left:"8px", background:"rgba(0,0,0,0.65)", borderRadius:"5px", padding:"3px 8px" }}>
                   <LiveClockMinimal/>
                 </div>
               )}
 
-              {/* Retake button */}
+              {/* Retake overlay button */}
               {snapshotObjectUrl && (
-                <button onClick={retake} style={{ position:"absolute", top:"10px", right:"10px", padding:"6px 12px", borderRadius:"6px", background:"rgba(0,0,0,0.7)", border:"1px solid rgba(255,255,255,0.2)", color:"#FFFFFF", fontFamily:"Rajdhani,sans-serif", fontSize:"11px", fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:"5px" }}>
+                <button
+                  onClick={retake}
+                  style={{ position:"absolute", top:"8px", right:"8px", padding:"5px 10px", borderRadius:"6px", background:"rgba(0,0,0,0.70)", border:"1px solid rgba(255,255,255,0.2)", color:"#FFFFFF", fontFamily:"Rajdhani,sans-serif", fontSize:"11px", fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:"5px" }}
+                >
                   <RefreshCw size={11}/> Retake
                 </button>
               )}
 
-              {/* Face verifying overlay */}
+              {/* Face scanning overlay */}
               {snapshotObjectUrl && (faceStatus==="verifying"||faceStatus==="loading_models") && (
                 <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.55)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:"10px" }}>
-                  <ScanFace size={44} style={{ color:"#00B8B8", animation:"spin 2s linear infinite" }}/>
-                  <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"13px", color:"#FFFFFF", letterSpacing:"0.1em" }}>
+                  <ScanFace size={40} style={{ color:"#00B8B8", animation:"spin 2s linear infinite" }}/>
+                  <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"12px", color:"#FFFFFF", letterSpacing:"0.12em" }}>
                     {faceStatus==="loading_models" ? "LOADING MODELS…" : "VERIFYING FACE…"}
                   </p>
                 </div>
@@ -607,13 +794,13 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
               {/* Matched badge */}
               {snapshotObjectUrl && faceStatus==="matched" && (
-                <div style={{ position:"absolute", bottom:"10px", left:"10px", background:"rgba(0,150,136,0.90)", borderRadius:"6px", padding:"4px 10px", display:"flex", alignItems:"center", gap:"5px" }}>
-                  <ShieldCheck size={12} style={{ color:"#FFFFFF" }}/>
+                <div style={{ position:"absolute", bottom:"8px", left:"8px", background:"rgba(0,150,136,0.90)", borderRadius:"5px", padding:"3px 10px", display:"flex", alignItems:"center", gap:"5px" }}>
+                  <ShieldCheck size={11} style={{ color:"#FFFFFF" }}/>
                   <span style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"11px", color:"#FFFFFF", letterSpacing:"0.08em" }}>FACE MATCHED</span>
                 </div>
               )}
 
-              {/* Mismatch / blocked states red border */}
+              {/* Mismatch red border */}
               {snapshotObjectUrl && ["mismatch","no_face_snapshot","no_profile","no_face_profile","error"].includes(faceStatus) && (
                 <div style={{ position:"absolute", inset:0, border:"3px solid #CC0000", borderRadius:"10px", pointerEvents:"none", boxShadow:"inset 0 0 20px rgba(204,0,0,0.3)" }}/>
               )}
@@ -622,60 +809,99 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
           {/* Face verification banner */}
           {faceBanner && snapshotObjectUrl && (
-            <div style={{ display:"flex", alignItems:"flex-start", gap:"10px", padding:"10px 14px", borderRadius:"8px", background:faceBanner.bg, border:`1px solid ${faceBanner.bdr}` }}>
-              <ScanFace size={15} style={{ color:faceBanner.color, flexShrink:0, marginTop:"1px", ...(faceBanner.spinning ? { animation:"spin 1.5s linear infinite" } : {}) }}/>
+            <div className="wc-banner" style={{ background:faceBanner.bg, border:`1px solid ${faceBanner.bdr}`, alignItems:"flex-start" }}>
+              <ScanFace size={14} style={{ color:faceBanner.color, flexShrink:0, marginTop:"2px", ...(faceBanner.spinning?{animation:"spin 1.5s linear infinite"}:{}) }}/>
               <div style={{ flex:1 }}>
                 <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:faceBanner.color, lineHeight:1.5 }}>{faceBanner.text}</p>
                 {["mismatch","no_face_snapshot"].includes(faceStatus) && (
-                  <button onClick={retake} style={{ marginTop:"6px", padding:"5px 12px", borderRadius:"5px", background:"rgba(204,0,0,0.12)", border:"1px solid rgba(204,0,0,0.35)", color:"#CC0000", fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"11px", cursor:"pointer", display:"flex", alignItems:"center", gap:"5px" }}>
+                  <button
+                    onClick={retake}
+                    style={{ marginTop:"6px", padding:"5px 10px", borderRadius:"5px", background:"rgba(204,0,0,0.12)", border:"1px solid rgba(204,0,0,0.35)", color:"#CC0000", fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"11px", cursor:"pointer", display:"flex", alignItems:"center", gap:"5px" }}
+                  >
                     <RefreshCw size={11}/> Retake Photo
                   </button>
                 )}
                 {faceScore !== null && faceStatus === "matched" && (
                   <p style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"10px", color:faceBanner.color, marginTop:"3px", opacity:0.7 }}>
-                    similarity score: {(1 - faceScore).toFixed(2)}
+                    similarity: {(1 - faceScore).toFixed(2)}
                   </p>
                 )}
               </div>
             </div>
           )}
 
-          {/* General error */}
+          {/* General save error */}
           {errorMsg && camStatus!=="error" && camStatus!=="denied" && (
-            <div style={{ padding:"10px 14px", borderRadius:"7px", background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.25)" }}>
+            <div style={{ padding:"10px 12px", borderRadius:"7px", background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.25)" }}>
               <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:"#CC0000" }}>{errorMsg}</p>
             </div>
           )}
 
-          {/* Upload progress */}
-          {saving && uploadProgress>0 && uploadProgress<100 && (
+          {/* Upload progress bar */}
+          {saving && uploadProgress > 0 && uploadProgress < 100 && (
             <div>
-              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"5px" }}>
-                <span style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"10px", fontWeight:700, color:"#CC0000", letterSpacing:"0.12em" }}>UPLOADING SNAPSHOT</span>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"4px" }}>
+                <span style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"9px", fontWeight:700, color:"#CC0000", letterSpacing:"0.14em" }}>UPLOADING SNAPSHOT</span>
                 <span style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"10px", color:textMuted }}>{uploadProgress}%</span>
               </div>
-              <div style={{ height:"4px", borderRadius:"2px", background:isDark?"#1A1A1A":"#E8E8E8", overflow:"hidden" }}>
+              <div style={{ height:"3px", borderRadius:"2px", background:isDark?"#1A1A1A":"#E8E8E8", overflow:"hidden" }}>
                 <div style={{ height:"100%", width:`${uploadProgress}%`, background:"linear-gradient(90deg,#CC0000,#00B8B8)", borderRadius:"2px", transition:"width 200ms ease" }}/>
               </div>
             </div>
           )}
 
-          <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"11px", color:textMuted, textAlign:"center" }}>
+          <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"10px", color:textMuted, textAlign:"center", lineHeight:1.5 }}>
             Your photo and face verification result will be recorded in the admin panel.
           </p>
         </div>
 
-        {/* Footer */}
-        <div style={{ padding:"12px 18px", borderTop:`1px solid ${border}`, display:"flex", flexWrap:"wrap", justifyContent:"space-between", gap:"8px", flexShrink:0 }}>
-          <button onClick={onClose} style={{ padding:"9px 20px", borderRadius:"7px", background:"transparent", border:`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`, color:isDark?"#666666":"#888888", fontFamily:"Rajdhani,sans-serif", fontSize:"13px", fontWeight:600, cursor:"pointer" }}>Cancel</button>
-          <div style={{ display:"flex", gap:"8px" }}>
+        {/* ── Footer ── */}
+        <div style={{
+          padding:"10px 16px",
+          borderTop:`1px solid ${border}`,
+          display:"flex",
+          alignItems:"center",
+          justifyContent:"space-between",
+          gap:"8px",
+          flexShrink:0,
+          flexWrap:"wrap",
+        }}>
+          {/* Cancel — left */}
+          <button
+            onClick={onClose}
+            className="wc-btn"
+            style={{ background:"transparent", border:`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`, color:isDark?"#666666":"#888888" }}
+          >
+            Cancel
+          </button>
+
+          {/* Right-side action buttons */}
+          <div style={{ display:"flex", gap:"8px", flex:1, justifyContent:"flex-end" }}>
             {camStatus==="active" && !snapshotObjectUrl && (
-              <button onClick={captureSnapshot} style={{ padding:"9px 20px", borderRadius:"7px", background:"rgba(0,184,184,0.12)", border:"1px solid rgba(0,184,184,0.4)", color:"#00B8B8", fontFamily:"Rajdhani,sans-serif", fontSize:"13px", fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", gap:"6px" }}>
-                <Camera size={14}/> Capture Photo
+              <button
+                onClick={captureSnapshot}
+                className="wc-btn"
+                style={{ background:"rgba(0,184,184,0.12)", border:"1px solid rgba(0,184,184,0.4)", color:"#00B8B8", display:"flex", alignItems:"center", gap:"6px" }}
+              >
+                <Camera size={13}/> Capture
               </button>
             )}
-            <button onClick={handleSave} disabled={!canSave} style={{ padding:"9px 24px", borderRadius:"7px", letterSpacing:"0.05em", background:!canSave?(isDark?"#1A1A1A":"#E8E8E8"):"#CC0000", border:!canSave?`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`:"1px solid #CC0000", color:!canSave?(isDark?"#444444":"#BBBBBB"):"#FFFFFF", fontFamily:"Rajdhani,sans-serif", fontSize:"13px", fontWeight:700, cursor:!canSave?"not-allowed":"pointer", transition:"all 150ms" }}>
-              {saving ? (uploadProgress<100 ? `Uploading… ${uploadProgress}%` : "Saving…") : (action==="checkin" ? "Confirm Check In" : "Confirm Check Out")}
+            <button
+              onClick={handleSave}
+              disabled={!canSave}
+              className="wc-btn"
+              style={{
+                background: !canSave?(isDark?"#1A1A1A":"#E8E8E8"):"#CC0000",
+                border:     !canSave?`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`:"1px solid #CC0000",
+                color:      !canSave?(isDark?"#444444":"#BBBBBB"):"#FFFFFF",
+                cursor:     !canSave?"not-allowed":"pointer",
+                letterSpacing:"0.05em",
+              }}
+            >
+              {saving
+                ? (uploadProgress < 100 ? `Uploading… ${uploadProgress}%` : "Saving…")
+                : (action==="checkin" ? "Confirm Check In" : "Confirm Check Out")
+              }
             </button>
           </div>
         </div>

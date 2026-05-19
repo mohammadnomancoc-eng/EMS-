@@ -15,6 +15,10 @@
 //  (via subscribeAuthState, which already clears localStorage on sign-out).
 //  If localStorage says logged-in but Firebase session is gone (e.g. expired
 //  token), the next page render will re-check and redirect cleanly.
+//
+//  TEMPLATE BUILDER FIX:
+//  • Added /idcard-template and /idcard-template/:id routes so
+//    IdCardTemplateBuilder is reachable from the admin panel.
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -34,6 +38,8 @@ import LeaveManagement from "./pages/LeaveManagement";
 import Attendance from "./pages/Attendance";
 import Departments from "./pages/Departments";
 import Settings from "./pages/Settings";
+import IdCards from "./pages/IdCards";
+import IdCardTemplateBuilder from "./pages/IdCardTemplateBuilder";
 import { subscribeAuthState } from "./firebase/authService";
 
 export const ThemeContext = createContext();
@@ -168,6 +174,10 @@ function App() {
             <Route path="leave"       element={<LeaveManagement />} />
             <Route path="departments" element={<Departments />} />
             <Route path="settings"    element={<Settings />} />
+            <Route path="id-cards"    element={<IdCards />} />
+            {/* ── Template Builder routes ── */}
+            <Route path="idcard-template"     element={<IdCardTemplateBuilder />} />
+            <Route path="idcard-template/:id" element={<IdCardTemplateBuilder />} />
           </Route>
 
           {/* ── Employee Routes (guarded by EmployeeRoute) ── */}

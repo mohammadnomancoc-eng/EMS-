@@ -88,10 +88,6 @@ export async function uploadToCloudinary(file, type = "image", options = {}) {
 // ── Convenience Wrappers ──────────────────────────────────────
 
 export async function uploadEmployeePhoto(file, empId, onProgress) {
-  // No fixed public_id — use timestamp so each upload gets a unique URL.
-  // Unsigned presets block overwriting the same public_id, causing the old
-  // asset URL to be returned instead of the new photo. A fresh public_id
-  // also busts the browser and CDN cache automatically.
   return uploadToCloudinary(file, "image", {
     folder:     `ems/employees/${empId}`,
     publicId:   `${empId}_profile_${Date.now()}`,
@@ -116,18 +112,58 @@ export async function uploadVideo(file, videoName, onProgress) {
 }
 
 /**
- * Upload an employee's offer letter.
+ * Upload the company logo to Cloudinary.
+ * Store the returned secure_url in VITE_COMPANY_LOGO_URL or your Firestore settings doc.
  *
- * PDFs  → uploaded as "raw" resource type (the correct Cloudinary type for PDFs).
- *          The raw URL is stored as-is. We use Google Docs Viewer to display it,
- *          which works perfectly with public Cloudinary raw URLs — no CORS, no auth issues.
- *
- * Images → uploaded as "image" resource type as normal.
+ * Folder: ems/company
+ * The public_id is fixed so re-uploading replaces it.
+ * NOTE: fixed public_ids require your upload preset to allow overwrites,
+ *       OR append a timestamp to always create a new version.
+ */
+export async function uploadCompanyLogo(file, onProgress) {
+  const allowed = ["image/jpeg", "image/png", "image/webp", "image/svg+xml"];
+  if (!allowed.includes(file.type)) {
+    throw new Error("Logo must be JPG, PNG, WEBP, or SVG.");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("Logo file must be under 5 MB.");
+  }
+  return uploadToCloudinary(file, "image", {
+    folder:     "ems/company",
+    publicId:   `logo_${Date.now()}`,
+    onProgress,
+  });
+}
+
+/**
+ * Upload an ID card background image to Cloudinary.
+ * Used by the ID card template builder (IdCardTemplateBuilder).
+ * Images are stored under ems/idcard-backgrounds/.
  *
  * @param {File}     file
- * @param {string}   empId       - e.g. "RWT013"
+ * @param {string}   templateId  - template name or ID used as part of public_id
  * @param {Function} onProgress  - (percent: number) => void
- * @returns {Promise<{secure_url, public_id, resource_type, ...}>}
+ */
+export async function uploadIdCardBackground(file, templateId = "custom", onProgress) {
+  const allowed = ["image/jpeg", "image/png", "image/webp"];
+  if (!allowed.includes(file.type)) {
+    throw new Error("Background must be JPG, PNG, or WEBP.");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("Background image must be under 5 MB.");
+  }
+  return uploadToCloudinary(file, "image", {
+    folder:     "ems/idcard-backgrounds",
+    publicId:   `bg_${templateId}_${Date.now()}`,
+    onProgress,
+  });
+}
+
+/**
+ * Upload an employee's offer letter.
+ *
+ * PDFs  → uploaded as "raw" resource type.
+ * Images → uploaded as "image" resource type as normal.
  */
 export async function uploadOfferLetter(file, empId, onProgress) {
   const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
@@ -145,8 +181,6 @@ export async function uploadOfferLetter(file, empId, onProgress) {
   }
 
   const isPdf = file.type === "application/pdf";
-  // PDFs must be uploaded as "raw" — Cloudinary's correct resource type for documents.
-  // Images go as "image" as normal.
   const resourceType = isPdf ? "raw" : "image";
 
   const formData = new FormData();
@@ -169,12 +203,7 @@ export async function uploadOfferLetter(file, empId, onProgress) {
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        const data = JSON.parse(xhr.responseText);
-        // Store the URL exactly as Cloudinary returns it.
-        // For PDFs this is a /raw/upload/ URL — that's correct and intentional.
-        // getOfferLetterDownloadUrl() will add fl_attachment when needed for downloads.
-        // Google Docs Viewer handles display without needing URL transforms.
-        resolve(data);
+        resolve(JSON.parse(xhr.responseText));
       } else {
         let errMsg = `Upload failed (HTTP ${xhr.status})`;
         try {
@@ -194,9 +223,6 @@ export async function uploadOfferLetter(file, empId, onProgress) {
 
 /**
  * Thumbnail URL for Cloudinary images.
- * Extracts the version segment (v1234567890) from the URL and uses it as a
- * cache-buster query param so the browser always fetches the latest photo
- * when the underlying asset changes.
  */
 export function getThumbnailUrl(secureUrl, size = 150) {
   if (!secureUrl || !secureUrl.includes("cloudinary.com")) return secureUrl;
@@ -204,8 +230,6 @@ export function getThumbnailUrl(secureUrl, size = 150) {
     "/upload/",
     `/upload/c_fill,g_face,h_${size},w_${size},q_auto,f_auto/`
   );
-  // Extract version token (e.g. v1718000000000) and append as ?v= so the
-  // browser treats each new upload as a distinct resource.
   const vMatch = secureUrl.match(/\/v(\d+)\//);
   return vMatch ? `${transformed}?v=${vMatch[1]}` : transformed;
 }
@@ -220,49 +244,25 @@ export function getOptimizedUrl(secureUrl) {
 
 /**
  * Returns the clean, publicly-accessible offer letter URL (no transforms).
- * Safe to pass to Google Docs Viewer or use as an <img> src.
- *
- * Strips any transformation flags (fl_attachment, c_fill, etc.) that may
- * have been written to Firestore by older app versions.
- *
- * @param {string} url - Raw URL stored in Firestore
- * @returns {string}
  */
 export function getOfferLetterViewUrl(url) {
   if (!url) return url;
   let clean = url;
-  // Strip any transform segment between /upload/ and the version token (v1234567890)
-  // This removes fl_attachment/, c_fill,.../ or any other flags stored by mistake.
-  // Matches: /upload/anything_here/v1234567890 → /upload/v1234567890
   clean = clean.replace(/\/upload\/(?!v\d)([^/]+\/)+/, "/upload/");
   return clean;
 }
 
 /**
  * Returns a force-download URL for the offer letter.
- * Works for both raw (PDF) and image URLs stored in Firestore.
- *
- * For PDFs (raw URLs):  adds fl_attachment so browser downloads the PDF.
- * For images:           adds fl_attachment so browser downloads the image.
- *
- * @param {string} url - Raw URL stored in Firestore
- * @returns {string}
  */
 export function getOfferLetterDownloadUrl(url) {
   if (!url) return url;
   const clean = getOfferLetterViewUrl(url);
-  // Insert fl_attachment after /upload/
   return clean.replace("/upload/", "/upload/fl_attachment/");
 }
 
 /**
  * Wraps any public URL in Google Docs Viewer for reliable in-browser PDF viewing.
- * Works cross-origin, no CORS issues, no plugins needed, works on mobile too.
- *
- * Use this for both Cloudinary raw PDF URLs and image URLs stored as PDFs.
- *
- * @param {string} url - The clean offer letter URL (from getOfferLetterViewUrl)
- * @returns {string}   - Google Docs Viewer iframe src
  */
 export function getGoogleDocsViewerUrl(url) {
   if (!url) return "";

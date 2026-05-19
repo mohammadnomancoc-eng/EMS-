@@ -17,9 +17,9 @@ import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../App";
 import {
-  LayoutDashboard, Users, CalendarCheck, CalendarOff,
+  LayoutDashboard, Users, CalendarCheck, CalendarOff, CreditCard,
   Building2, Settings, LogOut,
-  Bell, Sun, Moon, Search, Menu, X,
+  Bell, Sun, Moon, Search, Menu, X, Palette,
 } from "lucide-react";
 import { logoutUser } from "../firebase/authService";
 
@@ -38,6 +38,8 @@ const navSections = [
       { to: "/employees",  icon: Users,         label: "Employees"       },
       { to: "/attendance", icon: CalendarCheck,  label: "Attendance"      },
       { to: "/leave",      icon: CalendarOff,    label: "Leave Management" },
+      { to: "/id-cards",          icon: CreditCard, label: "ID Cards"          },
+      { to: "/idcard-template",   icon: Palette,    label: "Template Builder"  },
     ],
   },
   {
@@ -57,6 +59,8 @@ const pageTitles = {
   "/leave":       { title: "Leave Management", crumb: "PEOPLE / LEAVE"         },
   "/departments": { title: "Departments",      crumb: "SYSTEM / DEPARTMENTS"   },
   "/settings":    { title: "Settings",         crumb: "SYSTEM / SETTINGS"      },
+  "/id-cards":           { title: "ID Cards",          crumb: "PEOPLE / ID CARDS"            },
+  "/idcard-template":    { title: "Template Builder",  crumb: "PEOPLE / ID CARDS / TEMPLATE" },
 };
 
 // ── Sidebar ───────────────────────────────────────────────────

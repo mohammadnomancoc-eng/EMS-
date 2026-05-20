@@ -471,3 +471,24 @@ export function subscribeCompanySettings(callback) {
     callback(snap.exists() ? snap.data() : null);
   });
 }
+// ════════════════════════════════════════════════════════════
+//  ID CARD TEMPLATES
+// ════════════════════════════════════════════════════════════
+
+/** Fetch all saved ID card templates (one-time). */
+export async function getIdCardTemplates() {
+  const snap = await getDocs(col("idcard_templates"));
+  return snap.docs.map((d) => ({ id: d.id, name: d.data().name, config: d.data().config, ...d.data() }));
+}
+
+/** Real-time listener for ID card templates — returns unsubscribe fn. */
+export function subscribeIdCardTemplates(callback) {
+  return onSnapshot(col("idcard_templates"), (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, name: d.data().name, config: d.data().config })));
+  });
+}
+
+/** Delete a template by its Firestore doc ID. */
+export async function deleteIdCardTemplate(templateId) {
+  await deleteDoc(doc(db, "idcard_templates", templateId));
+}

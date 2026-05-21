@@ -32,6 +32,7 @@ import Dashboard from "./pages/Dashboard";
 import MyAttendance from "./pages/employee/MyAttendance";
 import MyLeave from "./pages/employee/MyLeave";
 import MyProfile from "./pages/employee/MyProfile";
+import MyProjects from "./pages/employee/MyProjects";
 import Announcements from "./pages/employee/Announcements";
 import Employees from "./pages/Employees";
 import LeaveManagement from "./pages/LeaveManagement";
@@ -40,6 +41,7 @@ import Departments from "./pages/Departments";
 import Settings from "./pages/Settings";
 import IdCards from "./pages/IdCards";
 import IdCardTemplateBuilder from "./pages/IdCardTemplateBuilder";
+import AssignedProjects from "./pages/AssignedProjects";
 import { subscribeAuthState } from "./firebase/authService";
 
 export const ThemeContext = createContext();
@@ -178,6 +180,7 @@ function App() {
             {/* ── Template Builder routes ── */}
             <Route path="idcard-template"     element={<IdCardTemplateBuilder />} />
             <Route path="idcard-template/:id" element={<IdCardTemplateBuilder />} />
+            <Route path="assigned-projects"   element={<AssignedProjects />} />
           </Route>
 
           {/* ── Employee Routes (guarded by EmployeeRoute) ── */}
@@ -191,6 +194,7 @@ function App() {
           >
             <Route path="my-attendance" element={<MyAttendance />} />
             <Route path="my-leave"      element={<MyLeave />} />
+            <Route path="my-projects"   element={<MyProjects />} />
             <Route path="my-profile"    element={<MyProfile />} />
             <Route path="announcements" element={<Announcements />} />
           </Route>

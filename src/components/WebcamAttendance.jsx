@@ -184,6 +184,9 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   const [faceScore,   setFaceScore]   = useState(null);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
 
+  // work description — collected at checkout after face is verified
+  const [workDescription, setWorkDescription] = useState("");
+
   // geo
   const [geoStatus,       setGeoStatus]       = useState("idle");
   const [geoDistance,     setGeoDistance]     = useState(null);
@@ -344,6 +347,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
     if (snapshotObjectUrl) URL.revokeObjectURL(snapshotObjectUrl);
     setSnapshotObjectUrl(null); setSnapshotBlob(null);
     setUploadProgress(0); setFaceStatus("idle"); setFaceScore(null);
+    setWorkDescription("");
     startCamera();
   }, [startCamera, snapshotObjectUrl]);
 
@@ -377,16 +381,19 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
         geoDistance, geoVerified: geoStatus==="allowed",
         faceVerified:  faceStatus==="matched",
         faceDistance:  faceScore ?? null,
+        workDescription: action === "checkout" ? workDescription.trim() : null,
       });
 
-      const record = { empId,date,status,checkIn,checkOut,hoursWorked,action,time:timeStr };
+      const record = { empId,date,status,checkIn,checkOut,hoursWorked,action,time:timeStr,
+        workDescription: action === "checkout" ? workDescription.trim() : null,
+      };
       setSavedRecord(record); setSaved(true);
       if (onSuccess) onSuccess(record);
     } catch(err) {
       setErrorMsg("Failed to save: "+(err.message||"Please try again."));
       setSaving(false); setUploadProgress(0);
     }
-  }, [snapshotObjectUrl,snapshotBlob,empId,action,todayRecord,onSuccess,geoStatus,geoDistance,faceStatus,faceScore]);
+  }, [snapshotObjectUrl,snapshotBlob,empId,action,todayRecord,onSuccess,geoStatus,geoDistance,faceStatus,faceScore,workDescription]);
 
   // ── Theme ─────────────────────────────────────────────────
   const cardBg   = isDark ? "#111111" : "#FFFFFF";
@@ -399,8 +406,10 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
   // Only a confirmed face match allows saving — all skip/error/no_profile states are BLOCKED
   const verificationPassed = faceStatus === "matched";
+  const needsDescription   = action === "checkout";
+  const descriptionReady   = !needsDescription || workDescription.trim().length > 0;
   const canSave = !!snapshotObjectUrl && !!snapshotBlob && verificationPassed && !saving
-    && geoStatus !== "blocked" && geoStatus !== "checking";
+    && geoStatus !== "blocked" && geoStatus !== "checking" && descriptionReady;
 
   // Banner config for each face status
   const FACE_BANNERS = {
@@ -475,6 +484,18 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
               </div>
             ))}
           </div>
+
+          {/* Work description recap */}
+          {savedRecord.action === "checkout" && savedRecord.workDescription && (
+            <div style={{ width:"100%", background:isDark?"#0D0D0D":"#F5F5F5", border:`1px solid rgba(0,184,184,0.25)`, borderRadius:"10px", padding:"12px 14px" }}>
+              <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"9px", fontWeight:700, color:"#CC0000", letterSpacing:"0.15em", marginBottom:"6px" }}>
+                TODAY'S WORK SUMMARY
+              </p>
+              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:isDark?"#AAAAAA":"#555555", lineHeight:1.6, margin:0 }}>
+                {savedRecord.workDescription}
+              </p>
+            </div>
+          )}
 
           <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"11px", color:textMuted, textAlign:"center", lineHeight:1.5 }}>
             This record has been sent to the admin panel automatically.
@@ -827,6 +848,94 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
                   </p>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ── Work Description (checkout only, shown after face matched) ── */}
+          {action === "checkout" && faceStatus === "matched" && snapshotObjectUrl && (
+            <div style={{
+              borderRadius: "10px",
+              border: `1px solid ${workDescription.trim() ? "rgba(0,184,184,0.4)" : isDark ? "#2A2A2A" : "#E0E0E0"}`,
+              background: isDark ? "#0D0D0D" : "#F9F9F9",
+              padding: "12px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              transition: "border-color 150ms",
+            }}>
+              {/* Label row */}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <label style={{
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontSize: "10px", fontWeight: 700,
+                  color: "#CC0000", letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                }}>
+                  TODAY'S WORK SUMMARY
+                </label>
+                <span style={{
+                  fontFamily: "Share Tech Mono, monospace",
+                  fontSize: "10px",
+                  color: workDescription.trim().length > 450 ? "#CC0000" : textMuted,
+                }}>
+                  {workDescription.trim().length}/500
+                </span>
+              </div>
+
+              {/* Helper text */}
+              <p style={{
+                fontFamily: "Mulish, sans-serif",
+                fontSize: "11px",
+                color: textMuted,
+                lineHeight: 1.5,
+                margin: 0,
+              }}>
+                Briefly describe what you accomplished today. This is required before checking out.
+              </p>
+
+              {/* Textarea */}
+              <textarea
+                value={workDescription}
+                onChange={(e) => {
+                  if (e.target.value.length <= 500) setWorkDescription(e.target.value);
+                }}
+                placeholder="e.g. Completed the API integration, reviewed pull requests, attended standup and sprint planning…"
+                rows={4}
+                style={{
+                  width: "100%",
+                  resize: "vertical",
+                  minHeight: "90px",
+                  maxHeight: "200px",
+                  padding: "10px 12px",
+                  borderRadius: "7px",
+                  border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
+                  background: isDark ? "#111111" : "#FFFFFF",
+                  color: isDark ? "#F0F0F0" : "#111111",
+                  fontFamily: "Mulish, sans-serif",
+                  fontSize: "13px",
+                  lineHeight: "1.55",
+                  outline: "none",
+                  boxSizing: "border-box",
+                  transition: "border-color 150ms",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#00B8B8"; }}
+                onBlur={(e)  => { e.target.style.borderColor = isDark ? "#2A2A2A" : "#E0E0E0"; }}
+              />
+
+              {/* Empty warning */}
+              {workDescription.trim().length === 0 && (
+                <p style={{
+                  fontFamily: "Mulish, sans-serif",
+                  fontSize: "11px",
+                  color: "#CC0000",
+                  margin: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "5px",
+                }}>
+                  ⚠ Work summary is required to confirm check-out.
+                </p>
+              )}
             </div>
           )}
 

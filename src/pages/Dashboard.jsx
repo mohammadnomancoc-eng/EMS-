@@ -730,26 +730,9 @@ function Dashboard() {
             <Download size={13} />
             <span className="hidden sm:inline">Export CSV</span>
           </button>
-          <button
-            onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-md"
-            style={{
-              fontFamily: "Rajdhani, sans-serif",
-              fontWeight: 700,
-              fontSize: "12px",
-              background: "#CC0000",
-              color: "#FFFFFF",
-              border: "none",
-              letterSpacing: "0.05em",
-              whiteSpace: "nowrap",
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "#AA0000"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "#CC0000"}
-          >
-            <Plus size={13} />
-            <span className="hidden sm:inline">Add Employee</span>
-          </button>
+      
+     
+          
         </div>
       </div>
 

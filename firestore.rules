@@ -98,6 +98,15 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // ── /projects ─────────────────────────────────────────────
+    match /projects/{projectId} {
+      allow read:   if isAdmin() ||
+                       (isEmployee() && resource.data.empId == myEmpId());
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     // ── /announcements ────────────────────────────────────────
     match /announcements/{annoId} {
       allow read:  if isAuthed();

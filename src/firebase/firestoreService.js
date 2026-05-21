@@ -326,6 +326,7 @@ export async function upsertAttendance({
   geoVerified = null,
   faceVerified = null,
   faceDistance = null,
+  workDescription = null,
 }) {
   const id = `${empId}_${date}`;
   const payload = {
@@ -340,6 +341,7 @@ export async function upsertAttendance({
   if (geoVerified !== null)   payload.geoVerified            = geoVerified;
   if (faceVerified !== null)  payload.faceVerified           = faceVerified;
   if (faceDistance !== null)  payload.faceDistance           = faceDistance;
+  if (workDescription)        payload.workDescription        = workDescription;
 
   await setDoc(doc(db, "attendance", id), payload, { merge: true });
 }
@@ -491,4 +493,60 @@ export function subscribeIdCardTemplates(callback) {
 /** Delete a template by its Firestore doc ID. */
 export async function deleteIdCardTemplate(templateId) {
   await deleteDoc(doc(db, "idcard_templates", templateId));
+}
+
+// ════════════════════════════════════════════════════════════
+//  PROJECTS
+//
+//  Collection: projects
+//  Document shape:
+//    {
+//      empId           : string   – employee doc ID
+//      name            : string   – project name
+//      description     : string   – optional description
+//      status          : "Ongoing" | "Completed"
+//      startDate       : string   – YYYY-MM-DD
+//      expectedEndDate : string | null – YYYY-MM-DD (Ongoing only)
+//      completionDate  : string | null – YYYY-MM-DD (Completed only)
+//      createdAt       : Timestamp
+//      updatedAt       : Timestamp
+//    }
+// ════════════════════════════════════════════════════════════
+
+/** Real-time listener for all projects assigned to a specific employee. */
+export function subscribeProjectsByEmployee(empId, callback) {
+  const q = query(col("projects"), where("empId", "==", empId));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+}
+
+/** Fetch all projects for a specific employee (one-time). */
+export async function getProjectsByEmployee(empId) {
+  const q    = query(col("projects"), where("empId", "==", empId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/** Add a new project. */
+export async function addProject(data) {
+  const ref = await addDoc(col("projects"), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+/** Update an existing project. */
+export async function updateProject(id, data) {
+  await updateDoc(doc(db, "projects", id), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Delete a project. */
+export async function deleteProject(id) {
+  await deleteDoc(doc(db, "projects", id));
 }

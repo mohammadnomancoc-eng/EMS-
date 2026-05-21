@@ -20,7 +20,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../App";
 import {
   CalendarCheck, CalendarOff, User,
-  Megaphone, LogOut, Sun, Moon, Bell, Menu, X,
+  Megaphone, LogOut, Sun, Moon, Bell, Menu, X, FolderKanban,
 } from "lucide-react";
 import { logoutUser } from "../firebase/authService";
 import { getLeaveRequestsByEmployee } from "../firebase/firestoreService";
@@ -33,15 +33,17 @@ const LEAVE_QUOTA = 2;
 const WFH_QUOTA   = 2;
 
 const navItems = [
-  { to: "/my-attendance", icon: CalendarCheck, label: "My Attendance", section: "WORKSPACE" },
-  { to: "/my-leave",      icon: CalendarOff,   label: "Leave & WFH",   section: "WORKSPACE" },
-  { to: "/my-profile",    icon: User,          label: "My Profile",    section: "PERSONAL"  },
-  { to: "/announcements", icon: Megaphone,     label: "Announcements", section: "COMPANY"   },
+  { to: "/my-attendance",  icon: CalendarCheck,  label: "My Attendance",  section: "WORKSPACE" },
+  { to: "/my-leave",       icon: CalendarOff,    label: "Leave & WFH",    section: "WORKSPACE" },
+  { to: "/my-projects",    icon: FolderKanban,   label: "My Projects",    section: "WORKSPACE" },
+  { to: "/my-profile",     icon: User,           label: "My Profile",     section: "PERSONAL"  },
+  { to: "/announcements",  icon: Megaphone,      label: "Announcements",  section: "COMPANY"   },
 ];
 
 const pageTitles = {
   "/my-attendance": { title: "My Attendance", crumb: "WORKSPACE / ATTENDANCE"  },
   "/my-leave":      { title: "Leave & WFH",   crumb: "WORKSPACE / LEAVE & WFH" },
+  "/my-projects":   { title: "My Projects",   crumb: "WORKSPACE / MY PROJECTS" },
   "/my-profile":    { title: "My Profile",    crumb: "PERSONAL / PROFILE"      },
   "/announcements": { title: "Announcements", crumb: "COMPANY / ANNOUNCEMENTS" },
 };

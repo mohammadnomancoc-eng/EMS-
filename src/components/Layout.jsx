@@ -12,8 +12,16 @@
 //   • Sidebar permanently visible, fixed left
 //   • Header and main content offset by SIDEBAR_W
 //   • Full search bar, breadcrumb, avatar visible
+//
+//  NOTIFICATION FIX:
+//   • Bell button now toggles a real NotificationPanel dropdown
+//   • Subscribes to all notifications in real-time via Firestore
+//   • Badge shows live unread count (admin always sees count = 0,
+//     employee-side read tracking is handled by NotificationPanel)
+//   • Admin can delete notifications from the panel
+//   • Panel closes on outside click (handled inside NotificationPanel)
 // ─────────────────────────────────────────────────────────────
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../App";
 import {
@@ -22,6 +30,11 @@ import {
   Bell, Sun, Moon, Search, Menu, X, Palette, FolderKanban,
 } from "lucide-react";
 import { logoutUser } from "../firebase/authService";
+import {
+  subscribeAllNotifications,
+  deleteNotification,
+} from "../firebase/firestoreService";
+import NotificationPanel from "./NotificationPanel";
 
 const SIDEBAR_W = 252;
 
@@ -41,6 +54,7 @@ const navSections = [
       { to: "/assigned-projects",  icon: FolderKanban,   label: "Assigned Projects" },
       { to: "/id-cards",           icon: CreditCard,     label: "ID Cards"         },
       { to: "/idcard-template",    icon: Palette,        label: "Template Builder" },
+      { to: "/notifications",      icon: Bell,           label: "Notifications"    },
     ],
   },
   {
@@ -52,7 +66,6 @@ const navSections = [
   },
 ];
 
-// Flat list for the bottom mobile nav (only show key pages)
 const pageTitles = {
   "/dashboard":   { title: "Dashboard",       crumb: "WORKSPACE / DASHBOARD"  },
   "/employees":   { title: "Employees",        crumb: "PEOPLE / EMPLOYEES"     },
@@ -63,6 +76,7 @@ const pageTitles = {
   "/assigned-projects":  { title: "Assigned Projects",  crumb: "PEOPLE / ASSIGNED PROJECTS"   },
   "/id-cards":           { title: "ID Cards",           crumb: "PEOPLE / ID CARDS"            },
   "/idcard-template":    { title: "Template Builder",   crumb: "PEOPLE / ID CARDS / TEMPLATE" },
+  "/notifications":      { title: "Notifications",      crumb: "PEOPLE / NOTIFICATIONS"       },
 };
 
 // ── Sidebar ───────────────────────────────────────────────────
@@ -114,7 +128,6 @@ function Sidebar({ open, onClose }) {
           display:         "flex",
           flexDirection:   "column",
           zIndex:          50,
-          // Mobile: slide in/out. Desktop: always visible (overridden by CSS below)
           transform:       open ? "translateX(0)" : "translateX(-100%)",
           transition:      "transform 280ms cubic-bezier(0.4,0,0.2,1)",
         }}
@@ -126,10 +139,10 @@ function Sidebar({ open, onClose }) {
         >
           <div
             className="flex items-center justify-center rounded-full flex-shrink-0"
-            style={{ width: "38px", height: "38px", border: "1px solid #CC0000" }}
+            style={{ width: "38px", height: "38px", border: "1px solid #0b0303" }}
           >
-            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#CC0000", fontWeight: 700, fontSize: "13px" }}>
-              RWT
+            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#d1c8c8", }}>
+             <div style={{ width: "45px", height: "45px" }}><img src="log.png" alt="RWT Logo" style={{ borderRadius: "50%" }} /></div> 
             </span>
           </div>
           <div className="flex flex-col flex-1 min-w-0">
@@ -261,11 +274,38 @@ function Header({ onMenuClick }) {
   const [search,     setSearch]     = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
 
+  // ── Notification state ──
+  const [notifications,   setNotifications]   = useState([]);
+  const [notifOpen,       setNotifOpen]       = useState(false);
+  const bellRef = useRef(null);
+
   const { pathname } = useLocation();
   const page = pageTitles[pathname] || { title: "Dashboard", crumb: "WORKSPACE / DASHBOARD" };
 
   const userRaw = localStorage.getItem("rwt-user");
   const user    = userRaw ? JSON.parse(userRaw) : { initials: "AD" };
+  const isDark  = theme === "dark";
+
+  // Subscribe to all notifications in real-time
+  useEffect(() => {
+    const unsub = subscribeAllNotifications((list) => setNotifications(list));
+    return unsub;
+  }, []);
+
+  // Close panel when clicking outside the bell + panel area
+  useEffect(() => {
+    if (!notifOpen) return;
+    function handleOutside(e) {
+      if (bellRef.current && !bellRef.current.contains(e.target)) {
+        setNotifOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [notifOpen]);
+
+  // Admin doesn't have personal "unread" — show total notification count as badge
+  const badgeCount = notifications.length;
 
   return (
     <div
@@ -276,8 +316,8 @@ function Header({ onMenuClick }) {
         right:       0,
         left:        0,
         height:      "56px",
-        background:  theme === "dark" ? "#0A0A0A" : "#FFFFFF",
-        borderBottom:`1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
+        background:  isDark ? "#0A0A0A" : "#FFFFFF",
+        borderBottom:`1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
         display:     "flex",
         alignItems:  "center",
         zIndex:      40,
@@ -289,7 +329,7 @@ function Header({ onMenuClick }) {
       <button
         onClick={onMenuClick}
         className="md:hidden flex-shrink-0"
-        style={{ color: theme === "dark" ? "#666666" : "#888888", marginRight: "12px" }}
+        style={{ color: isDark ? "#666666" : "#888888", marginRight: "12px" }}
       >
         <Menu size={20} />
       </button>
@@ -300,7 +340,7 @@ function Header({ onMenuClick }) {
           fontFamily:    "Rajdhani, sans-serif",
           fontWeight:    700,
           fontSize:      "clamp(15px, 2.5vw, 22px)",
-          color:         theme === "dark" ? "#F0F0F0" : "#111111",
+          color:         isDark ? "#F0F0F0" : "#111111",
           lineHeight:    1,
           whiteSpace:    "nowrap",
           overflow:      "hidden",
@@ -313,7 +353,7 @@ function Header({ onMenuClick }) {
           style={{
             fontFamily: "Share Tech Mono, monospace",
             fontSize:   "10px",
-            color:      theme === "dark" ? "#555555" : "#999999",
+            color:      isDark ? "#555555" : "#999999",
             marginTop:  "2px",
           }}
         >
@@ -335,20 +375,20 @@ function Header({ onMenuClick }) {
             className="outline-none text-xs pl-8 pr-14 py-2 rounded-md"
             style={{
               width:      "clamp(130px, 16vw, 220px)",
-              background: theme === "dark" ? "#111111" : "#F5F5F5",
-              border:     `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
-              color:      theme === "dark" ? "#F0F0F0" : "#111111",
+              background: isDark ? "#111111" : "#F5F5F5",
+              border:     `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
+              color:      isDark ? "#F0F0F0" : "#111111",
               fontFamily: "Mulish, sans-serif",
             }}
             onFocus={(e) => { e.target.style.border = "1px solid #00B8B8"; e.target.style.boxShadow = "0 0 0 3px rgba(0,184,184,0.1)"; }}
-            onBlur={(e)  => { e.target.style.border = `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`; e.target.style.boxShadow = "none"; }}
+            onBlur={(e)  => { e.target.style.border = `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`; e.target.style.boxShadow = "none"; }}
           />
           <span
             className="absolute right-2 top-1/2 -translate-y-1/2 px-1 rounded"
             style={{
               fontFamily: "Share Tech Mono, monospace", fontSize: "9px", color: "#555555",
-              background: theme === "dark" ? "#1A1A1A" : "#E8E8E8",
-              border:     `1px solid ${theme === "dark" ? "#252525" : "#D8D8D8"}`,
+              background: isDark ? "#1A1A1A" : "#E8E8E8",
+              border:     `1px solid ${isDark ? "#252525" : "#D8D8D8"}`,
             }}
           >
             ⌘K
@@ -359,34 +399,64 @@ function Header({ onMenuClick }) {
         <button
           className="sm:hidden"
           onClick={() => setSearchOpen((v) => !v)}
-          style={{ color: theme === "dark" ? "#555555" : "#888888" }}
+          style={{ color: isDark ? "#555555" : "#888888" }}
         >
           {searchOpen ? <X size={18} /> : <Search size={18} />}
         </button>
 
-        {/* Bell */}
-        <button className="relative" style={{ color: theme === "dark" ? "#555555" : "#888888" }}>
-          <Bell size={18} />
-          <span
-            className="absolute -top-1 -right-1 rounded-full flex items-center justify-center"
-            style={{ width: "14px", height: "14px", background: "#CC0000" }}
+        {/* ── Bell with live dropdown ── */}
+        <div ref={bellRef} style={{ position: "relative" }}>
+          <button
+            onClick={() => setNotifOpen((v) => !v)}
+            className="relative"
+            style={{
+              color:      notifOpen ? "#CC0000" : (isDark ? "#555555" : "#888888"),
+              transition: "color 150ms",
+              padding:    "4px",
+              borderRadius: "6px",
+              background:  notifOpen ? "rgba(204,0,0,0.08)" : "transparent",
+            }}
+            title="Notifications"
           >
-            <span style={{ fontFamily: "Mulish, sans-serif", color: "#FFFFFF", fontSize: "8px", fontWeight: 700 }}>3</span>
-          </span>
-        </button>
+            <Bell size={18} />
+            {badgeCount > 0 && (
+              <span
+                className="absolute -top-1 -right-1 rounded-full flex items-center justify-center"
+                style={{ width: "16px", height: "16px", background: "#CC0000", pointerEvents: "none" }}
+              >
+                <span style={{ fontFamily: "Mulish, sans-serif", color: "#FFFFFF", fontSize: "8px", fontWeight: 700 }}>
+                  {badgeCount > 99 ? "99+" : badgeCount}
+                </span>
+              </span>
+            )}
+          </button>
+
+          {/* Dropdown panel */}
+          {notifOpen && (
+            <NotificationPanel
+              notifications={notifications}
+              onRead={() => {}}           // admin doesn't mark-read
+              onReadAll={() => {}}         // admin doesn't mark-read
+              onClose={() => setNotifOpen(false)}
+              empId={user.empId || ""}
+              isAdmin={true}
+              isDark={isDark}
+            />
+          )}
+        </div>
 
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
           className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-full"
           style={{
-            background:  theme === "dark" ? "#111111" : "#F0F0F0",
-            border:      `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
+            background:  isDark ? "#111111" : "#F0F0F0",
+            border:      `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
             transition:  "all 250ms ease",
           }}
           title="Toggle theme"
         >
-          {theme === "dark"
+          {isDark
             ? <Sun  size={14} style={{ color: "#C9922A" }} />
             : <Moon size={14} style={{ color: "#555555" }} />
           }
@@ -398,7 +468,7 @@ function Header({ onMenuClick }) {
           style={{
             width:  "32px", height: "32px", background: "#CC0000",
             border: "2px solid #CC0000",
-            boxShadow: `0 0 0 2px ${theme === "dark" ? "#0A0A0A" : "#FFFFFF"}`,
+            boxShadow: `0 0 0 2px ${isDark ? "#0A0A0A" : "#FFFFFF"}`,
           }}
         >
           <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>
@@ -417,8 +487,8 @@ function Header({ onMenuClick }) {
             left:        0,
             right:       0,
             padding:     "8px 16px",
-            background:  theme === "dark" ? "#0A0A0A" : "#FFFFFF",
-            borderBottom:`1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
+            background:  isDark ? "#0A0A0A" : "#FFFFFF",
+            borderBottom:`1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
             zIndex:      39,
           }}
         >
@@ -435,10 +505,10 @@ function Header({ onMenuClick }) {
                 paddingLeft: "32px", paddingRight: "12px",
                 paddingTop:  "8px",  paddingBottom: "8px",
                 borderRadius:"6px",  outline: "none", fontSize: "12px",
-                background:  theme === "dark" ? "#111111" : "#F5F5F5",
+                background:  isDark ? "#111111" : "#F5F5F5",
                 border:      "1px solid #00B8B8",
                 boxShadow:   "0 0 0 3px rgba(0,184,184,0.1)",
-                color:       theme === "dark" ? "#F0F0F0" : "#111111",
+                color:       isDark ? "#F0F0F0" : "#111111",
                 fontFamily:  "Mulish, sans-serif",
               }}
             />
@@ -466,10 +536,8 @@ function Layout() {
   const [sidebarOpen, setSidebarOpen]     = useState(false);
   const { pathname }                      = useLocation();
 
-  // Close sidebar on route change (mobile UX)
   useEffect(() => { setSidebarOpen(false); }, [pathname]);
 
-  // Lock body scroll when mobile sidebar is open
   useEffect(() => {
     document.body.style.overflow = sidebarOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
@@ -484,7 +552,6 @@ function Layout() {
         className="admin-main-content"
         style={{
           paddingTop:    "56px",
-          // On mobile add bottom padding so content isn't hidden behind bottom nav
           paddingBottom: "0",
           minHeight:     "100vh",
           background:    "var(--page-bg)",
@@ -515,8 +582,7 @@ function Layout() {
         </div>
       </main>
 
-
-      {/* Desktop: offset main content right of sidebar, remove bottom padding */}
+      {/* Desktop: offset main content right of sidebar */}
       <style>{`
         @media (min-width: 768px) {
           .admin-main-content {

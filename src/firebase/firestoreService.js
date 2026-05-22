@@ -550,3 +550,98 @@ export async function updateProject(id, data) {
 export async function deleteProject(id) {
   await deleteDoc(doc(db, "projects", id));
 }
+
+
+
+
+
+// ════════════════════════════════════════════════════════════
+//  NOTIFICATIONS
+//
+//  Collection: notifications
+//  Document shape:
+//    {
+//      title      : string          – short heading
+//      message    : string          – body text
+//      type       : "all" | "employee" | "department"
+//      targetId   : string | null   – empId or department name (when type != "all")
+//      priority   : "low" | "normal" | "high"
+//      createdAt  : Timestamp
+//      createdBy  : string          – admin display name
+//      readBy     : string[]        – array of empIds who have read it
+//    }
+// ════════════════════════════════════════════════════════════
+
+/** Real-time listener — all notifications (admin view, newest first). */
+export function subscribeAllNotifications(callback) {
+  const q = query(col("notifications"), orderBy("createdAt", "desc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    },
+    (error) => {
+      console.warn("[Notifications] Admin snapshot error:", error.code);
+      callback([]);
+    }
+  );
+}
+
+/** Real-time listener — notifications visible to a specific employee.
+ *
+ *  NOTE: Firestore rules do not allow employees to query the full collection
+ *  (no `list` on filtered queries). We fetch docs individually via onSnapshot
+ *  on the whole collection and filter client-side. The updated firestore.rules
+ *  includes `allow list: if isAuthed()` on /notifications so this works.
+ */
+export function subscribeNotificationsForEmployee(empId, department, callback) {
+  const q = query(col("notifications"), orderBy("createdAt", "desc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const visible = all.filter((n) => {
+        if (n.type === "all") return true;
+        if (n.type === "employee" && n.targetId === empId) return true;
+        if (n.type === "department" && n.targetId === department) return true;
+        return false;
+      });
+      callback(visible);
+    },
+    (error) => {
+      // Silently swallow permission errors — employee may not yet have a valid session
+      console.warn("[Notifications] Snapshot error (ignored):", error.code);
+      callback([]);
+    }
+  );
+}
+
+/** Create a new notification. */
+export async function addNotification(data) {
+  const ref = await addDoc(col("notifications"), {
+    ...data,
+    readBy: [],
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+/** Mark a notification as read by an employee. */
+export async function markNotificationRead(notifId, empId) {
+  const ref = doc(db, "notifications", notifId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const readBy = snap.data().readBy || [];
+  if (readBy.includes(empId)) return;
+  await updateDoc(ref, { readBy: [...readBy, empId] });
+}
+
+/** Mark ALL visible notifications as read for an employee. */
+export async function markAllNotificationsRead(notifIds, empId) {
+  await Promise.all(notifIds.map((id) => markNotificationRead(id, empId)));
+}
+
+/** Delete a notification (admin only). */
+export async function deleteNotification(id) {
+  await deleteDoc(doc(db, "notifications", id));
+}

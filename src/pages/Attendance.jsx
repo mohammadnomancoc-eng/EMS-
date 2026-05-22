@@ -13,6 +13,7 @@ import {
 import {
   subscribeEmployees,
   subscribeAttendanceByDate,
+  subscribeLeaveRequests,
   upsertAttendance,
   getAttendanceByEmployee,
 } from "../firebase/firestoreService";
@@ -806,6 +807,7 @@ export default function Attendance() {
 
   const [employees,        setEmployees]        = useState([]);
   const [attendanceByDate, setAttendanceByDate] = useState([]);
+  const [leaves,           setLeaves]           = useState([]);
   const [loadingEmp,       setLoadingEmp]       = useState(true);
   const [loadingAtt,       setLoadingAtt]       = useState(true);
 
@@ -827,6 +829,12 @@ export default function Attendance() {
     const unsub = subscribeAttendanceByDate(dateFilter, (list) => { setAttendanceByDate(list); setLoadingAtt(false); });
     return unsub;
   }, [dateFilter]);
+
+  // Leave requests — source of truth for On Leave / WFH leave approvals
+  useEffect(() => {
+    const unsub = subscribeLeaveRequests((list) => setLeaves(list));
+    return unsub;
+  }, []);
 
   const attMap = Object.fromEntries(attendanceByDate.map((a) => [a.empId, a]));
 
@@ -857,9 +865,47 @@ export default function Attendance() {
   });
 
   const presentCount = mergedRecords.filter((r) => r.status === "Present").length;
-  const absentCount  = mergedRecords.filter((r) => r.status === "Absent").length;
-  const leaveCount   = mergedRecords.filter((r) => r.status === "Leave").length;
-  const wfhCount     = mergedRecords.filter((r) => r.status === "WFH").length;
+  // Absent = explicitly marked Absent + employees with no attendance record yet (unmarked = absent)
+  const explicitAbsent = mergedRecords.filter((r) => r.status === "Absent").length;
+  const noRecordCount  = mergedRecords.filter((r) => r.status === "No Record").length;
+  const absentCount    = explicitAbsent + noRecordCount;
+
+  // On Leave — approved leave requests where requestType === "Leave" covering dateFilter
+  // Raw leaveRequest docs use `requestType` ("Leave" | "WFH"), not `type`
+  const approvedLeaveEmpIds = new Set(
+    leaves
+      .filter((r) => {
+        if (r.status !== "Approved") return false;
+        if ((r.requestType || r.type) === "WFH") return false;
+        const from = r.from || "";
+        const to   = r.to   || from;
+        return from <= dateFilter && dateFilter <= to;
+      })
+      .map((r) => r.empId)
+  );
+  // Also count attendance records explicitly marked "Leave" for this date
+  const attLeaveEmpIds = new Set(
+    mergedRecords.filter((r) => r.status === "Leave").map((r) => r.empId)
+  );
+  const leaveCount = new Set([...approvedLeaveEmpIds, ...attLeaveEmpIds]).size;
+
+  // WFH — approved WFH leave requests covering dateFilter OR attendance records marked "WFH"
+  const approvedWfhEmpIds = new Set(
+    leaves
+      .filter((r) => {
+        if (r.status !== "Approved") return false;
+        if ((r.requestType || r.type) !== "WFH") return false;
+        const from = r.from || "";
+        const to   = r.to   || from;
+        return from <= dateFilter && dateFilter <= to;
+      })
+      .map((r) => r.empId)
+  );
+  const attWfhEmpIds = new Set(
+    mergedRecords.filter((r) => r.status === "WFH").map((r) => r.empId)
+  );
+  const wfhCount = new Set([...approvedWfhEmpIds, ...attWfhEmpIds]).size;
+
   const lateCount    = mergedRecords.filter((r) => r.isLate && r.status === "Present").length;
 
   const departments = ["All", ...new Set(employees.map((e) => e.department).filter(Boolean))];

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "../App";
 import {
-  Users, UserCheck, UserX, DollarSign,
+  Users, UserCheck, UserX, UserMinus,
   TrendingUp, TrendingDown, Download, Plus,
   Check, X, KeyRound, ShieldCheck, Copy, CheckCheck,
 } from "lucide-react";
@@ -14,6 +14,7 @@ import {
   subscribeLeaveRequests,
   updateLeaveStatus,
   getAttendanceByDate,
+  subscribeAttendanceByDate,
   addEmployee,
   getDepartments,
 } from "../firebase/firestoreService";
@@ -36,16 +37,18 @@ function getInitials(name) {
 function StatusBadge({ status, theme }) {
   const styles = {
     dark: {
-      Present: { bg: "rgba(0,184,184,0.10)", border: "rgba(0,184,184,0.35)", color: "#00B8B8" },
-      Absent:  { bg: "rgba(204,0,0,0.10)",   border: "rgba(204,0,0,0.35)",   color: "#CC0000" },
-      Leave:   { bg: "rgba(201,146,42,0.10)", border: "rgba(201,146,42,0.35)",color: "#C9922A" },
-      WFH:     { bg: "rgba(255,255,255,0.06)",border: "rgba(255,255,255,0.2)",color: "#E8E8E8" },
+      Present:  { bg: "rgba(0,184,184,0.10)",   border: "rgba(0,184,184,0.35)",   color: "#00B8B8" },
+      Absent:   { bg: "rgba(204,0,0,0.10)",     border: "rgba(204,0,0,0.35)",     color: "#CC0000" },
+      Leave:    { bg: "rgba(201,146,42,0.10)",  border: "rgba(201,146,42,0.35)", color: "#C9922A" },
+      WFH:      { bg: "rgba(255,255,255,0.06)", border: "rgba(255,255,255,0.2)", color: "#E8E8E8" },
+      Unmarked: { bg: "rgba(100,100,100,0.10)", border: "rgba(100,100,100,0.3)", color: "#666666" },
     },
     light: {
-      Present: { bg: "#E6F9F9", border: "#00B8B8", color: "#007A7A" },
-      Absent:  { bg: "#FDECEA", border: "#CC0000", color: "#990000" },
-      Leave:   { bg: "#FDF3E0", border: "#C9922A", color: "#8A5E00" },
-      WFH:     { bg: "#F0F0F0", border: "#888888", color: "#444444" },
+      Present:  { bg: "#E6F9F9", border: "#00B8B8", color: "#007A7A" },
+      Absent:   { bg: "#FDECEA", border: "#CC0000", color: "#990000" },
+      Leave:    { bg: "#FDF3E0", border: "#C9922A", color: "#8A5E00" },
+      WFH:      { bg: "#F0F0F0", border: "#888888", color: "#444444" },
+      Unmarked: { bg: "#F5F5F5", border: "#CCCCCC", color: "#999999" },
     },
   };
   const s = styles[theme][status] || styles[theme].WFH;
@@ -149,8 +152,8 @@ function StatCard({ label, value, trend, trendUp, icon: Icon, valueColor, sparkD
       </div>
 
       {/* Sparkline */}
-      <div style={{ height: "32px" }}>
-        <ResponsiveContainer width="100%" height="100%">
+      <div style={{ height: "32px", minHeight: "32px", width: "100%" }}>
+        <ResponsiveContainer width="100%" height={32}>
           <LineChart data={sparkData}>
             <Line
               type="monotone"
@@ -542,10 +545,14 @@ function Dashboard() {
   const [employees,         setEmployees]         = useState([]);
   const [leaves,            setLeaves]            = useState([]);
   const [weeklyAttendance,  setWeeklyAttendance]  = useState([]);
+  const [todayAttendance,   setTodayAttendance]   = useState([]);
   const [loadingAttendance, setLoadingAttendance] = useState(true);
   const [showModal,         setShowModal]         = useState(false);
   const [newCredentials,    setNewCredentials]    = useState(null);
   const [departments,       setDepartments]       = useState([]);
+
+  // Today's date string (YYYY-MM-DD) — used for real-time attendance KPIs
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
     const unsub = subscribeEmployees((list) => setEmployees(list));
@@ -556,6 +563,17 @@ function Dashboard() {
     const unsub = subscribeLeaveRequests((list) => setLeaves(list));
     return unsub;
   }, []);
+
+  // ── Real-time listener for TODAY's attendance records ──────────────────
+  // This is the source of truth for "Present Today" and "Absent Today" KPIs.
+  // It reads from the /attendance collection (same data as the Attendance tab),
+  // not from the static `status` field on employee documents.
+  useEffect(() => {
+    const unsub = subscribeAttendanceByDate(todayStr, (records) => {
+      setTodayAttendance(records);
+    });
+    return unsub;
+  }, [todayStr]);
 
   useEffect(() => {
     const dates = lastNDates(6);
@@ -573,15 +591,42 @@ function Dashboard() {
     });
   }, []);
 
-  const present      = employees.filter((e) => e.status === "Present").length;
-  const onLeave      = employees.filter((e) => e.status === "Leave").length;
-  const totalPayroll = employees.reduce((s, e) => s + (e.salary || 0), 0);
+  // ── KPI derived values from TODAY's attendance register ───────────────
+  // presentToday: employees with an attendance record of Present or WFH today
+  const presentToday = todayAttendance.filter(
+    (r) => r.status === "Present" || r.status === "WFH"
+  ).length;
+
+  // absentToday: employees explicitly marked Absent OR who have NO record yet today
+  // (unmarked employees are treated as absent until they mark attendance)
+  const markedEmpIds = new Set(todayAttendance.map((r) => r.empId));
+  const explicitlyAbsent = todayAttendance.filter((r) => r.status === "Absent").length;
+  const unmarkedCount    = employees.filter((e) => !markedEmpIds.has(e.id)).length;
+  const absentToday      = explicitlyAbsent + unmarkedCount;
+
+  // ── On Leave KPI — from /leaveRequests (same as Leave Management tab) ─
+  // "On Leave" = Approved leave requests (not WFH) whose date range covers today
+  // Raw docs use `requestType` field ("Leave" | "WFH"), not `type`
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const onLeaveToday = leaves.filter((r) => {
+    if (r.status !== "Approved") return false;
+    if ((r.requestType || r.type) === "WFH") return false;
+    const from = r.from || "";
+    const to   = r.to   || from;
+    return from <= todayISO && todayISO <= to;
+  }).length;
+
+  // Pending leave requests count (shown as trend on the "On Leave" card)
+  const pendingLeaves = leaves.filter((l) => l.status === "Pending");
+
+  // Attendance % for the "Present Today" trend label
+  const attendancePct = employees.length
+    ? Math.round((presentToday / employees.length) * 100)
+    : 0;
 
   const recentJoinings = [...employees]
     .sort((a, b) => (b.joinDate || "").localeCompare(a.joinDate || ""))
     .slice(0, 4);
-
-  const pendingLeaves = leaves.filter((l) => l.status === "Pending");
 
   useEffect(() => {
     getDepartments().then((list) => { if (list.length > 0) setDepartments(list); });
@@ -639,9 +684,9 @@ function Dashboard() {
   };
 
   const spark1 = [28,30,28,31,29,32, employees.length].map((v) => ({ v }));
-  const spark2 = [8,10,9,11,10,12,   present].map((v)            => ({ v }));
-  const spark3 = [2,3,2,4,3,3,        onLeave].map((v)           => ({ v }));
-  const spark4 = [600000,620000,615000,630000,628000,635000, totalPayroll].map((v) => ({ v }));
+  const spark2 = [8,10,9,11,10,12,   presentToday].map((v)    => ({ v }));
+  const spark3 = [2,3,2,4,3,3,        onLeaveToday].map((v)   => ({ v }));
+  const spark4 = [3,2,4,3,5,4,        absentToday].map((v)    => ({ v }));
 
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
@@ -741,15 +786,17 @@ function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <StatCard theme={theme} label="Total Employees" value={employees.length}
           icon={Users} trend="+2 this month" trendUp sparkData={spark1} />
-        <StatCard theme={theme} label="Present Today" value={present}
+        <StatCard theme={theme} label="Present Today" value={presentToday}
           icon={UserCheck} valueColor="#00B8B8"
-          trend={employees.length ? `${Math.round(present / employees.length * 100)}% attendance` : "—"}
+          trend={employees.length ? `${attendancePct}% attendance` : "No records yet"}
           trendUp sparkData={spark2} />
-        <StatCard theme={theme} label="On Leave" value={onLeave}
-          icon={UserX} valueColor="#CC0000"
-          trend={`${pendingLeaves.length} pending`} trendUp={false} sparkData={spark3} />
-        <StatCard theme={theme} label="Payroll" value={totalPayroll}
-          icon={DollarSign} valueColor="#C9922A" prefix="₹" trend="+3.2% vs last month" trendUp sparkData={spark4} />
+        <StatCard theme={theme} label="On Leave" value={onLeaveToday}
+          icon={UserX} valueColor="#C9922A"
+          trend={`${pendingLeaves.length} pending approval`} trendUp={false} sparkData={spark3} />
+        <StatCard theme={theme} label="Absent Today" value={absentToday}
+          icon={UserMinus} valueColor="#CC0000"
+          trend={unmarkedCount > 0 ? `${unmarkedCount} not yet marked` : `${explicitlyAbsent} marked absent`}
+          trendUp={false} sparkData={spark4} />
       </div>
 
       {/* ── Row 2: Chart + Team Today ── */}
@@ -776,6 +823,7 @@ function Dashboard() {
               </div>
             </div>
           </div>
+          <div style={{ width: "100%", minHeight: "200px" }}>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={weeklyAttendance}>
               <CartesianGrid stroke={theme === "dark" ? "#1A1A1A" : "#E8E8E8"} strokeDasharray="0" />
@@ -786,6 +834,7 @@ function Dashboard() {
               <Line type="monotone" dataKey="absent"  name="Absent"  stroke="#CC0000" strokeWidth={2} dot={{ fill: "#CC0000",  r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
+          </div>
         </div>
 
         {/* Team Today */}
@@ -809,12 +858,17 @@ function Dashboard() {
                 padding: "2px 8px",
               }}
             >
-              {present} / {employees.length}
+            {presentToday} / {employees.length}
             </span>
           </div>
 
           <div className="flex flex-col gap-1 overflow-y-auto" style={{ maxHeight: "220px", scrollbarWidth: "none" }}>
-            {employees.slice(0, 8).map((emp) => (
+            {employees.slice(0, 8).map((emp) => {
+              // Look up today's attendance record for this employee
+              const attRecord = todayAttendance.find((r) => r.empId === emp.id);
+              // No record = treat as Absent (same logic as the Absent Today KPI)
+              const todayStatus = attRecord ? attRecord.status : "Absent";
+              return (
               <div
                 key={emp.id}
                 className="flex items-center gap-2 sm:gap-3 px-2 py-2 rounded-md"
@@ -838,9 +892,10 @@ function Dashboard() {
                     {emp.role}
                   </p>
                 </div>
-                <StatusBadge status={emp.status} theme={theme} />
+                <StatusBadge status={todayStatus} theme={theme} />
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

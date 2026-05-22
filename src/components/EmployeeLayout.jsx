@@ -14,8 +14,16 @@
 //   • Full breadcrumb and controls visible
 //
 //  Bug fixes preserved: BUG-01, BUG-08, BUG-09, BUG-10
+//
+//  NOTIFICATION FIX:
+//   • Bell subscribes to employee-visible notifications in real-time
+//   • Badge shows live unread count (notifications not in readBy[])
+//   • Clicking a notification marks it as read in Firestore
+//   • "Mark all read" batch-marks all visible notifications
+//   • Employee's department is fetched from Firestore for filtering
+//   • Panel closes on outside click
 // ─────────────────────────────────────────────────────────────
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../App";
 import {
@@ -23,7 +31,14 @@ import {
   Megaphone, LogOut, Sun, Moon, Bell, Menu, X, FolderKanban,
 } from "lucide-react";
 import { logoutUser } from "../firebase/authService";
-import { getLeaveRequestsByEmployee } from "../firebase/firestoreService";
+import {
+  getLeaveRequestsByEmployee,
+  subscribeNotificationsForEmployee,
+  markNotificationRead,
+  markAllNotificationsRead,
+  getEmployee,
+} from "../firebase/firestoreService";
+import NotificationPanel from "./NotificationPanel";
 
 const SIDEBAR_W        = 252; // desktop
 const SIDEBAR_W_TABLET = 220; // 768–1023px
@@ -159,7 +174,7 @@ function EmployeeSidebar({ open, onClose }) {
           left:          0,
           top:           0,
           height:        "100dvh",
-          width:         `${SIDEBAR_W}px`, /* overridden to SIDEBAR_W_TABLET on tablet via CSS */
+          width:         `${SIDEBAR_W}px`,
           background:    isDark ? "#050505" : "#FFFFFF",
           borderRight:   `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`,
           display:       "flex",
@@ -176,10 +191,10 @@ function EmployeeSidebar({ open, onClose }) {
         >
           <div
             className="flex items-center justify-center rounded-full flex-shrink-0"
-            style={{ width: "38px", height: "38px", border: "1px solid #CC0000" }}
+            style={{ width: "38px", height: "38px", border: "1px solid #1f0e0e" }}
           >
             <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#CC0000", fontWeight: 700, fontSize: "13px" }}>
-              RWT
+               <div style={{ width: "45px", height: "45px" }}><img src="log.png" alt="RWT Logo" style={{ borderRadius: "50%" }} /></div> 
             </span>
           </div>
           <div className="flex flex-col flex-1 min-w-0">
@@ -315,27 +330,14 @@ function EmployeeSidebar({ open, onClose }) {
         </div>
       </div>
 
-      {/* Global responsive tweaks */}
-      <style>{`
-        /* Sidebar nav link active — no layout shift from left border */
-        .emp-nav-link { border-left: 3px solid transparent; }
-        /* Quota card: hide on very small sidebar */
-        @media (max-width: 767px) {
-          .emp-quota-card { display: none; }
-        }
-        }
-      `}</style>
-
       {/* Desktop: always show sidebar */}
       <style>{`
-        /* Tablet: sidebar narrower, always visible */
         @media (min-width: 768px) and (max-width: 1023px) {
           .emp-sidebar-panel {
             transform: translateX(0) !important;
             width: ${SIDEBAR_W_TABLET}px !important;
           }
         }
-        /* Desktop: full width, always visible */
         @media (min-width: 1024px) {
           .emp-sidebar-panel {
             transform: translateX(0) !important;
@@ -353,6 +355,59 @@ function EmployeeHeader({ onMenuClick }) {
   const { pathname }           = useLocation();
   const page = pageTitles[pathname] || { title: "Employee Portal", crumb: "EMPLOYEE / PORTAL" };
   const user = getStoredUser();
+  const isDark = theme === "dark";
+
+  // ── Notification state ──
+  const [notifications, setNotifications] = useState([]);
+  const [notifOpen,     setNotifOpen]     = useState(false);
+  const [department,    setDepartment]    = useState("");
+  const bellRef = useRef(null);
+
+  // Fetch employee's department (needed to filter dept-targeted notifications)
+  useEffect(() => {
+    if (!user.empId) return;
+    getEmployee(user.empId)
+      .then((emp) => { if (emp?.department) setDepartment(emp.department); })
+      .catch(() => {});
+  }, [user.empId]);
+
+  // Subscribe to employee-visible notifications in real-time
+  useEffect(() => {
+    if (!user.empId) return;
+    const unsub = subscribeNotificationsForEmployee(
+      user.empId,
+      department,
+      (list) => setNotifications(list)
+    );
+    return unsub;
+  }, [user.empId, department]);
+
+  // Close panel on outside click
+  useEffect(() => {
+    if (!notifOpen) return;
+    function handleOutside(e) {
+      if (bellRef.current && !bellRef.current.contains(e.target)) {
+        setNotifOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [notifOpen]);
+
+  // Unread count — notifications where empId not in readBy[]
+  const unreadCount = notifications.filter(
+    (n) => !(n.readBy || []).includes(user.empId)
+  ).length;
+
+  const handleRead = async (notifId) => {
+    if (!user.empId) return;
+    await markNotificationRead(notifId, user.empId);
+  };
+
+  const handleReadAll = async () => {
+    if (!user.empId) return;
+    await markAllNotificationsRead(notifications.map((n) => n.id), user.empId);
+  };
 
   return (
     <div
@@ -363,8 +418,8 @@ function EmployeeHeader({ onMenuClick }) {
         right:       0,
         left:        0,
         height:      "56px",
-        background:  theme === "dark" ? "#0A0A0A" : "#FFFFFF",
-        borderBottom:`1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
+        background:  isDark ? "#0A0A0A" : "#FFFFFF",
+        borderBottom:`1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
         display:     "flex",
         alignItems:  "center",
         zIndex:      40,
@@ -376,7 +431,7 @@ function EmployeeHeader({ onMenuClick }) {
       <button
         onClick={onMenuClick}
         className="md:hidden flex-shrink-0"
-        style={{ color: theme === "dark" ? "#666666" : "#888888", marginRight: "12px" }}
+        style={{ color: isDark ? "#666666" : "#888888", marginRight: "12px" }}
       >
         <Menu size={20} />
       </button>
@@ -387,7 +442,7 @@ function EmployeeHeader({ onMenuClick }) {
           fontFamily:   "Rajdhani, sans-serif",
           fontWeight:   700,
           fontSize:     "clamp(15px, 2.5vw, 22px)",
-          color:        theme === "dark" ? "#F0F0F0" : "#111111",
+          color:        isDark ? "#F0F0F0" : "#111111",
           lineHeight:   1,
           whiteSpace:   "nowrap",
           overflow:     "hidden",
@@ -400,7 +455,7 @@ function EmployeeHeader({ onMenuClick }) {
           style={{
             fontFamily: "Share Tech Mono, monospace",
             fontSize:   "10px",
-            color:      theme === "dark" ? "#555555" : "#999999",
+            color:      isDark ? "#555555" : "#999999",
             marginTop:  "2px",
           }}
         >
@@ -408,10 +463,10 @@ function EmployeeHeader({ onMenuClick }) {
         </p>
       </div>
 
-      {/* Right controls — shrink gracefully on tiny phones */}
+      {/* Right controls */}
       <div className="flex items-center gap-1 sm:gap-2 md:gap-3" style={{ flexShrink: 0 }}>
 
-        {/* Employee Portal Badge — hidden on small screens */}
+        {/* Employee Portal Badge */}
         <span
           className="hidden sm:inline"
           style={{
@@ -424,28 +479,58 @@ function EmployeeHeader({ onMenuClick }) {
           EMPLOYEE PORTAL
         </span>
 
-        {/* Bell */}
-        <button className="relative" style={{ color: theme === "dark" ? "#555555" : "#888888" }}>
-          <Bell size={18} />
-          <span
-            className="absolute -top-1 -right-1 rounded-full flex items-center justify-center"
-            style={{ width: "14px", height: "14px", background: "#CC0000" }}
+        {/* ── Bell with live dropdown ── */}
+        <div ref={bellRef} style={{ position: "relative" }}>
+          <button
+            onClick={() => setNotifOpen((v) => !v)}
+            className="relative"
+            style={{
+              color:        notifOpen ? "#CC0000" : (isDark ? "#555555" : "#888888"),
+              transition:   "color 150ms",
+              padding:      "4px",
+              borderRadius: "6px",
+              background:   notifOpen ? "rgba(204,0,0,0.08)" : "transparent",
+            }}
+            title="Notifications"
           >
-            <span style={{ fontFamily: "Mulish, sans-serif", color: "#FFFFFF", fontSize: "8px", fontWeight: 700 }}>1</span>
-          </span>
-        </button>
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span
+                className="absolute -top-1 -right-1 rounded-full flex items-center justify-center"
+                style={{ width: "16px", height: "16px", background: "#CC0000", pointerEvents: "none" }}
+              >
+                <span style={{ fontFamily: "Mulish, sans-serif", color: "#FFFFFF", fontSize: "8px", fontWeight: 700 }}>
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              </span>
+            )}
+          </button>
+
+          {/* Dropdown panel */}
+          {notifOpen && (
+            <NotificationPanel
+              notifications={notifications}
+              onRead={handleRead}
+              onReadAll={handleReadAll}
+              onClose={() => setNotifOpen(false)}
+              empId={user.empId || ""}
+              isAdmin={false}
+              isDark={isDark}
+            />
+          )}
+        </div>
 
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
           className="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-full"
           style={{
-            background: theme === "dark" ? "#111111" : "#F0F0F0",
-            border:     `1px solid ${theme === "dark" ? "#1E1E1E" : "#E0E0E0"}`,
+            background: isDark ? "#111111" : "#F0F0F0",
+            border:     `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
             transition: "all 250ms ease",
           }}
         >
-          {theme === "dark"
+          {isDark
             ? <Sun  size={14} style={{ color: "#C9922A" }} />
             : <Moon size={14} style={{ color: "#555555" }} />
           }
@@ -457,7 +542,7 @@ function EmployeeHeader({ onMenuClick }) {
           style={{
             width:     "32px", height: "32px", background: "#CC0000",
             border:    "2px solid #CC0000",
-            boxShadow: `0 0 0 2px ${theme === "dark" ? "#0A0A0A" : "#FFFFFF"}`,
+            boxShadow: `0 0 0 2px ${isDark ? "#0A0A0A" : "#FFFFFF"}`,
           }}
         >
           <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>
@@ -468,7 +553,6 @@ function EmployeeHeader({ onMenuClick }) {
 
       {/* Push header right of sidebar on md+ */}
       <style>{`
-        /* Tablet: offset by tablet sidebar width */
         @media (min-width: 768px) and (max-width: 1023px) {
           .emp-header-bar {
             left: ${SIDEBAR_W_TABLET}px !important;
@@ -476,7 +560,6 @@ function EmployeeHeader({ onMenuClick }) {
             padding-right: 20px !important;
           }
         }
-        /* Desktop: offset by full sidebar width */
         @media (min-width: 1024px) {
           .emp-header-bar {
             left: ${SIDEBAR_W}px !important;
@@ -489,17 +572,14 @@ function EmployeeHeader({ onMenuClick }) {
   );
 }
 
-
 // ── Layout Wrapper ────────────────────────────────────────────
 function EmployeeLayout() {
   const { theme }                     = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { pathname }                  = useLocation();
 
-  // Close sidebar on route change
   useEffect(() => { setSidebarOpen(false); }, [pathname]);
 
-  // Lock body scroll when mobile sidebar is open
   useEffect(() => {
     document.body.style.overflow  = sidebarOpen ? "hidden" : "";
     document.body.style.position  = sidebarOpen ? "fixed"  : "";
@@ -546,16 +626,14 @@ function EmployeeLayout() {
         </div>
       </main>
 
-      {/* Desktop/Tablet: offset main content, remove bottom nav padding */}
+      {/* Desktop/Tablet: offset main content */}
       <style>{`
-        /* Tablet */
         @media (min-width: 768px) and (max-width: 1023px) {
           .emp-main-content {
             margin-left:    ${SIDEBAR_W_TABLET}px;
             padding-bottom: 0;
           }
         }
-        /* Desktop */
         @media (min-width: 1024px) {
           .emp-main-content {
             margin-left:    ${SIDEBAR_W}px;

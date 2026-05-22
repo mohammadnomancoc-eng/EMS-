@@ -113,5 +113,27 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── /notifications ────────────────────────────────────────
+    //  Admin  → full read/write (create, delete, list all)
+    //  Employee → read notifications targeted to them (all / their empId / their dept)
+    //             update only the readBy field (mark as read)
+    match /notifications/{notifId} {
+      allow read:   if isAdmin() ||
+                       (isEmployee() && (
+                         resource.data.type == "all" ||
+                         (resource.data.type == "employee" && resource.data.targetId == myEmpId()) ||
+                         (resource.data.type == "department" &&
+                          resource.data.targetId ==
+                            get(/databases/$(database)/documents/employees/$(myEmpId())).data.department)
+                       ));
+      allow create: if isAdmin();
+      allow update: if isAdmin() ||
+                       (isEmployee() &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["readBy"]));
+      allow delete: if isAdmin();
+      // Allow employees to list notifications (needed for onSnapshot queries)
+      allow list:   if isAuthed();
+    }
+
   }
 }

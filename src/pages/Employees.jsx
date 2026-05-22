@@ -13,6 +13,8 @@ import {
   updateEmployee,
   updateEmployeePhoto,
   getDepartments,
+  subscribeAttendanceByDate,
+  subscribeLeaveRequests,
 } from "../firebase/firestoreService";
 import { createEmployeeAccount, deleteEmployeeAccount, generateEmail, generatePassword } from "../firebase/employeeAuthService";
 import { firebaseConfig } from "../firebase/config";
@@ -1136,6 +1138,8 @@ export default function Employees() {
 
   const [data,           setData]           = useState([]);
   const [departments,    setDepartments]    = useState([]);
+  const [todayAttendance, setTodayAttendance] = useState([]);
+  const [leaves,          setLeaves]          = useState([]);
   const [search,         setSearch]         = useState("");
   const [deptFilter,     setDeptFilter]     = useState("All");
   const [statusFilter,   setStatusFilter]   = useState("All");
@@ -1146,6 +1150,9 @@ export default function Employees() {
   const [confirmDelete,  setConfirmDelete]  = useState(null);
   const [deleting,       setDeleting]       = useState(false);
 
+  // Today's date string (YYYY-MM-DD)
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   useEffect(() => {
     const unsub = subscribeEmployees((list) => setData(list));
     return unsub;
@@ -1153,6 +1160,20 @@ export default function Employees() {
 
   useEffect(() => {
     getDepartments().then((list) => { if (list.length > 0) setDepartments(list); });
+  }, []);
+
+  // Real-time today's attendance — same source as Attendance tab & Dashboard
+  useEffect(() => {
+    const unsub = subscribeAttendanceByDate(todayStr, (records) => {
+      setTodayAttendance(records);
+    });
+    return unsub;
+  }, [todayStr]);
+
+  // Leave requests — same source as Leave Management tab & Dashboard
+  useEffect(() => {
+    const unsub = subscribeLeaveRequests((list) => setLeaves(list));
+    return unsub;
   }, []);
 
   // ── Theme tokens ──
@@ -1174,12 +1195,31 @@ export default function Employees() {
     return matchSearch && matchDept && matchStatus;
   });
 
-  // ── Stat cards data ──
+  // ── KPI stats — same logic as Dashboard ──────────────────────
+  // Present: employees with attendance record "Present" or "WFH" today
+  const presentToday = todayAttendance.filter(
+    (r) => r.status === "Present" || r.status === "WFH"
+  ).length;
+
+  // Absent: explicitly marked Absent + employees with NO record yet (unmarked = absent)
+  const markedEmpIds     = new Set(todayAttendance.map((r) => r.empId));
+  const explicitlyAbsent = todayAttendance.filter((r) => r.status === "Absent").length;
+  const unmarkedCount    = data.filter((e) => !markedEmpIds.has(e.id)).length;
+  const absentToday      = explicitlyAbsent + unmarkedCount;
+
+  // On Leave / WFH: approved leave requests whose date range covers today
+  const onLeaveToday = leaves.filter((r) => {
+    if (r.status !== "Approved") return false;
+    const from = r.from || "";
+    const to   = r.to   || from;
+    return from <= todayStr && todayStr <= to;
+  }).length;
+
   const stats = [
-    { label: "TOTAL EMPLOYEES", value: data.length,                                                          icon: Users,     color: "#00B8B8" },
-    { label: "PRESENT TODAY",   value: data.filter(e => e.status === "Present").length,                      icon: UserCheck, color: "#00B8B8" },
-    { label: "ABSENT TODAY",    value: data.filter(e => e.status === "Absent").length,                       icon: UserX,     color: "#CC0000" },
-    { label: "ON LEAVE / WFH",  value: data.filter(e => e.status === "Leave" || e.status === "WFH").length,  icon: Clock,     color: "#C9922A" },
+    { label: "TOTAL EMPLOYEES", value: data.length,    icon: Users,     color: "#00B8B8" },
+    { label: "PRESENT TODAY",   value: presentToday,   icon: UserCheck, color: "#00B8B8" },
+    { label: "ABSENT TODAY",    value: absentToday,    icon: UserX,     color: "#CC0000" },
+    { label: "ON LEAVE / WFH",  value: onLeaveToday,   icon: Clock,     color: "#C9922A" },
   ];
 
   // ── Handlers ──

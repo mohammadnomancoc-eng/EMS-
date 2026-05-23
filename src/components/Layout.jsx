@@ -134,34 +134,29 @@ function Sidebar({ open, onClose }) {
       >
         {/* Logo + Close */}
         <div
-          className="flex items-center gap-3 px-4"
+          className="flex items-center justify-between px-3"
           style={{ height: "72px", borderBottom: `1px solid ${isDark ? "#1A1A1A" : "#E0E0E0"}`, flexShrink: 0 }}
         >
-          <div
-            className="flex items-center justify-center rounded-full flex-shrink-0"
-            style={{ width: "38px", height: "38px", border: "1px solid #0b0303" }}
-          >
-            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#d1c8c8", }}>
-             <div style={{ width: "45px", height: "45px" }}><img src="log.png" alt="RWT Logo" style={{ borderRadius: "50%" }} /></div> 
-            </span>
-          </div>
-          <div className="flex flex-col flex-1 min-w-0">
-            <span style={{ fontFamily: "Rajdhani, sans-serif", color: isDark ? "#F0F0F0" : "#111111", fontWeight: 600, fontSize: "14px", lineHeight: 1.2 }}>
-              Royals Webtech
-            </span>
-            <span style={{ fontFamily: "Mulish, sans-serif", color: isDark ? "#666666" : "#888888", fontSize: "11px", lineHeight: 1.2 }}>
-              Pvt. Ltd.
-            </span>
-            <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8", fontSize: "8px", letterSpacing: "0.1em", marginTop: "2px" }}>
-              OPTIMIZED FOR WORK
-            </span>
-          </div>
+          {/* Theme-aware logo image */}
+          <img
+            src={isDark ? "rwtdark.png" : "rwtlogo.png"}
+            alt="Royals Webtech Pvt. Ltd."
+            style={{
+              height: "48px",
+              width: "auto",
+              maxWidth: "190px",
+              objectFit: "contain",
+              objectPosition: "left center",
+              borderRadius: "6px",
+              flexShrink: 1,
+            }}
+          />
 
           {/* Close button — mobile only */}
           <button
             onClick={onClose}
             className="md:hidden flex-shrink-0"
-            style={{ color: isDark ? "#555555" : "#AAAAAA", padding: "4px" }}
+            style={{ color: isDark ? "#555555" : "#AAAAAA", padding: "4px", marginLeft: "6px" }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
             onMouseLeave={(e) => (e.currentTarget.style.color = isDark ? "#555555" : "#AAAAAA")}
           >

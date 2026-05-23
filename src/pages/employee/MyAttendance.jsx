@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useTheme } from "../../App";
 import {
   CalendarCheck, CalendarX, CalendarOff,
-  Home, TrendingUp, TrendingDown, Camera,
+  Home, TrendingUp, TrendingDown, Camera, FileText, X as XIcon,
 } from "lucide-react";
 import WebcamAttendance from "../../components/WebcamAttendance";
 import { getAttendanceByEmployee } from "../../firebase/firestoreService";
@@ -186,6 +186,86 @@ function LoadingRow({ theme }) {
   );
 }
 
+// ── Work Description Modal ────────────────────────────
+function WorkDescModal({ entry, theme, onClose }) {
+  const isDark = theme === "dark";
+  const dateObj = new Date(entry.date);
+  const dateLabel = dateObj.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(3px)" }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: "480px",
+          background: isDark ? "#111111" : "#FFFFFF",
+          border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
+          borderRadius: "12px 12px 0 0",
+          overflow: "hidden",
+        }}
+        className="sm:!rounded-xl"
+      >
+        {/* Header */}
+        <div style={{
+          padding: "14px 18px",
+          borderBottom: `1px solid ${isDark ? "#1A1A1A" : "#F0F0F0"}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{
+              width: "30px", height: "30px", borderRadius: "7px",
+              background: "rgba(0,184,184,0.10)", border: "1px solid rgba(0,184,184,0.25)",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <FileText size={14} style={{ color: "#00B8B8" }} />
+            </div>
+            <div>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "15px", color: isDark ? "#F0F0F0" : "#111111", margin: 0 }}>
+                Work Summary
+              </p>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#555555" : "#999999", margin: "2px 0 0" }}>
+                {dateLabel}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ color: "#555555", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>
+            <XIcon size={17} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "18px 20px" }}>
+          <p style={{
+            fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+            color: "#CC0000", letterSpacing: "0.18em", marginBottom: "10px",
+          }}>
+            TODAY'S COMPLETED WORK
+          </p>
+          <div style={{
+            padding: "14px 16px", borderRadius: "8px",
+            background: isDark ? "#0D0D0D" : "#F7F7F7",
+            border: `1px solid ${isDark ? "#1A1A1A" : "#EBEBEB"}`,
+          }}>
+            <p style={{
+              fontFamily: "Mulish, sans-serif", fontSize: "13px", lineHeight: "1.7",
+              color: isDark ? "#CCCCCC" : "#333333", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word",
+            }}>
+              {entry.workDescription}
+            </p>
+          </div>
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: isDark ? "#444" : "#BBB", marginTop: "10px", textAlign: "right" }}>
+            Submitted at check-out via webcam
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────
 function MyAttendance() {
   const { theme } = useTheme();
@@ -203,6 +283,7 @@ function MyAttendance() {
   const [allRecords, setAllRecords] = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [fetchError, setFetchError] = useState("");
+  const [viewWorkDesc, setViewWorkDesc] = useState(null);
 
   useEffect(() => {
     if (!empId) { setLoading(false); setFetchError("Employee ID not found. Please log in again."); return; }
@@ -320,7 +401,7 @@ function MyAttendance() {
             Mark Today's Attendance
           </p>
           <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted, marginTop: "3px" }}>
-            Use your webcam to check in or check out. Your record goes directly to the admin panel.
+            Use your webcam to log in or log out. Your record goes directly to the admin panel.
           </p>
         </div>
 
@@ -410,12 +491,12 @@ function MyAttendance() {
         <div
           className="grid px-4 sm:px-5 py-2"
           style={{
-            gridTemplateColumns: "1.2fr 1fr 0.8fr",
+            gridTemplateColumns: "1.2fr 1fr 0.8fr 0.7fr",
             background: headerBg,
             borderBottom: `1px solid ${divider}`,
           }}
         >
-          {["DATE", "DAY", "STATUS"].map((h) => (
+          {["DATE", "DAY", "STATUS", "WORK"].map((h) => (
             <span key={h} style={{
               fontFamily: "Rajdhani, sans-serif", fontSize: "10px",
               fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em",
@@ -449,7 +530,7 @@ function MyAttendance() {
                 key={entry.id || entry.date}
                 className="grid px-4 sm:px-5 items-center"
                 style={{
-                  gridTemplateColumns: "1.2fr 1fr 0.8fr",
+                  gridTemplateColumns: "1.2fr 1fr 0.8fr 0.7fr",
                   height: "50px",
                   borderBottom: i < monthRecords.length - 1 ? `1px solid ${divider}` : "none",
                   borderLeft: "3px solid transparent",
@@ -485,11 +566,49 @@ function MyAttendance() {
                 <div>
                   <StatusBadge status={entry.status} theme={theme} />
                 </div>
+
+                {/* Work Description button */}
+                <div>
+                  {entry.workDescription ? (
+                    <button
+                      onClick={() => setViewWorkDesc(entry)}
+                      title="View work summary"
+                      style={{
+                        display: "inline-flex", alignItems: "center", justifyContent: "center",
+                        gap: "4px", padding: "4px 8px", borderRadius: "6px",
+                        border: "1px solid rgba(0,184,184,0.35)",
+                        background: "rgba(0,184,184,0.08)",
+                        color: "#00B8B8", cursor: "pointer",
+                        fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+                        letterSpacing: "0.05em", transition: "all 150ms", whiteSpace: "nowrap",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,184,184,0.18)"; e.currentTarget.style.borderColor = "#00B8B8"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0,184,184,0.08)"; e.currentTarget.style.borderColor = "rgba(0,184,184,0.35)"; }}
+                    >
+                      <FileText size={11} />
+                      <span className="hidden sm:inline">VIEW</span>
+                    </button>
+                  ) : (
+                    <span style={{
+                      fontFamily: "Share Tech Mono, monospace", fontSize: "11px",
+                      color: theme === "dark" ? "#2A2A2A" : "#DDDDDD",
+                    }}>—</span>
+                  )}
+                </div>
               </div>
             );
           })
         )}
       </div>
+
+      {/* ── Work Description Modal ── */}
+      {viewWorkDesc && (
+        <WorkDescModal
+          entry={viewWorkDesc}
+          theme={theme}
+          onClose={() => setViewWorkDesc(null)}
+        />
+      )}
 
       {/* ── Webcam Modal ── */}
       {showWebcam && (

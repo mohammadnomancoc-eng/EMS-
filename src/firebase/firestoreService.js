@@ -315,8 +315,8 @@ export async function upsertAttendance({
   empId,
   date,
   status,
-  checkIn,
-  checkOut,
+  logIn,
+  logOut,
   hoursWorked,
   markedBy = "manual",
   webcamSnapshotUrl = null,
@@ -330,7 +330,7 @@ export async function upsertAttendance({
 }) {
   const id = `${empId}_${date}`;
   const payload = {
-    empId, date, status, checkIn, checkOut, hoursWorked, markedBy,
+    empId, date, status, logIn, logOut, hoursWorked, markedBy,
     updatedAt: serverTimestamp(),
   };
   // Only store optional fields when provided — manual admin edits never wipe webcam/geo/face data
@@ -644,4 +644,19 @@ export async function markAllNotificationsRead(notifIds, empId) {
 /** Delete a notification (admin only). */
 export async function deleteNotification(id) {
   await deleteDoc(doc(db, "notifications", id));
+}
+/** Save login credentials to the employee doc (admin-only, set at creation time). */
+export async function saveEmployeeCredentials(empId, email, password) {
+  await updateDoc(doc(db, "employees", empId), {
+    loginEmail:    email,
+    loginPassword: password,
+    credentialsViewedAt: null,
+  });
+}
+
+/** Mark the employee credentials as viewed by the admin (stores first-viewed timestamp). */
+export async function markCredentialsViewed(empId) {
+  await updateDoc(doc(db, "employees", empId), {
+    credentialsViewedAt: serverTimestamp(),
+  });
 }

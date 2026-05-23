@@ -50,7 +50,7 @@ function formatTime12NoSec(date) {
   h = h % 12 || 12;
   return `${String(h).padStart(2,"0")}:${m} ${ampm}`;
 }
-function calcHoursWorked(checkIn, checkOut) {
+function calcHoursWorked(logIn, logOut) {
   try {
     const parse = (t) => {
       const [time, ampm] = t.split(" ");
@@ -59,7 +59,7 @@ function calcHoursWorked(checkIn, checkOut) {
       if (ampm === "AM" && h === 12) h = 0;
       return h * 60 + m;
     };
-    const diff = parse(checkOut) - parse(checkIn);
+    const diff = parse(logOut) - parse(logIn);
     if (diff <= 0) return "--";
     return `${Math.floor(diff/60)}h ${diff%60}m`;
   } catch { return "--"; }
@@ -184,7 +184,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   const [faceScore,   setFaceScore]   = useState(null);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
 
-  // work description — collected at checkout after face is verified
+  // work description — collected at logOut after face is verified
   const [workDescription, setWorkDescription] = useState("");
 
   // geo
@@ -220,7 +220,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
       if (!isWFO)                                     { setGeoStatus("wfh_skip"); return; }
       if (!settings?.officeLat || !settings?.officeLng){ setGeoStatus("allowed");  return; }
 
-      setGeoStatus("checking");
+      setGeoStatus("fetching");
       if (!navigator.geolocation) { setGeoStatus("error"); return; }
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -237,11 +237,11 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
   useEffect(() => {
     if (todayRecord) {
-      const hasIn  = todayRecord.checkIn  && todayRecord.checkIn  !== "--";
-      const hasOut = todayRecord.checkOut && todayRecord.checkOut !== "--";
-      setAction(hasIn && !hasOut ? "checkout" : "checkin");
+      const hasIn  = todayRecord.logIn  && todayRecord.logIn  !== "--";
+      const hasOut = todayRecord.logOut && todayRecord.logOut !== "--";
+      setAction(hasIn && !hasOut ? "logOut" : "logIn");
     } else {
-      setAction("checkin");
+      setAction("logIn");
     }
   }, [todayRecord]);
 
@@ -359,7 +359,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
     setSaving(true); setUploadProgress(0); setErrorMsg("");
     const now=new Date(), timeStr=formatTime12NoSec(now), date=todayString();
     try {
-      const actionLabel = action==="checkin" ? "checkin" : "checkout";
+      const actionLabel = action==="logIn" ? "logIn" : "logOut";
       const file = new File([snapshotBlob], `${empId}_${date}_${actionLabel}.jpg`, { type:"image/jpeg" });
       const uploadResult = await uploadToCloudinary(file, "image", {
         folder:    `ems/attendance/${empId}`,
@@ -367,13 +367,13 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
         onProgress: pct => setUploadProgress(pct),
       });
 
-      let checkIn=todayRecord?.checkIn||"--", checkOut=todayRecord?.checkOut||"--";
+      let logIn=todayRecord?.logIn||"--", logOut=todayRecord?.logOut||"--";
       let status=todayRecord?.status||"Present", hoursWorked=todayRecord?.hoursWorked||"--";
-      if (action==="checkin")  { checkIn=timeStr; status="Present"; hoursWorked="--"; }
-      if (action==="checkout") { checkOut=timeStr; status=todayRecord?.status||"Present"; hoursWorked=checkIn!=="--"?calcHoursWorked(checkIn,timeStr):"--"; }
+      if (action==="logIn")  { logIn=timeStr; status="Present"; hoursWorked="--"; }
+      if (action==="logOut") { logOut=timeStr; status=todayRecord?.status||"Present"; hoursWorked=logIn!=="--"?calcHoursWorked(logIn,timeStr):"--"; }
 
       await upsertAttendance({
-        empId, date, status, checkIn, checkOut, hoursWorked,
+        empId, date, status, logIn, logOut, hoursWorked,
         markedBy:              "webcam",
         webcamSnapshotUrl:     uploadResult.secure_url,
         webcamSnapshotPublicId:uploadResult.public_id,
@@ -381,11 +381,11 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
         geoDistance, geoVerified: geoStatus==="allowed",
         faceVerified:  faceStatus==="matched",
         faceDistance:  faceScore ?? null,
-        workDescription: action === "checkout" ? workDescription.trim() : null,
+        workDescription: action === "logOut" ? workDescription.trim() : null,
       });
 
-      const record = { empId,date,status,checkIn,checkOut,hoursWorked,action,time:timeStr,
-        workDescription: action === "checkout" ? workDescription.trim() : null,
+      const record = { empId,date,status,logIn,logOut,hoursWorked,action,time:timeStr,
+        workDescription: action === "logOut" ? workDescription.trim() : null,
       };
       setSavedRecord(record); setSaved(true);
       if (onSuccess) onSuccess(record);
@@ -401,15 +401,15 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   const textPri  = isDark ? "#F0F0F0" : "#111111";
   const textMuted= isDark ? "#555555" : "#999999";
 
-  const alreadyCheckedIn  = todayRecord?.checkIn  && todayRecord.checkIn  !== "--";
-  const alreadyCheckedOut = todayRecord?.checkOut && todayRecord.checkOut !== "--";
+  const alreadyLoggedIn  = todayRecord?.logIn  && todayRecord.logIn  !== "--";
+  const alreadyLoggedOut = todayRecord?.logOut && todayRecord.logOut !== "--";
 
   // Only a confirmed face match allows saving — all skip/error/no_profile states are BLOCKED
   const verificationPassed = faceStatus === "matched";
-  const needsDescription   = action === "checkout";
+  const needsDescription   = action === "logOut";
   const descriptionReady   = !needsDescription || workDescription.trim().length > 0;
   const canSave = !!snapshotObjectUrl && !!snapshotBlob && verificationPassed && !saving
-    && geoStatus !== "blocked" && geoStatus !== "checking" && descriptionReady;
+    && geoStatus !== "blocked" && geoStatus !== "fetching" && descriptionReady;
 
   // Banner config for each face status
   const FACE_BANNERS = {
@@ -462,7 +462,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
           </div>
           <div style={{ textAlign:"center" }}>
             <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"clamp(17px,5vw,22px)", color:"#00B8B8", lineHeight:1 }}>
-              {savedRecord.action==="checkin" ? "Checked In!" : "Checked Out!"}
+              {savedRecord.action==="logIn" ? "Logged In!" : "Logged Out!"}
             </p>
             <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"clamp(11px,3vw,13px)", color:textMuted, marginTop:"6px" }}>
               Recorded at <span style={{ color:textPri, fontWeight:600 }}>{savedRecord.time}</span>
@@ -473,8 +473,8 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             {[
               { label:"DATE",          val:savedRecord.date },
               { label:"STATUS",        val:savedRecord.status },
-              { label:"CHECK IN",      val:savedRecord.checkIn },
-              { label:"CHECK OUT",     val:savedRecord.checkOut },
+              { label:"LOG IN",      val:savedRecord.logIn },
+              { label:"LOG OUT",     val:savedRecord.logOut },
               { label:"HOURS WORKED",  val:savedRecord.hoursWorked },
               { label:"FACE VERIFIED", val:faceStatus==="matched" ? "Yes ✓" : "Skipped" },
             ].map(({label,val}) => (
@@ -486,7 +486,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
           </div>
 
           {/* Work description recap */}
-          {savedRecord.action === "checkout" && savedRecord.workDescription && (
+          {savedRecord.action === "logOut" && savedRecord.workDescription && (
             <div style={{ width:"100%", background:isDark?"#0D0D0D":"#F5F5F5", border:`1px solid rgba(0,184,184,0.25)`, borderRadius:"10px", padding:"12px 14px" }}>
               <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"9px", fontWeight:700, color:"#CC0000", letterSpacing:"0.15em", marginBottom:"6px" }}>
                 TODAY'S WORK SUMMARY
@@ -669,9 +669,9 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
               MARK ATTENDANCE AS
             </p>
             <div className="wc-action-row">
-              {["checkin","checkout"].map(a => {
-                const label    = a==="checkin" ? "Check In" : "Check Out";
-                const disabled = a==="checkin" ? alreadyCheckedIn : (!alreadyCheckedIn||alreadyCheckedOut);
+              {["logIn","logOut"].map(a => {
+                const label    = a==="logIn" ? "Log In" : "Log Out";
+                const disabled = a==="logIn" ? alreadyLoggedIn : (!alreadyLoggedIn||alreadyLoggedOut);
                 const isSel    = action===a;
                 return (
                   <button
@@ -688,11 +688,11 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
                     }}
                   >
                     <span className="wc-action-label">{label}</span>
-                    {a==="checkin"  && alreadyCheckedIn  && (
-                      <span className="wc-action-sub">{alreadyCheckedOut?"Already done":`Done · ${todayRecord?.checkIn}`}</span>
+                    {a==="logIn"  && alreadyLoggedIn  && (
+                      <span className="wc-action-sub">{alreadyLoggedOut?"Already done":`Done · ${todayRecord?.logIn}`}</span>
                     )}
-                    {a==="checkout" && alreadyCheckedOut && (
-                      <span className="wc-action-sub">Done · {todayRecord?.checkOut}</span>
+                    {a==="logOut" && alreadyLoggedOut && (
+                      <span className="wc-action-sub">Done · {todayRecord?.logOut}</span>
                     )}
                   </button>
                 );
@@ -701,7 +701,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
           </div>
 
           {/* Geo banners */}
-          {geoRequired && geoStatus==="checking" && (
+          {geoRequired && geoStatus==="fetching" && (
             <div className="wc-banner" style={{ background:"rgba(201,146,42,0.08)", border:"1px solid rgba(201,146,42,0.3)" }}>
               <Navigation size={14} style={{ color:"#C9922A", flexShrink:0, marginTop:"1px" }}/>
               <p style={{ fontFamily:"Mulish,sans-serif", color:"#C9922A" }}>Verifying your location…</p>
@@ -732,7 +732,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
           )}
 
           {/* Camera area */}
-          {geoStatus!=="blocked" && geoStatus!=="checking" && (
+          {geoStatus!=="blocked" && geoStatus!=="fetching" && (
             <div
               className="wc-camera-wrap"
               style={{ background:isDark?"#0D0D0D":"#F0F0F0", border:`1px solid ${border}` }}
@@ -851,8 +851,8 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             </div>
           )}
 
-          {/* ── Work Description (checkout only, shown after face matched) ── */}
-          {action === "checkout" && faceStatus === "matched" && snapshotObjectUrl && (
+          {/* ── Work Description (logOut only, shown after face matched) ── */}
+          {action === "logOut" && faceStatus === "matched" && snapshotObjectUrl && (
             <div style={{
               borderRadius: "10px",
               border: `1px solid ${workDescription.trim() ? "rgba(0,184,184,0.4)" : isDark ? "#2A2A2A" : "#E0E0E0"}`,
@@ -890,7 +890,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
                 lineHeight: 1.5,
                 margin: 0,
               }}>
-                Briefly describe what you accomplished today. This is required before checking out.
+                Briefly describe what you accomplished today. This is required before logging out.
               </p>
 
               {/* Textarea */}
@@ -933,7 +933,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
                   alignItems: "center",
                   gap: "5px",
                 }}>
-                  ⚠ Work summary is required to confirm check-out.
+                  ⚠ Work summary is required to confirm log-out.
                 </p>
               )}
             </div>
@@ -1009,7 +1009,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             >
               {saving
                 ? (uploadProgress < 100 ? `Uploading… ${uploadProgress}%` : "Saving…")
-                : (action==="checkin" ? "Confirm Check In" : "Confirm Check Out")
+                : (action==="logIn" ? "Confirm Log In" : "Confirm Log Out")
               }
             </button>
           </div>

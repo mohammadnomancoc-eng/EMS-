@@ -15,6 +15,8 @@ import {
   getDepartments,
   subscribeAttendanceByDate,
   subscribeLeaveRequests,
+  saveEmployeeCredentials,
+  markCredentialsViewed,
 } from "../firebase/firestoreService";
 import { createEmployeeAccount, deleteEmployeeAccount, generateEmail, generatePassword } from "../firebase/employeeAuthService";
 import { firebaseConfig } from "../firebase/config";
@@ -339,6 +341,7 @@ function CredentialsModal({ theme, credentials, onClose }) {
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [copiedPass,  setCopiedPass]  = useState(false);
   const [copiedAll,   setCopiedAll]   = useState(false);
+  const [genLoading,  setGenLoading]  = useState(false);
 
   const copy = (value, setter) => {
     navigator.clipboard.writeText(value);
@@ -642,7 +645,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
   // which makes React treat the input as uncontrolled (the warning in the console).
   const defaults = {
     name: "", role: "", department: "Engineering",
-    email: "", phone: "", joinDate: "", completionDate: "", status: "Present", salary: "",
+    email: "", phone: "", joinDate: "", completionDate: "", salary: "",
     workType: "WFO", gender: "Male", employeeType: "Full Time",
     photoUrl: null, photoPublicId: null,
   };
@@ -769,7 +772,6 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
             {field("Join Date", "joinDate", "date")}
             {field("Completion Date", "completionDate", "date")}
           </div>
-          {field("Status", "status", "text", ["Present", "Absent", "Leave", "WFH"])}
           {field("Work Type", "workType", "text", ["WFO", "WFH", "Hybrid"])}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             {field("Gender", "gender", "text", ["Male", "Female", "Other"])}
@@ -848,6 +850,27 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
   const [uploadProgress,  setUploadProgress]  = useState(0);
   const [uploadErr,       setUploadErr]       = useState("");
   const [offerGenLoading, setOfferGenLoading] = useState(false);
+
+  // ── Credentials reveal state ──
+  const [credsRevealed,  setCredsRevealed]  = useState(false);
+  const [copiedCredEmail, setCopiedCredEmail] = useState(false);
+  const [copiedCredPass,  setCopiedCredPass]  = useState(false);
+
+  const hasCredentials = !!(emp.loginEmail && emp.loginPassword);
+
+  const handleRevealCredentials = async () => {
+    setCredsRevealed(true);
+    // Mark as viewed in Firestore (only first time — if not already marked)
+    if (!emp.credentialsViewedAt) {
+      try { await markCredentialsViewed(emp.id); } catch (_) {}
+    }
+  };
+
+  const copyCredential = (value, setter) => {
+    navigator.clipboard.writeText(value);
+    setter(true);
+    setTimeout(() => setter(false), 2000);
+  };
 
   const handlePhotoChange = async (file) => {
     if (!file) return;
@@ -931,7 +954,6 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
               <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: labelColor, marginTop: "2px" }}>
                 {emp.role}
               </div>
-              <div style={{ marginTop: "8px" }}><StatusBadge status={emp.status} theme={theme} /></div>
             </div>
             {uploadErr && (
               <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#CC0000",
@@ -949,6 +971,190 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
           {row("JOIN DATE", emp.joinDate ? new Date(emp.joinDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")}
           {row("COMPLETION DATE", emp.completionDate ? new Date(emp.completionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "Not set")}
           {row("MONTHLY SALARY", `₹${Number(emp.salary).toLocaleString("en-IN")}`)}
+
+          {/* ── Login Credentials Section ── */}
+          <div style={{ marginTop: "20px" }}>
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              marginBottom: "10px",
+            }}>
+              <div style={{
+                fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                color: "#CC0000", letterSpacing: "0.2em", textTransform: "uppercase",
+                display: "flex", alignItems: "center", gap: "6px",
+              }}>
+                <ShieldCheck size={11} style={{ color: "#00B8B8" }} />
+                LOGIN CREDENTIALS
+              </div>
+              {hasCredentials && emp.credentialsViewedAt && (
+                <span style={{
+                  fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                  color: labelColor, letterSpacing: "0.1em",
+                  background: isDark ? "#1A1A1A" : "#F0F0F0",
+                  border: `1px solid ${border}`, borderRadius: "4px", padding: "2px 6px",
+                }}>
+                  VIEWED BEFORE
+                </span>
+              )}
+            </div>
+
+            {!hasCredentials ? (
+              <div style={{
+                padding: "14px", borderRadius: "10px", textAlign: "center",
+                background: isDark ? "#0A0A0A" : "#F8F8F8",
+                border: `1px dashed ${isDark ? "#2A2A2A" : "#D8D8D8"}`,
+              }}>
+                <KeyRound size={18} style={{ color: labelColor, margin: "0 auto 6px" }} />
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: labelColor }}>
+                  No credentials stored
+                </p>
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#444444" : "#BBBBBB", marginTop: "3px" }}>
+                  Only employees created after this update have stored credentials.
+                </p>
+              </div>
+            ) : !credsRevealed ? (
+              /* Locked state */
+              <div style={{
+                padding: "16px", borderRadius: "10px", textAlign: "center",
+                background: isDark ? "#0A0A0A" : "#F8F8F8",
+                border: `1px solid rgba(0,184,184,0.25)`,
+                display: "flex", flexDirection: "column", alignItems: "center", gap: "10px",
+              }}>
+                <div style={{
+                  width: "42px", height: "42px", borderRadius: "50%",
+                  background: "rgba(0,184,184,0.10)", border: "1px solid rgba(0,184,184,0.3)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <KeyRound size={18} style={{ color: "#00B8B8" }} />
+                </div>
+                <div>
+                  <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", color: textColor }}>
+                    Credentials Hidden
+                  </p>
+                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: labelColor, marginTop: "3px" }}>
+                    {emp.credentialsViewedAt
+                      ? "These credentials have been viewed before."
+                      : "These credentials have never been revealed."}
+                  </p>
+                </div>
+                <button
+                  onClick={handleRevealCredentials}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "6px",
+                    padding: "8px 20px", borderRadius: "7px", cursor: "pointer",
+                    background: "rgba(0,184,184,0.12)", border: "1px solid rgba(0,184,184,0.4)",
+                    color: "#00B8B8", fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+                    fontSize: "12px", letterSpacing: "0.1em",
+                  }}
+                >
+                  <ShieldCheck size={13} /> REVEAL CREDENTIALS
+                </button>
+              </div>
+            ) : (
+              /* Revealed state */
+              <div style={{
+                borderRadius: "10px", overflow: "hidden",
+                border: "1px solid rgba(0,184,184,0.3)",
+                background: isDark ? "#0A0A0A" : "#F8F8F8",
+              }}>
+                {/* Header bar */}
+                <div style={{
+                  padding: "8px 12px", background: "rgba(0,184,184,0.08)",
+                  borderBottom: "1px solid rgba(0,184,184,0.2)",
+                  display: "flex", alignItems: "center", gap: "6px",
+                }}>
+                  <ShieldCheck size={11} style={{ color: "#00B8B8" }} />
+                  <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                    color: "#00B8B8", letterSpacing: "0.15em" }}>ADMIN EYES ONLY</span>
+                </div>
+
+                <div style={{ padding: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {/* Login Email */}
+                  <div>
+                    <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                      color: "#CC0000", letterSpacing: "0.18em", marginBottom: "5px" }}>LOGIN EMAIL</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <div style={{
+                        flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: "6px",
+                        background: isDark ? "#111111" : "#FFFFFF", border: `1px solid ${border}`,
+                        fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textColor,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {emp.loginEmail}
+                      </div>
+                      <button
+                        onClick={() => copyCredential(emp.loginEmail, setCopiedCredEmail)}
+                        style={{
+                          flexShrink: 0, padding: "6px 10px", borderRadius: "5px", cursor: "pointer",
+                          background: copiedCredEmail ? "rgba(0,184,184,0.15)" : "transparent",
+                          border: `1px solid ${copiedCredEmail ? "#00B8B8" : border}`,
+                          color: copiedCredEmail ? "#00B8B8" : labelColor,
+                          fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+                          display: "flex", alignItems: "center", gap: "4px",
+                        }}
+                      >
+                        {copiedCredEmail ? <CheckCheck size={11} /> : <Copy size={11} />}
+                        {copiedCredEmail ? "COPIED" : "COPY"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Password */}
+                  <div>
+                    <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                      color: "#CC0000", letterSpacing: "0.18em", marginBottom: "5px" }}>PASSWORD</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <div style={{
+                        flex: 1, padding: "7px 10px", borderRadius: "6px",
+                        background: isDark ? "#111111" : "#FFFFFF",
+                        border: "1px solid rgba(0,184,184,0.3)",
+                        fontFamily: "Share Tech Mono, monospace", fontSize: "13px",
+                        color: "#00B8B8", letterSpacing: "0.05em",
+                      }}>
+                        {emp.loginPassword}
+                      </div>
+                      <button
+                        onClick={() => copyCredential(emp.loginPassword, setCopiedCredPass)}
+                        style={{
+                          flexShrink: 0, padding: "6px 10px", borderRadius: "5px", cursor: "pointer",
+                          background: copiedCredPass ? "rgba(0,184,184,0.15)" : "transparent",
+                          border: `1px solid ${copiedCredPass ? "#00B8B8" : border}`,
+                          color: copiedCredPass ? "#00B8B8" : labelColor,
+                          fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+                          display: "flex", alignItems: "center", gap: "4px",
+                        }}
+                      >
+                        {copiedCredPass ? <CheckCheck size={11} /> : <Copy size={11} />}
+                        {copiedCredPass ? "COPIED" : "COPY"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Warning note */}
+                  <div style={{
+                    padding: "8px 10px", borderRadius: "6px",
+                    background: "rgba(201,146,42,0.08)", border: "1px solid rgba(201,146,42,0.25)",
+                    fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#C9922A", lineHeight: 1.5,
+                  }}>
+                    💡 Remind the employee to change their password after first login.
+                  </div>
+
+                  {/* Hide button */}
+                  <button
+                    onClick={() => setCredsRevealed(false)}
+                    style={{
+                      width: "100%", padding: "7px", borderRadius: "6px", cursor: "pointer",
+                      background: "transparent", border: `1px solid ${border}`,
+                      color: labelColor, fontFamily: "Rajdhani, sans-serif", fontWeight: 600,
+                      fontSize: "11px", letterSpacing: "0.08em",
+                    }}
+                  >
+                    HIDE
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* ── Offer Letter section ── */}
           <div style={{ marginTop: "20px" }}>
@@ -1106,9 +1312,8 @@ function EmployeeCard({ emp, theme, onTap, onEdit, onDelete }) {
         </div>
       </div>
 
-      {/* Right side: badge + action buttons */}
+      {/* Right side: action buttons */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px", flexShrink: 0 }}>
-        <StatusBadge status={emp.status} theme={theme} />
         <div style={{ display: "flex", gap: "6px" }} onClick={e => e.stopPropagation()}>
           <button onClick={() => onEdit(emp)} style={{
             width: "30px", height: "30px", background: "transparent",
@@ -1142,7 +1347,6 @@ export default function Employees() {
   const [leaves,          setLeaves]          = useState([]);
   const [search,         setSearch]         = useState("");
   const [deptFilter,     setDeptFilter]     = useState("All");
-  const [statusFilter,   setStatusFilter]   = useState("All");
   const [showModal,      setShowModal]      = useState(false);
   const [editEmp,        setEditEmp]        = useState(null);
   const [drawer,         setDrawer]         = useState(null);
@@ -1191,8 +1395,7 @@ export default function Employees() {
       || e.role.toLowerCase().includes(q)
       || e.id.toLowerCase().includes(q);
     const matchDept   = deptFilter   === "All" || e.department === deptFilter;
-    const matchStatus = statusFilter === "All" || e.status     === statusFilter;
-    return matchSearch && matchDept && matchStatus;
+    return matchSearch && matchDept;
   });
 
   // ── KPI stats — same logic as Dashboard ──────────────────────
@@ -1226,6 +1429,8 @@ export default function Employees() {
   const handleAdd = async (form) => {
     const empId = await addEmployee({ ...form, salary: Number(form.salary) });
     const creds = await createEmployeeAccount({ empId, name: form.name, role: form.role }, firebaseConfig);
+    // Persist credentials into the employee doc so admin can retrieve them from the drawer
+    await saveEmployeeCredentials(empId, creds.email, creds.password);
     setShowModal(false);
     setNewCredentials({ ...creds, empId, name: form.name, role: form.role, joinDate: form.joinDate, completionDate: form.completionDate, department: form.department });
   };
@@ -1336,18 +1541,6 @@ export default function Employees() {
             <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} style={selectStyle}>
               <option value="All">All Departments</option>
               {departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-            </select>
-            <ChevronDown size={12} style={{ position: "absolute", right: "8px", top: "50%",
-              transform: "translateY(-50%)", color: subColor, pointerEvents: "none" }} />
-          </div>
-
-          {/* Status filter */}
-          <div style={{ position: "relative", flex: "1 1 110px", minWidth: "100px" }}>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectStyle}>
-              <option value="All">All Status</option>
-              {["Present", "Absent", "Leave", "WFH"].map(s =>
-                <option key={s} value={s}>{s}</option>
-              )}
             </select>
             <ChevronDown size={12} style={{ position: "absolute", right: "8px", top: "50%",
               transform: "translateY(-50%)", color: subColor, pointerEvents: "none" }} />
@@ -1467,11 +1660,6 @@ export default function Employees() {
                 {/* Department */}
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textColor }}>{emp.department}</span>
-                </div>
-
-                {/* Status */}
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <StatusBadge status={emp.status} theme={theme} />
                 </div>
 
                 {/* Salary */}

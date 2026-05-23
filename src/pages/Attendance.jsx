@@ -83,8 +83,8 @@ function StatusBadge({ status, theme }) {
 function EditModal({ record, theme, onClose, onSave }) {
   const isDark = theme === "dark";
   const [status,   setStatus]   = useState(record.status || "Present");
-  const [checkIn,  setCheckIn]  = useState(record.checkIn  === "--" ? "" : (record.checkIn  || ""));
-  const [checkOut, setCheckOut] = useState(record.checkOut === "--" ? "" : (record.checkOut || ""));
+  const [logIn,  setLogIn]  = useState(record.logIn  === "--" ? "" : (record.logIn  || ""));
+  const [logOut, setLogOut] = useState(record.logOut === "--" ? "" : (record.logOut || ""));
   const [saving,   setSaving]   = useState(false);
 
   const inputStyle = {
@@ -106,8 +106,8 @@ function EditModal({ record, theme, onClose, onSave }) {
     await onSave({
       ...record,
       status,
-      checkIn:     noTime ? "--" : (checkIn  || "--"),
-      checkOut:    noTime ? "--" : (checkOut || "--"),
+      logIn:     noTime ? "--" : (logIn  || "--"),
+      logOut:    noTime ? "--" : (logOut || "--"),
       hoursWorked: "--",
     });
     setSaving(false);
@@ -175,15 +175,15 @@ function EditModal({ record, theme, onClose, onSave }) {
             <>
               <div>
                 <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, color: "#CC0000", letterSpacing: "0.1em", display: "block", marginBottom: "6px" }}>
-                  CHECK IN
+                  LOG IN
                 </label>
-                <input type="text" placeholder="e.g. 09:30 AM" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} style={inputStyle} />
+                <input type="text" placeholder="e.g. 09:30 AM" value={logIn} onChange={(e) => setLogIn(e.target.value)} style={inputStyle} />
               </div>
               <div>
                 <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, color: "#CC0000", letterSpacing: "0.1em", display: "block", marginBottom: "6px" }}>
-                  CHECK OUT
+                  LOG OUT
                 </label>
-                <input type="text" placeholder="e.g. 06:30 PM" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} style={inputStyle} />
+                <input type="text" placeholder="e.g. 06:30 PM" value={logOut} onChange={(e) => setLogOut(e.target.value)} style={inputStyle} />
               </div>
             </>
           )}
@@ -355,12 +355,12 @@ function AttendanceMobileCard({ rec, theme, isDark, textPri, textMuted, border, 
           <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#888888" : "#666666" }}>{rec.dateLabel}</p>
         </div>
         <div>
-          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>CHECK IN</p>
-          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.checkIn === "--" ? textMuted : (rec.isLate ? "#6366F1" : "#00B8B8") }}>{rec.checkIn}</p>
+          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>LOG IN</p>
+          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.logIn === "--" ? textMuted : (rec.isLate ? "#6366F1" : "#00B8B8") }}>{rec.logIn}</p>
         </div>
         <div>
-          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>CHECK OUT</p>
-          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.checkOut === "--" ? textMuted : (isDark ? "#AAAAAA" : "#555555") }}>{rec.checkOut}</p>
+          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>LOG OUT</p>
+          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.logOut === "--" ? textMuted : (isDark ? "#AAAAAA" : "#555555") }}>{rec.logOut}</p>
         </div>
         <div>
           <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>HOURS</p>
@@ -687,7 +687,7 @@ function CalendarViewModal({ employee, theme, onClose }) {
                 return (
                   <div
                     key={ds}
-                    title={status ? `${status}${rec?.checkIn && rec.checkIn !== "--" ? ` · In: ${rec.checkIn}` : ""}${rec?.checkOut && rec.checkOut !== "--" ? ` · Out: ${rec.checkOut}` : ""}` : "No record"}
+                    title={status ? `${status}${rec?.logIn && rec.logIn !== "--" ? ` · In: ${rec.logIn}` : ""}${rec?.logOut && rec.logOut !== "--" ? ` · Out: ${rec.logOut}` : ""}` : "No record"}
                     style={{
                       borderRadius: "8px",
                       padding: "6px 4px 8px",
@@ -730,13 +730,13 @@ function CalendarViewModal({ employee, theme, onClose }) {
                           {status === "Present" ? "PRES" : status === "Absent" ? "ABS" : status === "Leave" ? "LVE" : "WFH"}
                         </span>
                         {/* Check-in time if available */}
-                        {rec?.checkIn && rec.checkIn !== "--" && (
+                        {rec?.logIn && rec.logIn !== "--" && (
                           <span style={{
                             fontFamily: "Share Tech Mono, monospace",
                             fontSize: "7px", color: isDark ? "#444" : "#BBB",
                             marginTop: "1px",
                           }}>
-                            {rec.checkIn}
+                            {rec.logIn}
                           </span>
                         )}
                       </>
@@ -853,10 +853,10 @@ export default function Attendance() {
       date:        dateFilter,
       dateLabel,
       status:      att?.status   || "No Record",
-      checkIn:     att?.checkIn  || "--",
-      checkOut:    att?.checkOut || "--",
+      logIn:     att?.logIn  || "--",
+      logOut:    att?.logOut || "--",
       hoursWorked: att?.hoursWorked || "--",
-      isLate:      att?.checkIn  ? att.checkIn > "09:30 AM" : false,
+      isLate:      att?.logIn  ? att.logIn > "09:30 AM" : false,
       hasRecord:   !!att,
       markedBy:    att?.markedBy || "manual",
       webcamSnapshotUrl: att?.webcamSnapshotUrl || null,
@@ -911,7 +911,9 @@ export default function Attendance() {
   const departments = ["All", ...new Set(employees.map((e) => e.department).filter(Boolean))];
 
   const filtered = mergedRecords.filter((r) => {
-    const matchStatus = statusFilter === "All" || r.status === statusFilter;
+    // "No Record" (unmarked) is treated as Absent — consistent with KPI boxes
+    const effectiveStatus = r.status === "No Record" ? "Absent" : r.status;
+    const matchStatus = statusFilter === "All" || effectiveStatus === statusFilter;
     const matchDept   = deptFilter   === "All" || r.department === deptFilter;
     const matchSearch = !search ||
       r.empName.toLowerCase().includes(search.toLowerCase()) ||
@@ -928,8 +930,8 @@ export default function Attendance() {
       empId:       updated.empId,
       date:        updated.date,
       status:      updated.status,
-      checkIn:     updated.checkIn,
-      checkOut:    updated.checkOut,
+      logIn:     updated.logIn,
+      logOut:    updated.logOut,
       hoursWorked: updated.hoursWorked,
     });
     setEditRecord(null);
@@ -942,7 +944,7 @@ export default function Attendance() {
 
     const headers = [
       "Employee Name", "Employee ID", "Role", "Department", "Date",
-      "Status", "Check In", "Check Out", "Hours Worked", "Late Arrival", "Marked By",
+      "Status", "Log In", "Log Out", "Hours Worked", "Late Arrival", "Marked By",
     ];
 
     const escape = (val) => {
@@ -957,7 +959,7 @@ export default function Attendance() {
       ...rows.map((r) =>
         [
           escape(r.empName), escape(r.empId), escape(r.role), escape(r.department),
-          escape(r.date), escape(r.status), escape(r.checkIn), escape(r.checkOut),
+          escape(r.date), escape(r.status), escape(r.logIn), escape(r.logOut),
           escape(r.hoursWorked),
           r.isLate && r.status === "Present" ? "Yes" : "No",
           escape(r.markedBy),
@@ -1125,7 +1127,7 @@ export default function Attendance() {
               outline: "none", cursor: "pointer",
             }}
           >
-            {["All", "Present", "Absent", "Leave", "WFH", "No Record"].map((s) => (
+            {["All", "Present", "Absent", "Leave", "WFH"].map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -1167,8 +1169,8 @@ export default function Attendance() {
                 <TH w="110px">DEPARTMENT</TH>
                 <TH w="110px">DATE</TH>
                 <TH w="120px">STATUS</TH>
-                <TH w="110px">CHECK IN</TH>
-                <TH w="110px">CHECK OUT</TH>
+                <TH w="110px">LOG IN</TH>
+                <TH w="110px">LOG OUT</TH>
                 <TH w="90px">HOURS</TH>
                 <TH w="90px">ACTION</TH>
               </tr>
@@ -1234,14 +1236,14 @@ export default function Attendance() {
                         </div>
                       </td>
 
-                      {/* Check In */}
+                      {/* Log In */}
                       <td style={{ padding: "11px 14px" }}>
-                        <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.checkIn === "--" ? textMuted : (rec.isLate ? "#6366F1" : "#00B8B8") }}>{rec.checkIn}</span>
+                        <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.logIn === "--" ? textMuted : (rec.isLate ? "#6366F1" : "#00B8B8") }}>{rec.logIn}</span>
                       </td>
 
-                      {/* Check Out */}
+                      {/* Log Out */}
                       <td style={{ padding: "11px 14px" }}>
-                        <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.checkOut === "--" ? textMuted : (isDark ? "#AAAAAA" : "#555555") }}>{rec.checkOut}</span>
+                        <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.logOut === "--" ? textMuted : (isDark ? "#AAAAAA" : "#555555") }}>{rec.logOut}</span>
                       </td>
 
                       {/* Hours */}

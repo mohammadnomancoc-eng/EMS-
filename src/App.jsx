@@ -83,7 +83,7 @@ function EmployeeRoute({ children }) {
 // • No admin found        → render children (show the setup form)
 // • Firestore error       → treat as "no admin" so setup can still proceed
 function SetupGuard({ children }) {
-  const [status, setStatus] = useState("checking"); // "checking" | "allowed" | "deny"
+  const [status, setStatus] = useState("logIng"); // "logIng" | "allowed" | "deny"
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +101,7 @@ function SetupGuard({ children }) {
     return () => { cancelled = true; };
   }, []);
 
-  if (status === "checking") {
+  if (status === "logIng") {
     return (
       <div style={{
         minHeight: "100vh", background: "#0A0A0A",

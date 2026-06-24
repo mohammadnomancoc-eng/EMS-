@@ -126,11 +126,15 @@ function ProjectModal({ isDark, emp, onClose, existing }) {
         background: isDark ? "#0A0A0A" : "#FFFFFF",
         border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
         boxShadow: "0 24px 64px rgba(0,0,0,0.4)",
+        maxHeight: "calc(100vh - 32px)",
+        display: "flex",
+        flexDirection: "column",
       }}>
         {/* Header */}
         <div style={{
           padding: "18px 20px", borderBottom: `1px solid ${isDark ? "#1A1A1A" : "#EEEEEE"}`,
           display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexShrink: 0,
         }}>
           <div>
             <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "17px", color: isDark ? "#F0F0F0" : "#111", margin: 0 }}>
@@ -146,7 +150,7 @@ function ProjectModal({ isDark, emp, onClose, existing }) {
         </div>
 
         {/* Body */}
-        <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+        <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "14px", overflowY: "auto", flex: 1 }}>
           {error && (
             <div style={{
               background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.2)",
@@ -204,6 +208,7 @@ function ProjectModal({ isDark, emp, onClose, existing }) {
         <div style={{
           padding: "14px 20px", borderTop: `1px solid ${isDark ? "#1A1A1A" : "#EEEEEE"}`,
           display: "flex", gap: "10px", justifyContent: "flex-end",
+          flexShrink: 0,
         }}>
           <button onClick={onClose} style={{
             padding: "8px 18px", borderRadius: "7px", fontSize: "13px", fontFamily: "Mulish, sans-serif",

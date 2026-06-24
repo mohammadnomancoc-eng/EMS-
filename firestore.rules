@@ -107,6 +107,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── /teamProjects ─────────────────────────────────────────
+    match /teamProjects/{projectId} {
+      allow read:   if isAuthed();
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
     // ── /announcements ────────────────────────────────────────
     match /announcements/{annoId} {
       allow read:  if isAuthed();

@@ -42,6 +42,7 @@ import Settings from "./pages/Settings";
 import IdCards from "./pages/IdCards";
 import IdCardTemplateBuilder from "./pages/IdCardTemplateBuilder";
 import AssignedProjects from "./pages/AssignedProjects";
+import Projects from "./pages/Projects";
 import Notifications from "./pages/Notifications";
 import { subscribeAuthState } from "./firebase/authService";
 
@@ -184,6 +185,7 @@ function App() {
             <Route path="idcard-template"     element={<IdCardTemplateBuilder />} />
             <Route path="idcard-template/:id" element={<IdCardTemplateBuilder />} />
             <Route path="assigned-projects"   element={<AssignedProjects />} />
+            <Route path="projects"            element={<Projects />} />
             <Route path="notifications"       element={<Notifications />} />
           </Route>
 

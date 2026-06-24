@@ -831,3 +831,69 @@ export async function markCredentialsViewed(empId) {
     credentialsViewedAt: serverTimestamp(),
   });
 }
+
+// ════════════════════════════════════════════════════════════
+//  TEAM PROJECTS  (project-centric, multi-member)
+//
+//  Collection: teamProjects
+//  Document shape:
+//    {
+//      name         : string   – project name
+//      description  : string   – optional description
+//      techLead     : string   – name or empId of tech lead
+//      clientName   : string   – client name
+//      clientPhone  : string   – client phone / number
+//      startDate    : string   – YYYY-MM-DD
+//      endDate      : string   – YYYY-MM-DD  (expected / actual)
+//      status       : "Ongoing" | "Completed" | "On Hold"
+//      memberIds    : string[] – array of employee doc IDs
+//      createdAt    : Timestamp
+//      updatedAt    : Timestamp
+//    }
+// ════════════════════════════════════════════════════════════
+
+/** Real-time listener for all team projects (newest first). */
+export function subscribeTeamProjects(callback) {
+  const q = query(col("teamProjects"), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+}
+
+/** Fetch all team projects once. */
+export async function getTeamProjects() {
+  const q    = query(col("teamProjects"), orderBy("createdAt", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/** Create a new team project. */
+export async function addTeamProject(data) {
+  const ref = await addDoc(col("teamProjects"), {
+    name:        data.name        || "",
+    description: data.description || "",
+    techLead:    data.techLead    || "",
+    clientName:  data.clientName  || "",
+    clientPhone: data.clientPhone || "",
+    startDate:   data.startDate   || "",
+    endDate:     data.endDate     || "",
+    status:      data.status      || "Ongoing",
+    memberIds:   data.memberIds   || [],
+    createdAt:   serverTimestamp(),
+    updatedAt:   serverTimestamp(),
+  });
+  return ref.id;
+}
+
+/** Update a team project (any fields). */
+export async function updateTeamProject(id, data) {
+  await updateDoc(doc(db, "teamProjects", id), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/** Delete a team project. */
+export async function deleteTeamProject(id) {
+  await deleteDoc(doc(db, "teamProjects", id));
+}

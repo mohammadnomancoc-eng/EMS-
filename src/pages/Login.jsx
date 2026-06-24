@@ -190,7 +190,7 @@ function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@royalswebtech.com"
+                placeholder="Enter your Email address"
                 className="w-full rounded-md outline-none transition-all"
                 style={{
                   background: "#0A0A0A",

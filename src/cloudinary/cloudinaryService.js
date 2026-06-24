@@ -1,53 +1,17 @@
 // ─────────────────────────────────────────────────────────────
 //  src/cloudinary/cloudinaryService.js
-//
-//  Handles all Cloudinary uploads (images & videos) via the
-//  unsigned upload API — no server required.
-//
-//  Setup:
-//    1. Create a free account at https://cloudinary.com
-//    2. Go to Settings → Upload → Upload Presets → Add preset
-//       → set Signing Mode = "Unsigned" → save
-//    3. Copy your Cloud Name and the preset name into
-//       src/cloudinary/config.js (see below)
-//
-//  Firestore stores only the returned `secure_url` (and
-//  optionally `public_id` for future deletion/transforms).
 // ─────────────────────────────────────────────────────────────
 
 // ── Config ────────────────────────────────────────────────────
-// Replace these with your own Cloudinary credentials.
-// Alternatively, move them into a .env file:
-//   VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
-//   VITE_CLOUDINARY_UPLOAD_PRESET=your_unsigned_preset
 export const CLOUDINARY_CLOUD_NAME =
   import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || "YOUR_CLOUD_NAME";
 
 export const CLOUDINARY_UPLOAD_PRESET =
   import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || "YOUR_UNSIGNED_PRESET";
 
-// Base URL for Cloudinary's unsigned upload endpoint
 const CLOUDINARY_BASE_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}`;
 
-// ── Types ─────────────────────────────────────────────────────
-/**
- * @typedef {Object} UploadResult
- * @property {string} secure_url  - HTTPS URL to the uploaded asset
- * @property {string} public_id   - Cloudinary public ID (use for deletions/transforms)
- * @property {string} resource_type - "image" | "video" | "raw"
- * @property {number} width       - (images only)
- * @property {number} height      - (images only)
- * @property {number} bytes       - File size in bytes
- * @property {string} format      - e.g. "jpg", "mp4"
- */
-
 // ── Helpers ───────────────────────────────────────────────────
-
-/**
- * Validate file before uploading.
- * @param {File} file
- * @param {"image"|"video"} type
- */
 function validateFile(file, type) {
   if (type === "image") {
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"];
@@ -73,18 +37,6 @@ function validateFile(file, type) {
 }
 
 // ── Core Upload ───────────────────────────────────────────────
-
-/**
- * Upload a File to Cloudinary via unsigned upload preset.
- *
- * @param {File}   file              - The File object from an <input type="file">
- * @param {"image"|"video"} type     - Resource type
- * @param {Object} [options]
- * @param {string} [options.folder]  - Cloudinary folder path, e.g. "ems/employees"
- * @param {string} [options.publicId] - Custom public_id (without extension)
- * @param {Function} [options.onProgress] - Progress callback: (percent: number) => void
- * @returns {Promise<UploadResult>}
- */
 export async function uploadToCloudinary(file, type = "image", options = {}) {
   if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === "YOUR_CLOUD_NAME") {
     throw new Error(
@@ -103,7 +55,6 @@ export async function uploadToCloudinary(file, type = "image", options = {}) {
 
   const url = `${CLOUDINARY_BASE_URL}/${type}/upload`;
 
-  // Use XMLHttpRequest so we can track upload progress
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url, true);
@@ -118,8 +69,7 @@ export async function uploadToCloudinary(file, type = "image", options = {}) {
 
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        const data = JSON.parse(xhr.responseText);
-        resolve(data);
+        resolve(JSON.parse(xhr.responseText));
       } else {
         let errMsg = `Upload failed (HTTP ${xhr.status})`;
         try {
@@ -137,32 +87,14 @@ export async function uploadToCloudinary(file, type = "image", options = {}) {
 
 // ── Convenience Wrappers ──────────────────────────────────────
 
-/**
- * Upload an employee profile photo.
- * Stored under folder: "ems/employees/{empId}"
- *
- * @param {File}   file
- * @param {string} empId            - e.g. "RWT013"
- * @param {Function} [onProgress]   - (percent: number) => void
- * @returns {Promise<UploadResult>}
- */
 export async function uploadEmployeePhoto(file, empId, onProgress) {
   return uploadToCloudinary(file, "image", {
     folder:     `ems/employees/${empId}`,
-    publicId:   `${empId}_profile`,
+    publicId:   `${empId}_profile_${Date.now()}`,
     onProgress,
   });
 }
 
-/**
- * Upload a document or company-related image.
- * Stored under folder: "ems/documents"
- *
- * @param {File}   file
- * @param {string} docName           - Identifier for the document
- * @param {Function} [onProgress]
- * @returns {Promise<UploadResult>}
- */
 export async function uploadDocument(file, docName, onProgress) {
   return uploadToCloudinary(file, "image", {
     folder:     "ems/documents",
@@ -171,15 +103,6 @@ export async function uploadDocument(file, docName, onProgress) {
   });
 }
 
-/**
- * Upload a video (e.g. training material, announcements).
- * Stored under folder: "ems/videos"
- *
- * @param {File}   file
- * @param {string} videoName         - Identifier for the video
- * @param {Function} [onProgress]
- * @returns {Promise<UploadResult>}
- */
 export async function uploadVideo(file, videoName, onProgress) {
   return uploadToCloudinary(file, "video", {
     folder:     "ems/videos",
@@ -188,29 +111,160 @@ export async function uploadVideo(file, videoName, onProgress) {
   });
 }
 
-// ── URL Transform Helpers ─────────────────────────────────────
-// Build optimised Cloudinary URLs without re-uploading.
-
 /**
- * Generate a thumbnail URL for a Cloudinary image.
- * @param {string} secureUrl  - Original secure_url from Cloudinary
- * @param {number} [size=150] - Square size in pixels
- * @returns {string}
+ * Upload the company logo to Cloudinary.
+ * Store the returned secure_url in VITE_COMPANY_LOGO_URL or your Firestore settings doc.
+ *
+ * Folder: ems/company
+ * The public_id is fixed so re-uploading replaces it.
+ * NOTE: fixed public_ids require your upload preset to allow overwrites,
+ *       OR append a timestamp to always create a new version.
  */
-export function getThumbnailUrl(secureUrl, size = 150) {
-  if (!secureUrl || !secureUrl.includes("cloudinary.com")) return secureUrl;
-  return secureUrl.replace(
-    "/upload/",
-    `/upload/c_fill,g_face,h_${size},w_${size},q_auto,f_auto/`
-  );
+export async function uploadCompanyLogo(file, onProgress) {
+  const allowed = ["image/jpeg", "image/png", "image/webp", "image/svg+xml"];
+  if (!allowed.includes(file.type)) {
+    throw new Error("Logo must be JPG, PNG, WEBP, or SVG.");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("Logo file must be under 5 MB.");
+  }
+  return uploadToCloudinary(file, "image", {
+    folder:     "ems/company",
+    publicId:   `logo_${Date.now()}`,
+    onProgress,
+  });
 }
 
 /**
- * Generate an auto-quality, auto-format URL for any Cloudinary asset.
- * @param {string} secureUrl
- * @returns {string}
+ * Upload an ID card background image to Cloudinary.
+ * Used by the ID card template builder (IdCardTemplateBuilder).
+ * Images are stored under ems/idcard-backgrounds/.
+ *
+ * @param {File}     file
+ * @param {string}   templateId  - template name or ID used as part of public_id
+ * @param {Function} onProgress  - (percent: number) => void
+ */
+export async function uploadIdCardBackground(file, templateId = "custom", onProgress) {
+  const allowed = ["image/jpeg", "image/png", "image/webp"];
+  if (!allowed.includes(file.type)) {
+    throw new Error("Background must be JPG, PNG, or WEBP.");
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error("Background image must be under 5 MB.");
+  }
+  return uploadToCloudinary(file, "image", {
+    folder:     "ems/idcard-backgrounds",
+    publicId:   `bg_${templateId}_${Date.now()}`,
+    onProgress,
+  });
+}
+
+/**
+ * Upload an employee's offer letter.
+ *
+ * PDFs  → uploaded as "raw" resource type.
+ * Images → uploaded as "image" resource type as normal.
+ */
+export async function uploadOfferLetter(file, empId, onProgress) {
+  const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+  if (!allowed.includes(file.type)) {
+    throw new Error("Unsupported format. Please upload a PDF, JPG, PNG, or WEBP file.");
+  }
+  const maxMB = 20;
+  if (file.size > maxMB * 1024 * 1024) {
+    throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max ${maxMB} MB.`);
+  }
+  if (!CLOUDINARY_CLOUD_NAME || CLOUDINARY_CLOUD_NAME === "YOUR_CLOUD_NAME") {
+    throw new Error(
+      "Cloudinary is not configured. Set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET in your .env file."
+    );
+  }
+
+  const isPdf = file.type === "application/pdf";
+  const resourceType = isPdf ? "raw" : "image";
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  formData.append("folder",      `ems/offer-letters/${empId}`);
+  formData.append("public_id",   `${empId}_offer_letter_${Date.now()}`);
+
+  const uploadUrl = `${CLOUDINARY_BASE_URL}/${resourceType}/upload`;
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", uploadUrl, true);
+
+    if (onProgress) {
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      });
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText));
+      } else {
+        let errMsg = `Upload failed (HTTP ${xhr.status})`;
+        try {
+          const err = JSON.parse(xhr.responseText);
+          errMsg = err?.error?.message || errMsg;
+        } catch (_) {}
+        reject(new Error(errMsg));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error during upload."));
+    xhr.send(formData);
+  });
+}
+
+// ── URL Helpers ───────────────────────────────────────────────
+
+/**
+ * Thumbnail URL for Cloudinary images.
+ */
+export function getThumbnailUrl(secureUrl, size = 150) {
+  if (!secureUrl || !secureUrl.includes("cloudinary.com")) return secureUrl;
+  const transformed = secureUrl.replace(
+    "/upload/",
+    `/upload/c_fill,g_face,h_${size},w_${size},q_auto,f_auto/`
+  );
+  const vMatch = secureUrl.match(/\/v(\d+)\//);
+  return vMatch ? `${transformed}?v=${vMatch[1]}` : transformed;
+}
+
+/**
+ * Auto-quality, auto-format URL for any Cloudinary image.
  */
 export function getOptimizedUrl(secureUrl) {
   if (!secureUrl || !secureUrl.includes("cloudinary.com")) return secureUrl;
   return secureUrl.replace("/upload/", "/upload/q_auto,f_auto/");
+}
+
+/**
+ * Returns the clean, publicly-accessible offer letter URL (no transforms).
+ */
+export function getOfferLetterViewUrl(url) {
+  if (!url) return url;
+  let clean = url;
+  clean = clean.replace(/\/upload\/(?!v\d)([^/]+\/)+/, "/upload/");
+  return clean;
+}
+
+/**
+ * Returns a force-download URL for the offer letter.
+ */
+export function getOfferLetterDownloadUrl(url) {
+  if (!url) return url;
+  const clean = getOfferLetterViewUrl(url);
+  return clean.replace("/upload/", "/upload/fl_attachment/");
+}
+
+/**
+ * Wraps any public URL in Google Docs Viewer for reliable in-browser PDF viewing.
+ */
+export function getGoogleDocsViewerUrl(url) {
+  if (!url) return "";
+  return `https://docs.google.com/viewer?url=${encodeURIComponent(url)}&embedded=true`;
 }

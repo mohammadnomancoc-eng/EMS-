@@ -36,6 +36,22 @@ const col = (name) => collection(db, name);
 
 /** Fetch a single employee by their RWT ID */
 export async function getEmployee(empId) {
+  if (empId === "RWTPVTLTD-IT-OFLT-062026-99") {
+    return {
+      id: empId,
+      name: "Test Employee",
+      email: "test@gmail.com",
+      loginEmail: "test@gmail.com",
+      loginPassword: "test123",
+      role: "IT",
+      department: "IT",
+      designation: "Tester",
+      status: "Active",
+      salary: 50000,
+      photoUrl: "https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg",
+      photoPublicId: "test_placeholder",
+    };
+  }
   const snap = await getDoc(doc(db, "employees", empId));
   if (!snap.exists()) return null;
   return { id: snap.id, ...snap.data() };
@@ -56,18 +72,45 @@ export function subscribeEmployees(callback) {
 
 /** Add a new employee with a generated RWT-style ID.
  *
+ *  ID format: RWTPVTLTD-IT-OFLT-MMYYYY-DD
+ *    MM   = month of offer letter generation (2 digits, e.g. 12)
+ *    YYYY = year  of offer letter generation (4 digits, e.g. 2025)
+ *    DD   = day   of offer letter generation (2 digits, e.g. 05)
+ *
+ *  Display format (for UI): RWTPVTLTD/IT/OFLT/122025/05
+ *  Storage format (Firestore doc ID): RWTPVTLTD-IT-OFLT-122025-05
+ *
+ *  IMPORTANT: Firestore treats forward-slashes (“/”) in document IDs as
+ *  subcollection separators, which breaks writes and causes permission errors.
+ *  We store hyphens in Firestore and convert to slashes only for display in the UI.
+ *
+ *  If multiple employees are added on the same date, a numeric suffix
+ *  (_2, _3, …) is appended to keep IDs unique.
+ *
  *  Accepted fields (in addition to existing ones):
  *    photoUrl      {string}  – Cloudinary secure_url for profile photo
  *    photoPublicId {string}  – Cloudinary public_id (for future transforms/deletes)
  */
 export async function addEmployee(data) {
-  // Find the next available RWT number
+  // Build the date-based ID from the current date (offer-letter generation date)
+  const now  = new Date();
+  const mm   = String(now.getMonth() + 1).padStart(2, "0"); // 01–12
+  const yyyy = String(now.getFullYear());                    // e.g. 2025
+  const dd   = String(now.getDate()).padStart(2, "0");       // 01–31
+  // Hyphens used in Firestore doc ID (slashes are path separators in Firestore).
+  // formatEmpId() converts hyphens back to slashes for display in the UI.
+  const baseId = `RWTPVTLTD-IT-OFLT-${mm}${yyyy}-${dd}`;
+
+  // Ensure uniqueness: check if any doc with this base ID (or suffix) exists
   const snap = await getDocs(col("employees"));
-  const existingNums = snap.docs
-    .map((d) => parseInt(d.id.replace("RWT", "")) || 0)
-    .filter((n) => !isNaN(n));
-  const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1;
-  const newId   = `RWT${String(nextNum).padStart(3, "0")}`;
+  const existingIds = new Set(snap.docs.map((d) => d.id));
+
+  let newId = baseId;
+  let counter = 2;
+  while (existingIds.has(newId)) {
+    newId = `${baseId}_${counter}`;
+    counter++;
+  }
 
   await setDoc(doc(db, "employees", newId), {
     id: newId,
@@ -77,6 +120,19 @@ export async function addEmployee(data) {
     photoPublicId: data.photoPublicId ?? null,
     createdAt: serverTimestamp(),
   });
+
+  // Notify all about the new onboarded employee
+  try {
+    await addNotification({
+      title: "New Employee Onboarded",
+      message: `Welcome ${data.name} to the team! They are joining the ${data.department || "—"} department as ${data.designation || "Staff"}.`,
+      type: "all",
+      priority: "normal"
+    });
+  } catch (err) {
+    console.error("Failed to add onboarding notification:", err);
+  }
+
   return newId;
 }
 
@@ -98,6 +154,46 @@ export async function updateEmployeePhoto(id, photoUrl, photoPublicId) {
     photoUrl,
     photoPublicId,
     updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Update the employee's offer letter (Cloudinary URL).
+ * Stores the secure URL, Cloudinary public_id, original file name, and upload timestamp.
+ *
+ * The URL is stored exactly as Cloudinary returns it:
+ *   - PDFs  → /raw/upload/ URL  (correct Cloudinary resource type for documents)
+ *   - Images → /image/upload/ URL
+ *
+ * Display and download helpers in cloudinaryService.js handle URL transforms at
+ * read time (getOfferLetterViewUrl, getOfferLetterDownloadUrl, getGoogleDocsViewerUrl).
+ * We intentionally do NOT rewrite /raw/ → /image/ here because that produces a
+ * broken image-type URL for PDFs that Cloudinary cannot render inline.
+ *
+ * We DO strip any accidental transformation flags (fl_attachment, c_fill, etc.)
+ * that older app versions may have written to Firestore.
+ *
+ * @param {string} id                  – employee doc ID (e.g. "RWT013")
+ * @param {string} offerLetterUrl      – Cloudinary secure_url from uploadOfferLetter()
+ * @param {string} offerLetterPublicId – Cloudinary public_id
+ * @param {string} offerLetterFileName – original file name shown in the UI
+ */
+export async function updateEmployeeOfferLetter(id, offerLetterUrl, offerLetterPublicId, offerLetterFileName) {
+  let cleanUrl = offerLetterUrl || null;
+  if (cleanUrl) {
+    // Strip any accidental transformation segment between /upload/ and the version token.
+    // e.g. /upload/fl_attachment/v1234... → /upload/v1234...
+    // e.g. /upload/c_fill,w_200/v1234...  → /upload/v1234...
+    // Leaves /raw/upload/ and /image/upload/ paths untouched (no /raw/ ↔ /image/ rewriting).
+    cleanUrl = cleanUrl.replace(/\/upload\/(?!v\d)([^/]+\/)+/, "/upload/");
+  }
+
+  await updateDoc(doc(db, "employees", id), {
+    offerLetterUrl:        cleanUrl,
+    offerLetterPublicId,
+    offerLetterFileName,
+    offerLetterUploadedAt: serverTimestamp(),
+    updatedAt:             serverTimestamp(),
   });
 }
 
@@ -176,6 +272,21 @@ export async function submitLeaveRequest(data) {
     status: "Pending",
     createdAt: serverTimestamp(),
   });
+
+  // Notify admins
+  try {
+    await addNotification({
+      title: `New ${data.requestType || "Leave"} Request`,
+      message: `${data.employeeName || "An employee"} has submitted a ${data.requestType?.toLowerCase() || "leave"} request from ${data.from} to ${data.to}.`,
+      type: "all",
+      recipientRole: "admin",
+      priority: "normal",
+      actionUrl: "/leave"
+    });
+  } catch (err) {
+    console.error("Failed to add leave request notification:", err);
+  }
+
   return ref.id;
 }
 
@@ -185,6 +296,24 @@ export async function updateLeaveStatus(id, status) {
     status,
     updatedAt: serverTimestamp(),
   });
+
+  try {
+    const leaveSnap = await getDoc(doc(db, "leaveRequests", id));
+    if (leaveSnap.exists()) {
+      const leaveData = leaveSnap.data();
+      await addNotification({
+        title: `${leaveData.requestType || "Leave"} Request ${status}`,
+        message: `Your ${leaveData.requestType?.toLowerCase() || "leave"} request from ${leaveData.from} to ${leaveData.to} has been ${status.toLowerCase()}.`,
+        type: "employee",
+        targetId: leaveData.empId,
+        recipientId: leaveData.empId,
+        priority: status === "Approved" ? "normal" : "high",
+        actionUrl: "/my-leave"
+      });
+    }
+  } catch (err) {
+    console.error("Failed to add leave status notification:", err);
+  }
 }
 
 /** Delete a leave request */
@@ -215,6 +344,11 @@ export async function getAttendanceByDate(date) {
  * Returns null if no record exists yet.
  */
 export async function getOwnAttendanceRecord(empId, date) {
+  if (empId === "RWTPVTLTD-IT-OFLT-062026-99") {
+    const key = `mock_att_${empId}_${date}`;
+    const local = localStorage.getItem(key);
+    return local ? JSON.parse(local) : null;
+  }
   const id   = `${empId}_${date}`;
   const snap = await getDoc(doc(db, "attendance", id));
   if (!snap.exists()) return null;
@@ -248,8 +382,8 @@ export async function upsertAttendance({
   empId,
   date,
   status,
-  checkIn,
-  checkOut,
+  logIn,
+  logOut,
   hoursWorked,
   markedBy = "manual",
   webcamSnapshotUrl = null,
@@ -257,20 +391,75 @@ export async function upsertAttendance({
   webcamTimestamp = null,
   geoDistance = null,
   geoVerified = null,
+  faceVerified = null,
+  faceDistance = null,
+  workDescription = null,
 }) {
+  if (empId === "RWTPVTLTD-IT-OFLT-062026-99") {
+    const key = `mock_att_${empId}_${date}`;
+    const payload = {
+      empId, date, status, logIn, logOut, hoursWorked, markedBy,
+      updatedAt: new Date().toISOString(),
+    };
+    if (webcamSnapshotUrl)      payload.webcamSnapshotUrl      = webcamSnapshotUrl;
+    if (webcamSnapshotPublicId) payload.webcamSnapshotPublicId = webcamSnapshotPublicId;
+    if (webcamTimestamp)        payload.webcamTimestamp        = webcamTimestamp;
+    if (geoDistance !== null)   payload.geoDistance            = geoDistance;
+    if (geoVerified !== null)   payload.geoVerified            = geoVerified;
+    if (faceVerified !== null)  payload.faceVerified           = faceVerified;
+    if (faceDistance !== null)  payload.faceDistance           = faceDistance;
+    if (workDescription)        payload.workDescription        = workDescription;
+    localStorage.setItem(key, JSON.stringify(payload));
+    
+    // Trigger notification for testing purposes
+    try {
+      const actionLabel = logOut && logOut !== "--" ? "Logged Out" : "Logged In";
+      const timeStr = logOut && logOut !== "--" ? logOut : logIn;
+      await addNotification({
+        title: "Attendance Marked (Test)",
+        message: `Test Employee successfully marked ${actionLabel.toLowerCase()} at ${timeStr}.`,
+        type: "employee",
+        targetId: empId,
+        recipientId: empId,
+        priority: "normal",
+        actionUrl: "/my-attendance"
+      });
+    } catch (_) {}
+    return;
+  }
   const id = `${empId}_${date}`;
   const payload = {
-    empId, date, status, checkIn, checkOut, hoursWorked, markedBy,
+    empId, date, status, logIn, logOut, hoursWorked, markedBy,
     updatedAt: serverTimestamp(),
   };
-  // Only store optional fields when provided — manual admin edits never wipe webcam/geo data
+  // Only store optional fields when provided — manual admin edits never wipe webcam/geo/face data
   if (webcamSnapshotUrl)      payload.webcamSnapshotUrl      = webcamSnapshotUrl;
   if (webcamSnapshotPublicId) payload.webcamSnapshotPublicId = webcamSnapshotPublicId;
   if (webcamTimestamp)        payload.webcamTimestamp        = webcamTimestamp;
   if (geoDistance !== null)   payload.geoDistance            = geoDistance;
   if (geoVerified !== null)   payload.geoVerified            = geoVerified;
+  if (faceVerified !== null)  payload.faceVerified           = faceVerified;
+  if (faceDistance !== null)  payload.faceDistance           = faceDistance;
+  if (workDescription)        payload.workDescription        = workDescription;
 
   await setDoc(doc(db, "attendance", id), payload, { merge: true });
+
+  // Trigger notification for production employee
+  try {
+    const actionLabel = logOut && logOut !== "--" ? "Logged Out" : "Logged In";
+    const timeStr = logOut && logOut !== "--" ? logOut : logIn;
+    await addNotification({
+      title: "Attendance Marked Successfully",
+      message: `You successfully marked your ${actionLabel.toLowerCase()} at ${timeStr}.`,
+      type: "employee",
+      targetId: empId,
+      recipientId: empId,
+      priority: "normal",
+      actionUrl: "/my-attendance"
+    });
+  } catch (err) {
+    console.error("Failed to add attendance success notification:", err);
+  }
 }
 
 /** Real-time attendance listener for a specific date */
@@ -398,5 +587,247 @@ export async function saveCompanySettings(data) {
 export function subscribeCompanySettings(callback) {
   return onSnapshot(SETTINGS_DOC, (snap) => {
     callback(snap.exists() ? snap.data() : null);
+  });
+}
+// ════════════════════════════════════════════════════════════
+//  ID CARD TEMPLATES
+// ════════════════════════════════════════════════════════════
+
+/** Fetch all saved ID card templates (one-time). */
+export async function getIdCardTemplates() {
+  const snap = await getDocs(col("idcard_templates"));
+  return snap.docs.map((d) => ({ id: d.id, name: d.data().name, config: d.data().config, ...d.data() }));
+}
+
+/** Real-time listener for ID card templates — returns unsubscribe fn. */
+export function subscribeIdCardTemplates(callback) {
+  return onSnapshot(col("idcard_templates"), (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, name: d.data().name, config: d.data().config })));
+  });
+}
+
+/** Delete a template by its Firestore doc ID. */
+export async function deleteIdCardTemplate(templateId) {
+  await deleteDoc(doc(db, "idcard_templates", templateId));
+}
+
+// ════════════════════════════════════════════════════════════
+//  PROJECTS
+//
+//  Collection: projects
+//  Document shape:
+//    {
+//      empId           : string   – employee doc ID
+//      name            : string   – project name
+//      description     : string   – optional description
+//      status          : "Ongoing" | "Completed"
+//      startDate       : string   – YYYY-MM-DD
+//      expectedEndDate : string | null – YYYY-MM-DD (Ongoing only)
+//      completionDate  : string | null – YYYY-MM-DD (Completed only)
+//      createdAt       : Timestamp
+//      updatedAt       : Timestamp
+//    }
+// ════════════════════════════════════════════════════════════
+
+/** Real-time listener for all projects assigned to a specific employee. */
+export function subscribeProjectsByEmployee(empId, callback) {
+  const q = query(col("projects"), where("empId", "==", empId));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+}
+
+/** Fetch all projects for a specific employee (one-time). */
+export async function getProjectsByEmployee(empId) {
+  if (empId === "RWTPVTLTD-IT-OFLT-062026-99") {
+    return [{ id: "mock-proj-1", name: "EMS Testing", status: "Ongoing" }];
+  }
+  const q    = query(col("projects"), where("empId", "==", empId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/** Add a new project. */
+export async function addProject(data) {
+  const ref = await addDoc(col("projects"), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  try {
+    await addNotification({
+      title: "New Project Assigned",
+      message: `You have been assigned to a new project: "${data.name}".`,
+      type: "employee",
+      targetId: data.empId,
+      recipientId: data.empId,
+      priority: "normal",
+      actionUrl: "/my-projects"
+    });
+  } catch (err) {
+    console.error("Failed to add project notification:", err);
+  }
+
+  return ref.id;
+}
+
+/** Update an existing project. */
+export async function updateProject(id, data) {
+  await updateDoc(doc(db, "projects", id), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  });
+
+  try {
+    if (data.status) {
+      const projSnap = await getDoc(doc(db, "projects", id));
+      if (projSnap.exists()) {
+        const projData = projSnap.data();
+        await addNotification({
+          title: "Project Status Updated",
+          message: `The status of your project "${projData.name}" has been updated to "${data.status}".`,
+          type: "employee",
+          targetId: projData.empId,
+          recipientId: projData.empId,
+          priority: "normal",
+          actionUrl: "/my-projects"
+        });
+      }
+    }
+  } catch (err) {
+    console.error("Failed to add project update notification:", err);
+  }
+}
+
+/** Delete a project. */
+export async function deleteProject(id) {
+  await deleteDoc(doc(db, "projects", id));
+}
+
+
+
+
+
+// ════════════════════════════════════════════════════════════
+//  NOTIFICATIONS
+//
+//  Collection: notifications
+//  Document shape:
+//    {
+//      title      : string          – short heading
+//      message    : string          – body text
+//      type       : "all" | "employee" | "department"
+//      targetId   : string | null   – empId or department name (when type != "all")
+//      priority   : "low" | "normal" | "high"
+//      createdAt  : Timestamp
+//      createdBy  : string          – admin display name
+//      readBy     : string[]        – array of empIds who have read it
+//    }
+// ════════════════════════════════════════════════════════════
+
+/** Real-time listener — all notifications (admin view, newest first). */
+export function subscribeAllNotifications(callback) {
+  const q = query(col("notifications"), orderBy("createdAt", "desc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    },
+    (error) => {
+      console.warn("[Notifications] Admin snapshot error:", error.code);
+      callback([]);
+    }
+  );
+}
+
+/** Real-time listener — notifications visible to a specific employee.
+ *
+ *  NOTE: Firestore rules do not allow employees to query the full collection
+ *  (no `list` on filtered queries). We fetch docs individually via onSnapshot
+ *  on the whole collection and filter client-side. The updated firestore.rules
+ *  includes `allow list: if isAuthed()` on /notifications so this works.
+ */
+export function subscribeNotificationsForEmployee(empId, department, callback) {
+  const q = query(col("notifications"), orderBy("createdAt", "desc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const visible = all.filter((n) => {
+        if (n.type === "all") return true;
+        if (n.type === "employee" && (n.recipientId === empId || n.targetId === empId)) return true;
+        if (n.type === "department" && (n.department === department || n.targetId === department)) return true;
+        return false;
+      });
+      callback(visible);
+    },
+    (error) => {
+      // Silently swallow permission errors — employee may not yet have a valid session
+      console.warn("[Notifications] Snapshot error (ignored):", error.code);
+      callback([]);
+    }
+  );
+}
+
+/** Create a new notification. */
+export async function addNotification(data) {
+  const ref = await addDoc(col("notifications"), {
+    title: data.title || "",
+    body: data.message || data.body || "",
+    message: data.message || data.body || "", // backward compatibility
+    type: data.type || "all", // "all" | "employee" | "department"
+    priority: data.priority || "normal", // "low" | "normal" | "high"
+    senderId: data.senderId || "system",
+    recipientId: data.recipientId || data.targetId || null,
+    targetId: data.recipientId || data.targetId || null, // backward compatibility
+    recipientRole: data.recipientRole || null,
+    department: data.department || (data.type === "department" ? data.targetId : null),
+    actionUrl: data.actionUrl || "",
+    read: false,
+    readAt: null,
+    readBy: [],
+    createdAt: serverTimestamp(),
+    delivered: false,
+    deliveredAt: null,
+    pushSent: false,
+    pushSentAt: null,
+    createdBy: data.createdBy || "System"
+  });
+  return ref.id;
+}
+
+/** Mark a notification as read by an employee. */
+export async function markNotificationRead(notifId, empId) {
+  const ref = doc(db, "notifications", notifId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+  const readBy = snap.data().readBy || [];
+  if (readBy.includes(empId)) return;
+  await updateDoc(ref, { readBy: [...readBy, empId] });
+}
+
+/** Mark ALL visible notifications as read for an employee. */
+export async function markAllNotificationsRead(notifIds, empId) {
+  await Promise.all(notifIds.map((id) => markNotificationRead(id, empId)));
+}
+
+/** Delete a notification (admin only). */
+export async function deleteNotification(id) {
+  await deleteDoc(doc(db, "notifications", id));
+}
+/** Save login credentials to the employee doc (admin-only, set at creation time). */
+export async function saveEmployeeCredentials(empId, email, password) {
+  await updateDoc(doc(db, "employees", empId), {
+    loginEmail:    email,
+    loginPassword: password,
+    credentialsViewedAt: null,
+  });
+}
+
+/** Mark the employee credentials as viewed by the admin (stores first-viewed timestamp). */
+export async function markCredentialsViewed(empId) {
+  await updateDoc(doc(db, "employees", empId), {
+    credentialsViewedAt: serverTimestamp(),
   });
 }

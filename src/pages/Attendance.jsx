@@ -1,5 +1,6 @@
 // ─────────────────────────────────────────────────────────────
 //  src/pages/Attendance.jsx  —  RESPONSIVE VERSION
+//  + Calendar View per employee (added — everything else unchanged)
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect, useCallback } from "react";
 import { useTheme } from "../App";
@@ -7,12 +8,14 @@ import {
   Search, Filter, Download, CalendarCheck,
   UserCheck, UserX, Home, Clock,
   ChevronDown, ChevronLeft, ChevronRight,
-  Edit2, X, Camera,
+  Edit2, X, Camera, CalendarDays, FileText,
 } from "lucide-react";
 import {
   subscribeEmployees,
   subscribeAttendanceByDate,
+  subscribeLeaveRequests,
   upsertAttendance,
+  getAttendanceByEmployee,
 } from "../firebase/firestoreService";
 
 // ── Helpers ───────────────────────────────────────────
@@ -25,8 +28,18 @@ const avatarColors = [
   "#EF4444", "#8B5CF6", "#06B6D4", "#84CC16",
 ];
 function getAvatarColor(id = "") {
-  const idx = parseInt(id.replace("RWT", "") || "0") % avatarColors.length;
-  return avatarColors[idx];
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return avatarColors[hash % avatarColors.length];
+}
+
+/** Display format: RWTPVTLTD-IT-OFLT-122025-05 → RWTPVTLTD/IT/OFLT/122025/05 */
+function formatEmpId(id) {
+  if (!id) return id;
+  if (id.startsWith("RWTPVTLTD-")) return id.replace(/-/g, "/");
+  return id;
 }
 
 function todayString() {
@@ -70,8 +83,8 @@ function StatusBadge({ status, theme }) {
 function EditModal({ record, theme, onClose, onSave }) {
   const isDark = theme === "dark";
   const [status,   setStatus]   = useState(record.status || "Present");
-  const [checkIn,  setCheckIn]  = useState(record.checkIn  === "--" ? "" : (record.checkIn  || ""));
-  const [checkOut, setCheckOut] = useState(record.checkOut === "--" ? "" : (record.checkOut || ""));
+  const [logIn,  setLogIn]  = useState(record.logIn  === "--" ? "" : (record.logIn  || ""));
+  const [logOut, setLogOut] = useState(record.logOut === "--" ? "" : (record.logOut || ""));
   const [saving,   setSaving]   = useState(false);
 
   const inputStyle = {
@@ -93,8 +106,8 @@ function EditModal({ record, theme, onClose, onSave }) {
     await onSave({
       ...record,
       status,
-      checkIn:     noTime ? "--" : (checkIn  || "--"),
-      checkOut:    noTime ? "--" : (checkOut || "--"),
+      logIn:     noTime ? "--" : (logIn  || "--"),
+      logOut:    noTime ? "--" : (logOut || "--"),
       hoursWorked: "--",
     });
     setSaving(false);
@@ -162,15 +175,15 @@ function EditModal({ record, theme, onClose, onSave }) {
             <>
               <div>
                 <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, color: "#CC0000", letterSpacing: "0.1em", display: "block", marginBottom: "6px" }}>
-                  CHECK IN
+                  LOG IN
                 </label>
-                <input type="text" placeholder="e.g. 09:30 AM" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} style={inputStyle} />
+                <input type="text" placeholder="e.g. 09:30 AM" value={logIn} onChange={(e) => setLogIn(e.target.value)} style={inputStyle} />
               </div>
               <div>
                 <label style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600, color: "#CC0000", letterSpacing: "0.1em", display: "block", marginBottom: "6px" }}>
-                  CHECK OUT
+                  LOG OUT
                 </label>
-                <input type="text" placeholder="e.g. 06:30 PM" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} style={inputStyle} />
+                <input type="text" placeholder="e.g. 06:30 PM" value={logOut} onChange={(e) => setLogOut(e.target.value)} style={inputStyle} />
               </div>
             </>
           )}
@@ -207,6 +220,83 @@ function EditModal({ record, theme, onClose, onSave }) {
   );
 }
 
+// ── Work Description Modal ────────────────────────────
+function WorkDescModal({ rec, theme, onClose }) {
+  const isDark = theme === "dark";
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ background: "rgba(0,0,0,0.72)", backdropFilter: "blur(3px)" }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: "480px",
+          background: isDark ? "#111111" : "#FFFFFF",
+          border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
+          borderRadius: "12px 12px 0 0",
+          overflow: "hidden",
+        }}
+        className="sm:!rounded-xl"
+      >
+        {/* Header */}
+        <div style={{
+          padding: "14px 18px",
+          borderBottom: `1px solid ${isDark ? "#1A1A1A" : "#F0F0F0"}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{
+              width: "30px", height: "30px", borderRadius: "7px",
+              background: "rgba(0,184,184,0.10)", border: "1px solid rgba(0,184,184,0.25)",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <FileText size={14} style={{ color: "#00B8B8" }} />
+            </div>
+            <div>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "15px", color: isDark ? "#F0F0F0" : "#111111", margin: 0 }}>
+                Work Summary
+              </p>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#555555" : "#999999", margin: "2px 0 0" }}>
+                {rec.empName} · {rec.dateLabel}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ color: "#555555", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>
+            <X size={17} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "18px 20px" }}>
+          <p style={{
+            fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+            color: "#CC0000", letterSpacing: "0.18em", marginBottom: "10px",
+          }}>
+            TODAY'S COMPLETED WORK
+          </p>
+          <div style={{
+            padding: "14px 16px", borderRadius: "8px",
+            background: isDark ? "#0D0D0D" : "#F7F7F7",
+            border: `1px solid ${isDark ? "#1A1A1A" : "#EBEBEB"}`,
+          }}>
+            <p style={{
+              fontFamily: "Mulish, sans-serif", fontSize: "13px", lineHeight: "1.7",
+              color: isDark ? "#CCCCCC" : "#333333", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word",
+            }}>
+              {rec.workDescription}
+            </p>
+          </div>
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: isDark ? "#444" : "#BBB", marginTop: "10px", textAlign: "right" }}>
+            Submitted at check-out via webcam
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Mobile Card View for each attendance record ───────
 function AttendanceMobileCard({ rec, theme, isDark, textPri, textMuted, border, onEdit, onViewSnapshot }) {
   const color = getAvatarColor(rec.empId);
@@ -236,7 +326,7 @@ function AttendanceMobileCard({ rec, theme, isDark, textPri, textMuted, border, 
             {rec.empName}
           </p>
           <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>
-            {rec.empId} · {rec.role}
+            {formatEmpId(rec.empId)} · {rec.role}
           </p>
         </div>
         {/* Status badge top-right */}
@@ -265,18 +355,38 @@ function AttendanceMobileCard({ rec, theme, isDark, textPri, textMuted, border, 
           <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#888888" : "#666666" }}>{rec.dateLabel}</p>
         </div>
         <div>
-          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>CHECK IN</p>
-          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.checkIn === "--" ? textMuted : (rec.isLate ? "#6366F1" : "#00B8B8") }}>{rec.checkIn}</p>
+          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>LOG IN</p>
+          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.logIn === "--" ? textMuted : (rec.isLate ? "#6366F1" : "#00B8B8") }}>{rec.logIn}</p>
         </div>
         <div>
-          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>CHECK OUT</p>
-          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.checkOut === "--" ? textMuted : (isDark ? "#AAAAAA" : "#555555") }}>{rec.checkOut}</p>
+          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>LOG OUT</p>
+          <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.logOut === "--" ? textMuted : (isDark ? "#AAAAAA" : "#555555") }}>{rec.logOut}</p>
         </div>
         <div>
           <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "2px" }}>HOURS</p>
           <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.hoursWorked === "--" ? textMuted : "#C9922A" }}>{rec.hoursWorked}</p>
         </div>
       </div>
+
+      {/* Work description — shown inline when present */}
+      {rec.workDescription && (
+        <div style={{
+          padding: "9px 12px", borderRadius: "7px",
+          background: isDark ? "#0D0D0D" : "#F5F5F5",
+          border: `1px solid ${isDark ? "#1A1A1A" : "rgba(0,184,184,0.2)"}`,
+        }}>
+          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em", marginBottom: "5px" }}>
+            WORK SUMMARY
+          </p>
+          <p style={{
+            fontFamily: "Mulish, sans-serif", fontSize: "12px", lineHeight: "1.6",
+            color: isDark ? "#AAAAAA" : "#555555", margin: 0,
+            display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+          }}>
+            {rec.workDescription}
+          </p>
+        </div>
+      )}
 
       {/* Tags + actions row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -327,6 +437,357 @@ function AttendanceMobileCard({ rec, theme, isDark, textPri, textMuted, border, 
   );
 }
 
+// ─────────────────────────────────────────────────────
+//  CALENDAR VIEW MODAL
+//  Shows a full month calendar for a specific employee
+//  with color-coded attendance status on each day cell.
+// ─────────────────────────────────────────────────────
+const STATUS_COLORS = {
+  Present:  { bg: "rgba(0,184,184,0.15)",   border: "#00B8B8", text: "#00B8B8",  dot: "#00B8B8"  },
+  Absent:   { bg: "rgba(204,0,0,0.13)",     border: "#CC0000", text: "#CC0000",  dot: "#CC0000"  },
+  Leave:    { bg: "rgba(201,146,42,0.15)",  border: "#C9922A", text: "#C9922A",  dot: "#C9922A"  },
+  WFH:      { bg: "rgba(100,100,100,0.12)", border: "#777",    text: "#888",     dot: "#888"     },
+};
+
+function CalendarViewModal({ employee, theme, onClose }) {
+  const isDark = theme === "dark";
+  const today  = new Date();
+
+  const [calYear,  setCalYear]  = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth()); // 0-indexed
+  const [records,  setRecords]  = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [tooltip,  setTooltip]  = useState(null); // { dateStr, x, y }
+
+  // Fetch all attendance for this employee once
+  useEffect(() => {
+    setLoading(true);
+    getAttendanceByEmployee(employee.id).then((data) => {
+      setRecords(data);
+      setLoading(false);
+    });
+  }, [employee.id]);
+
+  // Build a lookup: "YYYY-MM-DD" → record
+  const recMap = Object.fromEntries(records.map((r) => [r.date, r]));
+
+  // Calendar grid helpers
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const firstDow    = new Date(calYear, calMonth, 1).getDay(); // 0=Sun
+
+  const monthName = new Date(calYear, calMonth, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+
+  const prevMonth = () => {
+    if (calMonth === 0) { setCalYear((y) => y - 1); setCalMonth(11); }
+    else setCalMonth((m) => m - 1);
+  };
+  const nextMonth = () => {
+    if (calMonth === 11) { setCalYear((y) => y + 1); setCalMonth(0); }
+    else setCalMonth((m) => m + 1);
+  };
+
+  // Stats for the current viewed month
+  const monthPrefix = `${calYear}-${String(calMonth + 1).padStart(2, "0")}`;
+  const monthRecords = records.filter((r) => r.date.startsWith(monthPrefix));
+  const mPresent  = monthRecords.filter((r) => r.status === "Present").length;
+  const mAbsent   = monthRecords.filter((r) => r.status === "Absent").length;
+  const mLeave    = monthRecords.filter((r) => r.status === "Leave").length;
+  const mWfh      = monthRecords.filter((r) => r.status === "WFH").length;
+
+  const avatarColor = getAvatarColor(employee.id);
+  const cardBg = isDark ? "#111111" : "#FFFFFF";
+  const border = isDark ? "#1E1E1E" : "#E8E8E8";
+  const textPri = isDark ? "#F0F0F0" : "#111111";
+  const textMuted = isDark ? "#555555" : "#999999";
+  const cellBg = isDark ? "#0D0D0D" : "#F9F9F9";
+
+  // Build grid cells: leading empty slots + day cells
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const isToday = (d) => {
+    const t = new Date();
+    return d === t.getDate() && calMonth === t.getMonth() && calYear === t.getFullYear();
+  };
+
+  const dateStr = (d) =>
+    `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
+      style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: "640px",
+          background: isDark ? "#0A0A0A" : "#F4F4F4",
+          border: `1px solid ${border}`,
+          borderRadius: "14px", overflow: "hidden",
+          maxHeight: "92vh", display: "flex", flexDirection: "column",
+        }}
+      >
+        {/* ── Modal Header ── */}
+        <div style={{
+          padding: "16px 20px",
+          background: cardBg,
+          borderBottom: `1px solid ${border}`,
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <div style={{
+              width: "38px", height: "38px", borderRadius: "50%",
+              background: avatarColor, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "13px" }}>
+                {getInitials(employee.name)}
+              </span>
+            </div>
+            <div>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px", color: textPri, margin: 0 }}>
+                {employee.name}
+              </p>
+              <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted, margin: "2px 0 0" }}>
+                {formatEmpId(employee.id)} · {employee.department || "—"}
+              </p>
+            </div>
+            <div style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              marginLeft: "4px", padding: "4px 10px", borderRadius: "20px",
+              background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.2)",
+            }}>
+              <CalendarDays size={12} color="#CC0000" />
+              <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 700, color: "#CC0000" }}>
+                CALENDAR VIEW
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ color: textMuted, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* ── Scrollable body ── */}
+        <div style={{ overflowY: "auto", flex: 1 }}>
+
+          {/* Month summary stats */}
+          <div style={{
+            display: "flex", gap: "8px", flexWrap: "wrap",
+            padding: "14px 16px",
+            background: cardBg,
+            borderBottom: `1px solid ${border}`,
+          }}>
+            {[
+              { label: "Present", val: mPresent, color: "#00B8B8" },
+              { label: "Absent",  val: mAbsent,  color: "#CC0000" },
+              { label: "Leave",   val: mLeave,   color: "#C9922A" },
+              { label: "WFH",     val: mWfh,     color: "#777"    },
+            ].map(({ label, val, color }) => (
+              <div key={label} style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                padding: "7px 14px", borderRadius: "8px", flex: "1 1 80px",
+                background: isDark ? "#0D0D0D" : "#F5F5F5",
+                border: `1px solid ${isDark ? "#1A1A1A" : "#E8E8E8"}`,
+              }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+                <div>
+                  <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "18px", color, margin: 0, lineHeight: 1 }}>{val}</p>
+                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: textMuted, margin: "2px 0 0" }}>{label}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Month nav */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "12px 16px",
+            borderBottom: `1px solid ${border}`,
+            background: isDark ? "#0A0A0A" : "#F4F4F4",
+          }}>
+            <button
+              onClick={prevMonth}
+              style={{
+                width: 32, height: 32, borderRadius: "7px",
+                border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
+                background: "transparent", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: isDark ? "#888" : "#555",
+              }}
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px", color: textPri }}>
+              {monthName}
+            </span>
+            <button
+              onClick={nextMonth}
+              style={{
+                width: 32, height: 32, borderRadius: "7px",
+                border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
+                background: "transparent", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: isDark ? "#888" : "#555",
+              }}
+            >
+              <ChevronRight size={15} />
+            </button>
+          </div>
+
+          {/* Day-of-week headers */}
+          <div style={{
+            display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
+            gap: "1px", padding: "10px 16px 4px",
+            background: isDark ? "#0A0A0A" : "#F4F4F4",
+          }}>
+            {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
+              <div key={d} style={{
+                textAlign: "center",
+                fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+                fontSize: "10px", letterSpacing: "0.1em",
+                color: d === "Sun" || d === "Sat" ? "#CC0000" : textMuted,
+                padding: "4px 0",
+              }}>
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Calendar grid */}
+          {loading ? (
+            <div style={{ padding: "48px", textAlign: "center" }}>
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>
+                Loading attendance records…
+              </p>
+            </div>
+          ) : (
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(7, 1fr)",
+              gap: "5px", padding: "4px 16px 16px",
+              background: isDark ? "#0A0A0A" : "#F4F4F4",
+            }}>
+              {cells.map((day, idx) => {
+                if (day === null) {
+                  return <div key={`empty-${idx}`} />;
+                }
+                const ds  = dateStr(day);
+                const rec = recMap[ds];
+                const status = rec?.status;
+                const cfg  = STATUS_COLORS[status];
+                const todayFlag = isToday(day);
+                const isWeekend = ((firstDow + day - 1) % 7 === 0) || ((firstDow + day - 1) % 7 === 6);
+
+                return (
+                  <div
+                    key={ds}
+                    title={status ? `${status}${rec?.logIn && rec.logIn !== "--" ? ` · In: ${rec.logIn}` : ""}${rec?.logOut && rec.logOut !== "--" ? ` · Out: ${rec.logOut}` : ""}` : "No record"}
+                    style={{
+                      borderRadius: "8px",
+                      padding: "6px 4px 8px",
+                      minHeight: "58px",
+                      display: "flex", flexDirection: "column", alignItems: "center", gap: "4px",
+                      background: cfg ? cfg.bg : (isDark ? "#111" : "#FFF"),
+                      border: todayFlag
+                        ? "1.5px solid #CC0000"
+                        : cfg
+                          ? `1px solid ${cfg.border}30`
+                          : `1px solid ${isDark ? "#1A1A1A" : "#EBEBEB"}`,
+                      cursor: "default",
+                      transition: "transform 100ms",
+                      position: "relative",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.04)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                  >
+                    {/* Day number */}
+                    <span style={{
+                      fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+                      fontSize: "13px",
+                      color: todayFlag ? "#CC0000" : isWeekend ? (isDark ? "#555" : "#CCC") : textPri,
+                    }}>
+                      {day}
+                    </span>
+
+                    {/* Status dot + short label */}
+                    {status ? (
+                      <>
+                        <span style={{
+                          width: 6, height: 6, borderRadius: "50%",
+                          background: cfg.dot, flexShrink: 0,
+                        }} />
+                        <span style={{
+                          fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+                          fontSize: "8px", letterSpacing: "0.05em",
+                          color: cfg.text, textAlign: "center", lineHeight: 1.1,
+                        }}>
+                          {status === "Present" ? "PRES" : status === "Absent" ? "ABS" : status === "Leave" ? "LVE" : "WFH"}
+                        </span>
+                        {/* Check-in time if available */}
+                        {rec?.logIn && rec.logIn !== "--" && (
+                          <span style={{
+                            fontFamily: "Share Tech Mono, monospace",
+                            fontSize: "7px", color: isDark ? "#444" : "#BBB",
+                            marginTop: "1px",
+                          }}>
+                            {rec.logIn}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      !isWeekend && (
+                        <span style={{
+                          fontFamily: "Rajdhani, sans-serif", fontSize: "8px",
+                          color: isDark ? "#2A2A2A" : "#DDDDDD",
+                        }}>—</span>
+                      )
+                    )}
+
+                    {/* Today badge */}
+                    {todayFlag && (
+                      <span style={{
+                        position: "absolute", top: 3, right: 4,
+                        fontFamily: "Rajdhani, sans-serif", fontSize: "7px", fontWeight: 700,
+                        color: "#CC0000", letterSpacing: "0.05em",
+                      }}>TODAY</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Legend */}
+          <div style={{
+            display: "flex", gap: "12px", flexWrap: "wrap",
+            padding: "10px 16px 16px",
+            background: isDark ? "#0A0A0A" : "#F4F4F4",
+          }}>
+            {Object.entries(STATUS_COLORS).map(([status, cfg]) => (
+              <div key={status} style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: cfg.dot }} />
+                <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>
+                  {status}
+                </span>
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+              <span style={{ width: 8, height: 8, borderRadius: "2px", border: "1.5px solid #CC0000", display: "inline-block" }} />
+              <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted }}>Today</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Attendance Page ──────────────────────────────
 export default function Attendance() {
   const { theme } = useTheme();
@@ -339,9 +800,14 @@ export default function Attendance() {
   const [editRecord,   setEditRecord]   = useState(null);
   const [page,         setPage]         = useState(1);
   const [viewSnapshotUrl, setViewSnapshotUrl] = useState(null);
+  // ── NEW: work description viewer state ──
+  const [viewWorkDesc, setViewWorkDesc] = useState(null); // holds the full rec object
+  // ── NEW: calendar view state ──
+  const [calendarEmployee, setCalendarEmployee] = useState(null);
 
   const [employees,        setEmployees]        = useState([]);
   const [attendanceByDate, setAttendanceByDate] = useState([]);
+  const [leaves,           setLeaves]           = useState([]);
   const [loadingEmp,       setLoadingEmp]       = useState(true);
   const [loadingAtt,       setLoadingAtt]       = useState(true);
 
@@ -364,6 +830,12 @@ export default function Attendance() {
     return unsub;
   }, [dateFilter]);
 
+  // Leave requests — source of truth for On Leave / WFH leave approvals
+  useEffect(() => {
+    const unsub = subscribeLeaveRequests((list) => setLeaves(list));
+    return unsub;
+  }, []);
+
   const attMap = Object.fromEntries(attendanceByDate.map((a) => [a.empId, a]));
 
   const dateObj   = new Date(dateFilter + "T00:00:00");
@@ -381,26 +853,67 @@ export default function Attendance() {
       date:        dateFilter,
       dateLabel,
       status:      att?.status   || "No Record",
-      checkIn:     att?.checkIn  || "--",
-      checkOut:    att?.checkOut || "--",
+      logIn:     att?.logIn  || "--",
+      logOut:    att?.logOut || "--",
       hoursWorked: att?.hoursWorked || "--",
-      isLate:      att?.checkIn  ? att.checkIn > "09:30 AM" : false,
+      isLate:      att?.logIn  ? att.logIn > "09:30 AM" : false,
       hasRecord:   !!att,
       markedBy:    att?.markedBy || "manual",
       webcamSnapshotUrl: att?.webcamSnapshotUrl || null,
+      workDescription: att?.workDescription || null,
     };
   });
 
   const presentCount = mergedRecords.filter((r) => r.status === "Present").length;
-  const absentCount  = mergedRecords.filter((r) => r.status === "Absent").length;
-  const leaveCount   = mergedRecords.filter((r) => r.status === "Leave").length;
-  const wfhCount     = mergedRecords.filter((r) => r.status === "WFH").length;
+  // Absent = explicitly marked Absent + employees with no attendance record yet (unmarked = absent)
+  const explicitAbsent = mergedRecords.filter((r) => r.status === "Absent").length;
+  const noRecordCount  = mergedRecords.filter((r) => r.status === "No Record").length;
+  const absentCount    = explicitAbsent + noRecordCount;
+
+  // On Leave — approved leave requests where requestType === "Leave" covering dateFilter
+  // Raw leaveRequest docs use `requestType` ("Leave" | "WFH"), not `type`
+  const approvedLeaveEmpIds = new Set(
+    leaves
+      .filter((r) => {
+        if (r.status !== "Approved") return false;
+        if ((r.requestType || r.type) === "WFH") return false;
+        const from = r.from || "";
+        const to   = r.to   || from;
+        return from <= dateFilter && dateFilter <= to;
+      })
+      .map((r) => r.empId)
+  );
+  // Also count attendance records explicitly marked "Leave" for this date
+  const attLeaveEmpIds = new Set(
+    mergedRecords.filter((r) => r.status === "Leave").map((r) => r.empId)
+  );
+  const leaveCount = new Set([...approvedLeaveEmpIds, ...attLeaveEmpIds]).size;
+
+  // WFH — approved WFH leave requests covering dateFilter OR attendance records marked "WFH"
+  const approvedWfhEmpIds = new Set(
+    leaves
+      .filter((r) => {
+        if (r.status !== "Approved") return false;
+        if ((r.requestType || r.type) !== "WFH") return false;
+        const from = r.from || "";
+        const to   = r.to   || from;
+        return from <= dateFilter && dateFilter <= to;
+      })
+      .map((r) => r.empId)
+  );
+  const attWfhEmpIds = new Set(
+    mergedRecords.filter((r) => r.status === "WFH").map((r) => r.empId)
+  );
+  const wfhCount = new Set([...approvedWfhEmpIds, ...attWfhEmpIds]).size;
+
   const lateCount    = mergedRecords.filter((r) => r.isLate && r.status === "Present").length;
 
   const departments = ["All", ...new Set(employees.map((e) => e.department).filter(Boolean))];
 
   const filtered = mergedRecords.filter((r) => {
-    const matchStatus = statusFilter === "All" || r.status === statusFilter;
+    // "No Record" (unmarked) is treated as Absent — consistent with KPI boxes
+    const effectiveStatus = r.status === "No Record" ? "Absent" : r.status;
+    const matchStatus = statusFilter === "All" || effectiveStatus === statusFilter;
     const matchDept   = deptFilter   === "All" || r.department === deptFilter;
     const matchSearch = !search ||
       r.empName.toLowerCase().includes(search.toLowerCase()) ||
@@ -417,37 +930,25 @@ export default function Attendance() {
       empId:       updated.empId,
       date:        updated.date,
       status:      updated.status,
-      checkIn:     updated.checkIn,
-      checkOut:    updated.checkOut,
+      logIn:     updated.logIn,
+      logOut:    updated.logOut,
       hoursWorked: updated.hoursWorked,
     });
     setEditRecord(null);
   };
 
   // ── CSV Export ────────────────────────────────────────
-  // Exports ALL currently-filtered records (not just the current page)
-  // as a downloadable .csv file named after the selected date.
   const handleExport = useCallback(() => {
     const rows = filtered.length > 0 ? filtered : mergedRecords;
     if (rows.length === 0) return;
 
     const headers = [
-      "Employee Name",
-      "Employee ID",
-      "Role",
-      "Department",
-      "Date",
-      "Status",
-      "Check In",
-      "Check Out",
-      "Hours Worked",
-      "Late Arrival",
-      "Marked By",
+      "Employee Name", "Employee ID", "Role", "Department", "Date",
+      "Status", "Log In", "Log Out", "Hours Worked", "Late Arrival", "Marked By",
     ];
 
     const escape = (val) => {
       const str = val == null ? "" : String(val);
-      // Wrap in quotes if it contains commas, quotes, or newlines
       return str.includes(",") || str.includes('"') || str.includes("\n")
         ? `"${str.replace(/"/g, '""')}"`
         : str;
@@ -457,14 +958,8 @@ export default function Attendance() {
       headers.join(","),
       ...rows.map((r) =>
         [
-          escape(r.empName),
-          escape(r.empId),
-          escape(r.role),
-          escape(r.department),
-          escape(r.date),
-          escape(r.status),
-          escape(r.checkIn),
-          escape(r.checkOut),
+          escape(r.empName), escape(r.empId), escape(r.role), escape(r.department),
+          escape(r.date), escape(r.status), escape(r.logIn), escape(r.logOut),
           escape(r.hoursWorked),
           r.isLate && r.status === "Present" ? "Yes" : "No",
           escape(r.markedBy),
@@ -472,7 +967,7 @@ export default function Attendance() {
       ),
     ];
 
-    const csvContent = "\uFEFF" + csvRows.join("\r\n"); // BOM for Excel UTF-8
+    const csvContent = "\uFEFF" + csvRows.join("\r\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url  = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -574,7 +1069,6 @@ export default function Attendance() {
       </div>
 
       {/* ── Stat Cards ── */}
-      {/* Wraps naturally: 3 on mobile, 5 on wider screens */}
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
         {statCards.map((c) => <StatCard key={c.label} {...c} />)}
       </div>
@@ -598,7 +1092,7 @@ export default function Attendance() {
           }}
         />
 
-        {/* Search — grows to fill available space */}
+        {/* Search */}
         <div style={{ position: "relative", flex: "1 1 160px", minWidth: "160px" }}>
           <Search size={13} style={{ position: "absolute", left: "10px", top: "50%", transform: "translateY(-50%)", color: "#666666" }} />
           <input
@@ -633,7 +1127,7 @@ export default function Attendance() {
               outline: "none", cursor: "pointer",
             }}
           >
-            {["All", "Present", "Absent", "Leave", "WFH", "No Record"].map((s) => (
+            {["All", "Present", "Absent", "Leave", "WFH"].map((s) => (
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
@@ -675,10 +1169,10 @@ export default function Attendance() {
                 <TH w="110px">DEPARTMENT</TH>
                 <TH w="110px">DATE</TH>
                 <TH w="120px">STATUS</TH>
-                <TH w="110px">CHECK IN</TH>
-                <TH w="110px">CHECK OUT</TH>
+                <TH w="110px">LOG IN</TH>
+                <TH w="110px">LOG OUT</TH>
                 <TH w="90px">HOURS</TH>
-                <TH w="70px">ACTION</TH>
+                <TH w="90px">ACTION</TH>
               </tr>
             </thead>
             <tbody>
@@ -708,7 +1202,7 @@ export default function Attendance() {
                           </div>
                           <div>
                             <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", fontWeight: 600, color: textPri, lineHeight: 1.2 }}>{rec.empName}</p>
-                            <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>{rec.empId} · {rec.role}</p>
+                            <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: textMuted }}>{formatEmpId(rec.empId)} · {rec.role}</p>
                           </div>
                         </div>
                       </td>
@@ -742,14 +1236,14 @@ export default function Attendance() {
                         </div>
                       </td>
 
-                      {/* Check In */}
+                      {/* Log In */}
                       <td style={{ padding: "11px 14px" }}>
-                        <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.checkIn === "--" ? textMuted : (rec.isLate ? "#6366F1" : "#00B8B8") }}>{rec.checkIn}</span>
+                        <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.logIn === "--" ? textMuted : (rec.isLate ? "#6366F1" : "#00B8B8") }}>{rec.logIn}</span>
                       </td>
 
-                      {/* Check Out */}
+                      {/* Log Out */}
                       <td style={{ padding: "11px 14px" }}>
-                        <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.checkOut === "--" ? textMuted : (isDark ? "#AAAAAA" : "#555555") }}>{rec.checkOut}</span>
+                        <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.logOut === "--" ? textMuted : (isDark ? "#AAAAAA" : "#555555") }}>{rec.logOut}</span>
                       </td>
 
                       {/* Hours */}
@@ -757,7 +1251,7 @@ export default function Attendance() {
                         <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "12px", color: rec.hoursWorked === "--" ? textMuted : "#C9922A" }}>{rec.hoursWorked}</span>
                       </td>
 
-                      {/* Action */}
+                      {/* Action — edit + NEW calendar button */}
                       <td style={{ padding: "11px 14px" }}>
                         <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                           {rec.webcamSnapshotUrl && (
@@ -771,6 +1265,28 @@ export default function Attendance() {
                               <Camera size={13} />
                             </button>
                           )}
+                          {/* Work Description button */}
+                          {rec.workDescription && (
+                            <button
+                              onClick={() => setViewWorkDesc(rec)}
+                              style={{ width: "30px", height: "30px", borderRadius: "6px", border: "1px solid rgba(0,184,184,0.3)", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#00B8B8", transition: "all 150ms" }}
+                              onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,184,184,0.10)"; e.currentTarget.style.borderColor = "#00B8B8"; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderColor = "rgba(0,184,184,0.3)"; }}
+                              title="View work summary"
+                            >
+                              <FileText size={13} />
+                            </button>
+                          )}
+                          {/* Calendar View button */}
+                          <button
+                            onClick={() => setCalendarEmployee(employees.find((e) => e.id === rec.empId))}
+                            style={{ width: "30px", height: "30px", borderRadius: "6px", border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`, background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: isDark ? "#555555" : "#888888", transition: "all 150ms" }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#CC0000"; e.currentTarget.style.color = "#CC0000"; e.currentTarget.style.background = "rgba(204,0,0,0.06)"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = isDark ? "#2A2A2A" : "#E0E0E0"; e.currentTarget.style.color = isDark ? "#555555" : "#888888"; e.currentTarget.style.background = "transparent"; }}
+                            title="View calendar"
+                          >
+                            <CalendarDays size={13} />
+                          </button>
                           <button
                             onClick={() => setEditRecord(rec)}
                             style={{ width: "30px", height: "30px", borderRadius: "6px", border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`, background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: isDark ? "#555555" : "#888888", transition: "all 150ms" }}
@@ -829,17 +1345,36 @@ export default function Attendance() {
           </div>
         ) : (
           paginated.map((rec) => (
-            <AttendanceMobileCard
-              key={rec.id}
-              rec={rec}
-              theme={theme}
-              isDark={isDark}
-              textPri={textPri}
-              textMuted={textMuted}
-              border={border}
-              onEdit={setEditRecord}
-              onViewSnapshot={setViewSnapshotUrl}
-            />
+            <div key={rec.id}>
+              <AttendanceMobileCard
+                rec={rec}
+                theme={theme}
+                isDark={isDark}
+                textPri={textPri}
+                textMuted={textMuted}
+                border={border}
+                onEdit={setEditRecord}
+                onViewSnapshot={setViewSnapshotUrl}
+              />
+              {/* Calendar button below each mobile card */}
+              <button
+                onClick={() => setCalendarEmployee(employees.find((e) => e.id === rec.empId))}
+                style={{
+                  marginTop: "6px", width: "100%", padding: "8px",
+                  borderRadius: "8px", border: `1px solid ${isDark ? "#1E1E1E" : "#E8E8E8"}`,
+                  background: "transparent", cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: "6px",
+                  color: isDark ? "#555" : "#999",
+                  fontFamily: "Rajdhani, sans-serif", fontSize: "12px", fontWeight: 600,
+                  transition: "all 150ms",
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.borderColor = "#CC0000"; e.currentTarget.style.color = "#CC0000"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.borderColor = isDark ? "#1E1E1E" : "#E8E8E8"; e.currentTarget.style.color = isDark ? "#555" : "#999"; }}
+              >
+                <CalendarDays size={13} />
+                View Calendar
+              </button>
+            </div>
           ))
         )}
 
@@ -914,6 +1449,24 @@ export default function Attendance() {
           theme={theme}
           onClose={() => setEditRecord(null)}
           onSave={handleSave}
+        />
+      )}
+
+      {/* ── Work Description Modal (NEW) ── */}
+      {viewWorkDesc && (
+        <WorkDescModal
+          rec={viewWorkDesc}
+          theme={theme}
+          onClose={() => setViewWorkDesc(null)}
+        />
+      )}
+
+      {/* ── Calendar View Modal (NEW) ── */}
+      {calendarEmployee && (
+        <CalendarViewModal
+          employee={calendarEmployee}
+          theme={theme}
+          onClose={() => setCalendarEmployee(null)}
         />
       )}
     </div>

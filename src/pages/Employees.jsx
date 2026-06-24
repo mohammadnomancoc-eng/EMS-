@@ -4,7 +4,7 @@ import {
   Search, Plus, Filter, Download, Edit2, Trash2,
   Mail, Phone, X, Check, ChevronDown, Users,
   UserCheck, UserX, Clock, Copy, CheckCheck, KeyRound, ShieldCheck,
-  Camera, Upload, Image as ImageIcon,
+  Camera, Upload, Image as ImageIcon, FileText, ExternalLink,
 } from "lucide-react";
 
 import {
@@ -13,10 +13,134 @@ import {
   updateEmployee,
   updateEmployeePhoto,
   getDepartments,
+  subscribeAttendanceByDate,
+  subscribeLeaveRequests,
+  saveEmployeeCredentials,
+  markCredentialsViewed,
 } from "../firebase/firestoreService";
-import { createEmployeeAccount, deleteEmployeeAccount, generateEmail, generatePassword } from "../firebase/employeeAuthService";
+import { createEmployeeAccount, deleteEmployeeAccount, generateEmail, generatePassword, provisionTestEmployee } from "../firebase/employeeAuthService";
 import { firebaseConfig } from "../firebase/config";
-import { uploadEmployeePhoto, getThumbnailUrl } from "../cloudinary/cloudinaryService";
+import { uploadEmployeePhoto, getThumbnailUrl, getOfferLetterViewUrl, getOfferLetterDownloadUrl, getGoogleDocsViewerUrl } from "../cloudinary/cloudinaryService";
+import { generateOfferLetter } from "../utils/generateOfferLetter";
+
+// ── Offer Letter Viewer ────────────────────────────────────────
+// Uses Google Docs Viewer inside an iframe for PDFs, and <img> for images.
+// Google Docs Viewer works cross-origin with Cloudinary raw/image URLs without
+// any CORS or plugin issues — works on all browsers and mobile.
+// Admin gets a VIEW toggle and a DOWNLOAD button.
+function OfferLetterViewer({ url, fileName, uploadedAt, theme, border, isDark, labelColor, textColor }) {
+  const [open, setOpen] = useState(false);
+
+  const cleanUrl    = getOfferLetterViewUrl(url);
+  const downloadUrl = getOfferLetterDownloadUrl(url);
+  const isImage     = /\.(jpe?g|png|webp)(\?|$)/i.test(cleanUrl);
+  // Google Docs Viewer handles both raw and image Cloudinary URLs for PDFs
+  const viewerUrl   = isImage ? cleanUrl : getGoogleDocsViewerUrl(cleanUrl);
+
+  const uploadDate = uploadedAt
+    ? new Date(uploadedAt.toDate?.() ?? uploadedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+    : "Uploaded";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      {/* File chip row */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: "10px", padding: "12px",
+        borderRadius: "10px", background: isDark ? "#0A0A0A" : "#F5F5F5", border: `1px solid ${border}`,
+      }}>
+        {/* File icon */}
+        <div style={{
+          width: "36px", height: "36px", borderRadius: "8px", flexShrink: 0,
+          background: "rgba(0,184,184,0.10)", border: "1px solid rgba(0,184,184,0.25)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <FileText size={16} style={{ color: "#00B8B8" }} />
+        </div>
+        {/* Name + date */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", fontWeight: 600,
+            color: textColor, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {fileName || "Offer Letter"}
+          </div>
+          <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "10px", color: labelColor, marginTop: "1px" }}>
+            {uploadDate}
+          </div>
+        </div>
+        {/* Action buttons */}
+        <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+          {/* Download — force-downloads the file */}
+          <a
+            href={downloadUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Download"
+            style={{
+              width: "30px", height: "30px", borderRadius: "6px", cursor: "pointer",
+              background: "rgba(201,146,42,0.08)", border: "1px solid rgba(201,146,42,0.3)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#C9922A", textDecoration: "none",
+            }}>
+            <Download size={13} />
+          </a>
+          {/* View toggle — opens Google Docs Viewer inline */}
+          <button
+            onClick={() => setOpen(v => !v)}
+            style={{
+              padding: "0 12px", height: "30px", borderRadius: "6px", cursor: "pointer",
+              background: open ? "rgba(0,184,184,0.15)" : "rgba(0,184,184,0.08)",
+              border: "1px solid rgba(0,184,184,0.3)", color: "#00B8B8",
+              fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px",
+              letterSpacing: "0.06em", whiteSpace: "nowrap",
+            }}>
+            {open ? "HIDE" : "VIEW"}
+          </button>
+        </div>
+      </div>
+
+      {/* Inline viewer — only mounts when open */}
+      {open && (
+        <div style={{
+          borderRadius: "10px", overflow: "hidden", border: `1px solid ${border}`,
+          background: isDark ? "#0D0D0D" : "#F0F0F0", position: "relative",
+        }}>
+          {/* Loading shimmer shown behind iframe */}
+          <div style={{
+            position: "absolute", inset: 0,
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px",
+          }}>
+            <div style={{
+              width: "18px", height: "18px", borderRadius: "50%",
+              border: "2px solid #00B8B8", borderTopColor: "transparent",
+              animation: "spin 0.8s linear infinite",
+            }} />
+            <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: labelColor }}>
+              Loading…
+            </span>
+          </div>
+          {isImage ? (
+            <img
+              src={viewerUrl}
+              alt="Offer Letter"
+              style={{ width: "100%", display: "block", objectFit: "contain", maxHeight: "420px", position: "relative", zIndex: 1 }}
+            />
+          ) : (
+            <iframe
+              src={viewerUrl}
+              title="Offer Letter"
+              style={{ width: "100%", height: "500px", border: "none", display: "block", position: "relative", zIndex: 1 }}
+              allowFullScreen
+            />
+          )}
+        </div>
+      )}
+      {open && !isImage && (
+        <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: labelColor, textAlign: "center" }}>
+          If the document doesn't load, use the Download button above to open it directly.
+        </p>
+      )}
+    </div>
+  );
+}
 
 // ── Responsive hook ────────────────────────────────────────────
 function useIsMobile() {
@@ -30,6 +154,17 @@ function useIsMobile() {
 }
 
 // ── Helpers ────────────────────────────────────────────────────
+/** Convert stored Firestore ID (hyphens) to the display format (slashes).
+ *  e.g. "RWTPVTLTD-IT-OFLT-122025-05" → "RWTPVTLTD/IT/OFLT/122025/05"
+ *  Old-style IDs like "RWT001" are returned unchanged.
+ */
+function formatEmpId(id) {
+  if (!id) return id;
+  // New-style IDs start with RWTPVTLTD- and use hyphens as separators
+  if (id.startsWith("RWTPVTLTD-")) return id.replace(/-/g, "/");
+  return id;
+}
+
 function getInitials(name) {
   return name.split(" ").map((n) => n[0]).join("").toUpperCase();
 }
@@ -39,8 +174,12 @@ const avatarColors = [
   "#EF4444", "#8B5CF6", "#06B6D4", "#84CC16",
 ];
 function getAvatarColor(id) {
-  const idx = parseInt(id.replace("RWT", "")) % avatarColors.length;
-  return avatarColors[idx];
+  // String hash — works for any ID format (old RWT### or new RWTPVTLTD/…)
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return avatarColors[hash % avatarColors.length];
 }
 
 // ── Status Badge ───────────────────────────────────────────────
@@ -130,7 +269,7 @@ function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
               {emp.name}
             </div>
             <div style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#00B8B8", marginTop: "1px" }}>
-              {emp.id} · {emp.role}
+              {formatEmpId(emp.id)} · {emp.role}
             </div>
           </div>
         </div>
@@ -202,6 +341,7 @@ function CredentialsModal({ theme, credentials, onClose }) {
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [copiedPass,  setCopiedPass]  = useState(false);
   const [copiedAll,   setCopiedAll]   = useState(false);
+  const [genLoading,  setGenLoading]  = useState(false);
 
   const copy = (value, setter) => {
     navigator.clipboard.writeText(value);
@@ -215,9 +355,28 @@ function CredentialsModal({ theme, credentials, onClose }) {
       `---------------------------\n` +
       `Email:    ${credentials.email}\n` +
       `Password: ${credentials.password}\n` +
-      `Emp ID:   ${credentials.empId}\n` +
+      `Emp ID:   ${formatEmpId(credentials.empId)}\n` +
       `\nLogin at: ${window.location.origin}/login`;
     copy(msg, setCopiedAll);
+  };
+
+  const handleDownloadOfferLetter = async () => {
+    setGenLoading(true);
+    try {
+      await generateOfferLetter({
+        empId:          credentials.empId,
+        name:           credentials.name,
+        role:           credentials.role        || "Jr. Software Developer Intern",
+        joinDate:       credentials.joinDate    || "",
+        completionDate: credentials.completionDate || "",
+        department:     credentials.department  || "",
+      });
+    } catch (err) {
+      console.error("Offer letter generation failed:", err);
+      alert("Could not generate offer letter: " + (err.message || "Unknown error"));
+    } finally {
+      setGenLoading(false);
+    }
   };
 
   const CopyBtn = ({ value, copied, setter, label }) => (
@@ -280,7 +439,7 @@ function CredentialsModal({ theme, credentials, onClose }) {
             <div style={{ background: inputBg, border: `1px solid ${border}`, borderRadius: "6px",
               padding: "9px 12px", fontFamily: "Share Tech Mono, monospace", fontSize: "14px",
               color: "#00B8B8", letterSpacing: "0.08em" }}>
-              {credentials.empId}
+              {formatEmpId(credentials.empId)}
             </div>
           </div>
 
@@ -325,7 +484,34 @@ function CredentialsModal({ theme, credentials, onClose }) {
           💡 Ask the employee to change their password after first login. These credentials are auto-generated.
         </div>
 
-        <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+        {/* ── Download Offer Letter ── */}
+        <button
+          onClick={handleDownloadOfferLetter}
+          disabled={genLoading}
+          style={{
+            width: "100%", marginTop: "14px", padding: "11px", borderRadius: "7px",
+            cursor: genLoading ? "not-allowed" : "pointer",
+            background: genLoading ? "rgba(0,184,184,0.06)" : "rgba(0,184,184,0.12)",
+            border: "1px solid rgba(0,184,184,0.35)", color: "#00B8B8",
+            fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px",
+            letterSpacing: "0.1em",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+            transition: "all 200ms",
+          }}
+        >
+          {genLoading ? (
+            <>
+              <div style={{ width: "13px", height: "13px", borderRadius: "50%",
+                border: "2px solid rgba(0,184,184,0.3)", borderTopColor: "#00B8B8",
+                animation: "spin 0.7s linear infinite" }} />
+              GENERATING PDF…
+            </>
+          ) : (
+            <><Download size={14} /> DOWNLOAD OFFER LETTER (PDF)</>
+          )}
+        </button>
+
+        <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
           <button onClick={copyAll} style={{
             flex: 1, padding: "10px", borderRadius: "6px", cursor: "pointer",
             background: copiedAll ? "rgba(0,184,184,0.15)" : "transparent",
@@ -454,10 +640,25 @@ function PhotoUploader({ theme, currentUrl, empName, onUploaded, empId }) {
 // ── Add / Edit Employee Modal ──────────────────────────────────
 function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
   const isEdit = !!initial;
-  const [form, setForm] = useState(initial || {
+  // Always merge with defaults so every field has a defined value.
+  // Older Firestore docs may be missing newer fields — those arrive as undefined,
+  // which makes React treat the input as uncontrolled (the warning in the console).
+  const defaults = {
     name: "", role: "", department: "Engineering",
-    email: "", phone: "", joinDate: "", completionDate: "", status: "Present", salary: "",
-    workType: "WFO", photoUrl: "", photoPublicId: "",
+    email: "", phone: "", joinDate: "", completionDate: "", salary: "",
+    workType: "WFO", gender: "Male", employeeType: "Full Time",
+    photoUrl: null, photoPublicId: null,
+  };
+  const [form, setForm] = useState(() => {
+    if (!initial) return defaults;
+    const merged = { ...defaults, ...initial };
+    // Coerce any remaining undefined string fields to "" so inputs stay controlled
+    Object.keys(defaults).forEach(k => {
+      if (merged[k] === undefined || merged[k] === null) {
+        merged[k] = defaults[k];
+      }
+    });
+    return merged;
   });
   const [errors,    setErrors]    = useState({});
   const [saving,    setSaving]    = useState(false);
@@ -571,8 +772,11 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
             {field("Join Date", "joinDate", "date")}
             {field("Completion Date", "completionDate", "date")}
           </div>
-          {field("Status", "status", "text", ["Present", "Absent", "Leave", "WFH"])}
           {field("Work Type", "workType", "text", ["WFO", "WFH", "Hybrid"])}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            {field("Gender", "gender", "text", ["Male", "Female", "Other"])}
+            {field("Employee Type", "employeeType", "text", ["Full Time", "Trainee", "Intern"])}
+          </div>
           {field("Monthly Salary (₹)", "salary", "number")}
         </div>
 
@@ -590,7 +794,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
               <span style={{ fontFamily: "Share Tech Mono, monospace", color: "#00B8B8" }}>
                 EmpId@{new Date().getFullYear()}&nbsp;
               </span>
-              <span style={{ fontSize: "11px" }}>(e.g. RWT013@{new Date().getFullYear()})</span>
+              <span style={{ fontSize: "11px" }}>(e.g. RWTPVTLTD/IT/OFLT/122025/05@{new Date().getFullYear()})</span>
             </div>
           </div>
         )}
@@ -645,6 +849,51 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
   const [uploading,       setUploading]       = useState(false);
   const [uploadProgress,  setUploadProgress]  = useState(0);
   const [uploadErr,       setUploadErr]       = useState("");
+  const [offerGenLoading, setOfferGenLoading] = useState(false);
+
+  // ── Credentials reveal state ──
+  const [credsRevealed,   setCredsRevealed]   = useState(false);
+  const [copiedCredEmail, setCopiedCredEmail] = useState(false);
+  const [copiedCredPass,  setCopiedCredPass]  = useState(false);
+  // ── Edit stored password ──
+  const [editingPw,  setEditingPw]  = useState(false);
+  const [editPwVal,  setEditPwVal]  = useState("");
+  const [pwSaving,   setPwSaving]   = useState(false);
+  const [pwSaved,    setPwSaved]    = useState(false);
+  const [pwSaveErr,  setPwSaveErr]  = useState("");
+
+  const handleUpdateStoredPassword = async () => {
+    if (!editPwVal.trim()) { setPwSaveErr("Password cannot be empty."); return; }
+    setPwSaving(true); setPwSaveErr("");
+    try {
+      await updateEmployee(emp.id, { loginPassword: editPwVal.trim() });
+      emp.loginPassword = editPwVal.trim(); // reflect locally without refetch
+      setPwSaved(true);
+      setEditingPw(false);
+      setEditPwVal("");
+      setTimeout(() => setPwSaved(false), 2500);
+    } catch (err) {
+      setPwSaveErr(err.message || "Failed to update.");
+    } finally {
+      setPwSaving(false);
+    }
+  };
+
+  const hasCredentials = !!(emp.loginEmail && emp.loginPassword);
+
+  const handleRevealCredentials = async () => {
+    setCredsRevealed(true);
+    // Mark as viewed in Firestore (only first time — if not already marked)
+    if (!emp.credentialsViewedAt) {
+      try { await markCredentialsViewed(emp.id); } catch (_) {}
+    }
+  };
+
+  const copyCredential = (value, setter) => {
+    navigator.clipboard.writeText(value);
+    setter(true);
+    setTimeout(() => setter(false), 2000);
+  };
 
   const handlePhotoChange = async (file) => {
     if (!file) return;
@@ -671,14 +920,16 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
   );
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200 }}
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 200,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "72px 16px 16px",
+      backdropFilter: "blur(4px)" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      {/* Full-width on mobile, 360 px panel on desktop */}
       <div style={{
-        position: "absolute", right: 0, top: 0, bottom: 0,
-        width: isMobile ? "100%" : "360px",
-        background: bg, borderLeft: `1px solid ${border}`,
+        width: "100%", maxWidth: "420px", maxHeight: "calc(100vh - 88px)",
+        background: bg, border: `1px solid ${border}`, borderRadius: "16px",
         display: "flex", flexDirection: "column",
+        boxShadow: "0 24px 60px rgba(0,0,0,0.5)",
       }}>
         {/* Header */}
         <div style={{ padding: "20px", borderBottom: `1px solid ${border}`,
@@ -728,7 +979,6 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
               <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: labelColor, marginTop: "2px" }}>
                 {emp.role}
               </div>
-              <div style={{ marginTop: "8px" }}><StatusBadge status={emp.status} theme={theme} /></div>
             </div>
             {uploadErr && (
               <div style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#CC0000",
@@ -739,13 +989,330 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
             )}
           </div>
 
-          {row("EMPLOYEE ID", emp.id)}
+          {row("EMPLOYEE ID", formatEmpId(emp.id))}
           {row("DEPARTMENT", emp.department)}
           {row("EMAIL", emp.email)}
           {row("PHONE", emp.phone)}
           {row("JOIN DATE", emp.joinDate ? new Date(emp.joinDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")}
           {row("COMPLETION DATE", emp.completionDate ? new Date(emp.completionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "Not set")}
           {row("MONTHLY SALARY", `₹${Number(emp.salary).toLocaleString("en-IN")}`)}
+
+          {/* ── Login Credentials Section ── */}
+          <div style={{ marginTop: "20px" }}>
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              marginBottom: "10px",
+            }}>
+              <div style={{
+                fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                color: "#CC0000", letterSpacing: "0.2em", textTransform: "uppercase",
+                display: "flex", alignItems: "center", gap: "6px",
+              }}>
+                <ShieldCheck size={11} style={{ color: "#00B8B8" }} />
+                LOGIN CREDENTIALS
+              </div>
+              {hasCredentials && emp.credentialsViewedAt && (
+                <span style={{
+                  fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                  color: labelColor, letterSpacing: "0.1em",
+                  background: isDark ? "#1A1A1A" : "#F0F0F0",
+                  border: `1px solid ${border}`, borderRadius: "4px", padding: "2px 6px",
+                }}>
+                  VIEWED BEFORE
+                </span>
+              )}
+            </div>
+
+            {!hasCredentials ? (
+              <div style={{
+                padding: "14px", borderRadius: "10px", textAlign: "center",
+                background: isDark ? "#0A0A0A" : "#F8F8F8",
+                border: `1px dashed ${isDark ? "#2A2A2A" : "#D8D8D8"}`,
+              }}>
+                <KeyRound size={18} style={{ color: labelColor, margin: "0 auto 6px" }} />
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: labelColor }}>
+                  No credentials stored
+                </p>
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#444444" : "#BBBBBB", marginTop: "3px" }}>
+                  Only employees created after this update have stored credentials.
+                </p>
+              </div>
+            ) : !credsRevealed ? (
+              /* Locked state */
+              <div style={{
+                padding: "16px", borderRadius: "10px", textAlign: "center",
+                background: isDark ? "#0A0A0A" : "#F8F8F8",
+                border: `1px solid rgba(0,184,184,0.25)`,
+                display: "flex", flexDirection: "column", alignItems: "center", gap: "10px",
+              }}>
+                <div style={{
+                  width: "42px", height: "42px", borderRadius: "50%",
+                  background: "rgba(0,184,184,0.10)", border: "1px solid rgba(0,184,184,0.3)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <KeyRound size={18} style={{ color: "#00B8B8" }} />
+                </div>
+                <div>
+                  <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", color: textColor }}>
+                    Credentials Hidden
+                  </p>
+                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: labelColor, marginTop: "3px" }}>
+                    {emp.credentialsViewedAt
+                      ? "These credentials have been viewed before."
+                      : "These credentials have never been revealed."}
+                  </p>
+                </div>
+                <button
+                  onClick={handleRevealCredentials}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "6px",
+                    padding: "8px 20px", borderRadius: "7px", cursor: "pointer",
+                    background: "rgba(0,184,184,0.12)", border: "1px solid rgba(0,184,184,0.4)",
+                    color: "#00B8B8", fontFamily: "Rajdhani, sans-serif", fontWeight: 700,
+                    fontSize: "12px", letterSpacing: "0.1em",
+                  }}
+                >
+                  <ShieldCheck size={13} /> REVEAL CREDENTIALS
+                </button>
+              </div>
+            ) : (
+              /* Revealed state */
+              <div style={{
+                borderRadius: "10px", overflow: "hidden",
+                border: "1px solid rgba(0,184,184,0.3)",
+                background: isDark ? "#0A0A0A" : "#F8F8F8",
+              }}>
+                {/* Header bar */}
+                <div style={{
+                  padding: "8px 12px", background: "rgba(0,184,184,0.08)",
+                  borderBottom: "1px solid rgba(0,184,184,0.2)",
+                  display: "flex", alignItems: "center", gap: "6px",
+                }}>
+                  <ShieldCheck size={11} style={{ color: "#00B8B8" }} />
+                  <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                    color: "#00B8B8", letterSpacing: "0.15em" }}>ADMIN EYES ONLY</span>
+                </div>
+
+                <div style={{ padding: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {/* Login Email */}
+                  <div>
+                    <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                      color: "#CC0000", letterSpacing: "0.18em", marginBottom: "5px" }}>LOGIN EMAIL</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <div style={{
+                        flex: 1, minWidth: 0, padding: "7px 10px", borderRadius: "6px",
+                        background: isDark ? "#111111" : "#FFFFFF", border: `1px solid ${border}`,
+                        fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textColor,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>
+                        {emp.loginEmail}
+                      </div>
+                      <button
+                        onClick={() => copyCredential(emp.loginEmail, setCopiedCredEmail)}
+                        style={{
+                          flexShrink: 0, padding: "6px 10px", borderRadius: "5px", cursor: "pointer",
+                          background: copiedCredEmail ? "rgba(0,184,184,0.15)" : "transparent",
+                          border: `1px solid ${copiedCredEmail ? "#00B8B8" : border}`,
+                          color: copiedCredEmail ? "#00B8B8" : labelColor,
+                          fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+                          display: "flex", alignItems: "center", gap: "4px",
+                        }}
+                      >
+                        {copiedCredEmail ? <CheckCheck size={11} /> : <Copy size={11} />}
+                        {copiedCredEmail ? "COPIED" : "COPY"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Password */}
+                  <div>
+                    <div style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                      color: "#CC0000", letterSpacing: "0.18em", marginBottom: "5px",
+                      display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      PASSWORD
+                      <button
+                        onClick={() => { setEditingPw(v => !v); setEditPwVal(emp.loginPassword || ""); setPwSaveErr(""); }}
+                        style={{ background: "none", border: "none", cursor: "pointer",
+                          fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+                          color: editingPw ? "#CC0000" : "#00B8B8", letterSpacing: "0.1em" }}
+                      >
+                        {editingPw ? "CANCEL" : "UPDATE"}
+                      </button>
+                    </div>
+
+                    {!editingPw ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <div style={{
+                          flex: 1, padding: "7px 10px", borderRadius: "6px",
+                          background: isDark ? "#111111" : "#FFFFFF",
+                          border: "1px solid rgba(0,184,184,0.3)",
+                          fontFamily: "Share Tech Mono, monospace", fontSize: "13px",
+                          color: "#00B8B8", letterSpacing: "0.05em",
+                          wordBreak: "break-all",
+                        }}>
+                          {emp.loginPassword}
+                        </div>
+                        <button
+                          onClick={() => copyCredential(emp.loginPassword, setCopiedCredPass)}
+                          style={{
+                            flexShrink: 0, padding: "6px 10px", borderRadius: "5px", cursor: "pointer",
+                            background: copiedCredPass ? "rgba(0,184,184,0.15)" : "transparent",
+                            border: `1px solid ${copiedCredPass ? "#00B8B8" : border}`,
+                            color: copiedCredPass ? "#00B8B8" : labelColor,
+                            fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+                            display: "flex", alignItems: "center", gap: "4px",
+                          }}
+                        >
+                          {copiedCredPass ? <CheckCheck size={11} /> : <Copy size={11} />}
+                          {copiedCredPass ? "COPIED" : "COPY"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                        <input
+                          type="text"
+                          value={editPwVal}
+                          onChange={e => setEditPwVal(e.target.value)}
+                          placeholder="Enter new password to store…"
+                          style={{
+                            width: "100%", padding: "7px 10px", borderRadius: "6px", outline: "none",
+                            background: isDark ? "#111111" : "#FFFFFF",
+                            border: "1px solid rgba(204,0,0,0.4)",
+                            fontFamily: "Share Tech Mono, monospace", fontSize: "12px",
+                            color: textColor, boxSizing: "border-box",
+                          }}
+                        />
+                        {pwSaveErr && (
+                          <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#CC0000" }}>
+                            ⚠ {pwSaveErr}
+                          </span>
+                        )}
+                        <button
+                          onClick={handleUpdateStoredPassword}
+                          disabled={pwSaving}
+                          style={{
+                            padding: "7px", borderRadius: "6px", cursor: pwSaving ? "not-allowed" : "pointer",
+                            background: pwSaved ? "rgba(0,184,184,0.15)" : "rgba(204,0,0,0.9)",
+                            border: "none", color: "#FFFFFF",
+                            fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "12px",
+                            letterSpacing: "0.08em", transition: "background 200ms",
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: "5px",
+                          }}
+                        >
+                          {pwSaving ? "SAVING…" : pwSaved ? "✓ SAVED" : "SAVE PASSWORD"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Warning note */}
+                  <div style={{
+                    padding: "8px 10px", borderRadius: "6px",
+                    background: "rgba(201,146,42,0.08)", border: "1px solid rgba(201,146,42,0.25)",
+                    fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#C9922A", lineHeight: 1.5,
+                  }}>
+                    💡 Remind the employee to change their password after first login.
+                  </div>
+
+                  {/* Hide button */}
+                  <button
+                    onClick={() => setCredsRevealed(false)}
+                    style={{
+                      width: "100%", padding: "7px", borderRadius: "6px", cursor: "pointer",
+                      background: "transparent", border: `1px solid ${border}`,
+                      color: labelColor, fontFamily: "Rajdhani, sans-serif", fontWeight: 600,
+                      fontSize: "11px", letterSpacing: "0.08em",
+                    }}
+                  >
+                    HIDE
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Offer Letter section ── */}
+          <div style={{ marginTop: "20px" }}>
+            <div style={{
+              fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700,
+              color: "#CC0000", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: "10px",
+            }}>
+              OFFER LETTER
+            </div>
+
+            {emp.offerLetterUrl ? (
+              <OfferLetterViewer
+                url={emp.offerLetterUrl}
+                fileName={emp.offerLetterFileName}
+                uploadedAt={emp.offerLetterUploadedAt}
+                theme={theme}
+                border={border}
+                isDark={isDark}
+                labelColor={labelColor}
+                textColor={textColor}
+              />
+            ) : (
+              /* No letter uploaded yet */
+              <div style={{
+                padding: "14px", borderRadius: "10px", textAlign: "center",
+                background: isDark ? "#0A0A0A" : "#F8F8F8",
+                border: `1px dashed ${isDark ? "#2A2A2A" : "#D8D8D8"}`,
+              }}>
+                <FileText size={20} style={{ color: labelColor, margin: "0 auto 6px" }} />
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: labelColor }}>
+                  No offer letter uploaded yet
+                </p>
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#444444" : "#BBBBBB", marginTop: "3px" }}>
+                  Employee can upload it from their profile
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ── Generate Offer Letter button ── */}
+          <div style={{ marginTop: "14px" }}>
+            <button
+              onClick={async () => {
+                setOfferGenLoading(true);
+                try {
+                  await generateOfferLetter({
+                    empId:          emp.id,
+                    name:           emp.name,
+                    role:           emp.role           || "Jr. Software Developer Intern",
+                    joinDate:       emp.joinDate       || "",
+                    completionDate: emp.completionDate || "",
+                    department:     emp.department     || "",
+                  });
+                } catch (err) {
+                  console.error("Offer letter error:", err);
+                  alert("Could not generate: " + (err.message || "Unknown error"));
+                } finally {
+                  setOfferGenLoading(false);
+                }
+              }}
+              disabled={offerGenLoading}
+              style={{
+                width: "100%", padding: "10px", borderRadius: "8px",
+                cursor: offerGenLoading ? "not-allowed" : "pointer",
+                background: offerGenLoading ? "rgba(0,184,184,0.06)" : "rgba(0,184,184,0.10)",
+                border: "1px solid rgba(0,184,184,0.35)", color: "#00B8B8",
+                fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "12px",
+                letterSpacing: "0.1em",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "7px",
+              }}
+            >
+              {offerGenLoading ? (
+                <>
+                  <div style={{ width: "12px", height: "12px", borderRadius: "50%",
+                    border: "2px solid rgba(0,184,184,0.3)", borderTopColor: "#00B8B8",
+                    animation: "spin 0.7s linear infinite" }} />
+                  GENERATING…
+                </>
+              ) : (
+                <><Download size={13} /> DOWNLOAD OFFER LETTER</>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Action buttons */}
@@ -816,13 +1383,12 @@ function EmployeeCard({ emp, theme, onTap, onEdit, onDelete }) {
           {emp.role} · {emp.department}
         </div>
         <div style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8", marginTop: "1px" }}>
-          {emp.id}
+          {formatEmpId(emp.id)}
         </div>
       </div>
 
-      {/* Right side: badge + action buttons */}
+      {/* Right side: action buttons */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px", flexShrink: 0 }}>
-        <StatusBadge status={emp.status} theme={theme} />
         <div style={{ display: "flex", gap: "6px" }} onClick={e => e.stopPropagation()}>
           <button onClick={() => onEdit(emp)} style={{
             width: "30px", height: "30px", background: "transparent",
@@ -852,9 +1418,10 @@ export default function Employees() {
 
   const [data,           setData]           = useState([]);
   const [departments,    setDepartments]    = useState([]);
+  const [todayAttendance, setTodayAttendance] = useState([]);
+  const [leaves,          setLeaves]          = useState([]);
   const [search,         setSearch]         = useState("");
   const [deptFilter,     setDeptFilter]     = useState("All");
-  const [statusFilter,   setStatusFilter]   = useState("All");
   const [showModal,      setShowModal]      = useState(false);
   const [editEmp,        setEditEmp]        = useState(null);
   const [drawer,         setDrawer]         = useState(null);
@@ -862,13 +1429,41 @@ export default function Employees() {
   const [confirmDelete,  setConfirmDelete]  = useState(null);
   const [deleting,       setDeleting]       = useState(false);
 
+  // Today's date string (YYYY-MM-DD)
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   useEffect(() => {
+    provisionTestEmployee();
     const unsub = subscribeEmployees((list) => setData(list));
     return unsub;
   }, []);
 
+  // Keep the open drawer in sync with live Firestore data.
+  // When an employee updates their password (or any field), Firestore fires the
+  // subscribeEmployees listener above → data refreshes → this effect picks up the
+  // updated employee object and refreshes the drawer automatically.
+  useEffect(() => {
+    if (!drawer) return;
+    const fresh = data.find((e) => e.id === drawer.id);
+    if (fresh) setDrawer(fresh);
+  }, [data]);
+
   useEffect(() => {
     getDepartments().then((list) => { if (list.length > 0) setDepartments(list); });
+  }, []);
+
+  // Real-time today's attendance — same source as Attendance tab & Dashboard
+  useEffect(() => {
+    const unsub = subscribeAttendanceByDate(todayStr, (records) => {
+      setTodayAttendance(records);
+    });
+    return unsub;
+  }, [todayStr]);
+
+  // Leave requests — same source as Leave Management tab & Dashboard
+  useEffect(() => {
+    const unsub = subscribeLeaveRequests((list) => setLeaves(list));
+    return unsub;
   }, []);
 
   // ── Theme tokens ──
@@ -886,24 +1481,44 @@ export default function Employees() {
       || e.role.toLowerCase().includes(q)
       || e.id.toLowerCase().includes(q);
     const matchDept   = deptFilter   === "All" || e.department === deptFilter;
-    const matchStatus = statusFilter === "All" || e.status     === statusFilter;
-    return matchSearch && matchDept && matchStatus;
+    return matchSearch && matchDept;
   });
 
-  // ── Stat cards data ──
+  // ── KPI stats — same logic as Dashboard ──────────────────────
+  // Present: employees with attendance record "Present" or "WFH" today
+  const presentToday = todayAttendance.filter(
+    (r) => r.status === "Present" || r.status === "WFH"
+  ).length;
+
+  // Absent: explicitly marked Absent + employees with NO record yet (unmarked = absent)
+  const markedEmpIds     = new Set(todayAttendance.map((r) => r.empId));
+  const explicitlyAbsent = todayAttendance.filter((r) => r.status === "Absent").length;
+  const unmarkedCount    = data.filter((e) => !markedEmpIds.has(e.id)).length;
+  const absentToday      = explicitlyAbsent + unmarkedCount;
+
+  // On Leave / WFH: approved leave requests whose date range covers today
+  const onLeaveToday = leaves.filter((r) => {
+    if (r.status !== "Approved") return false;
+    const from = r.from || "";
+    const to   = r.to   || from;
+    return from <= todayStr && todayStr <= to;
+  }).length;
+
   const stats = [
-    { label: "TOTAL EMPLOYEES", value: data.length,                                                          icon: Users,     color: "#00B8B8" },
-    { label: "PRESENT TODAY",   value: data.filter(e => e.status === "Present").length,                      icon: UserCheck, color: "#00B8B8" },
-    { label: "ABSENT TODAY",    value: data.filter(e => e.status === "Absent").length,                       icon: UserX,     color: "#CC0000" },
-    { label: "ON LEAVE / WFH",  value: data.filter(e => e.status === "Leave" || e.status === "WFH").length,  icon: Clock,     color: "#C9922A" },
+    { label: "TOTAL EMPLOYEES", value: data.length,    icon: Users,     color: "#00B8B8" },
+    { label: "PRESENT TODAY",   value: presentToday,   icon: UserCheck, color: "#00B8B8" },
+    { label: "ABSENT TODAY",    value: absentToday,    icon: UserX,     color: "#CC0000" },
+    { label: "ON LEAVE / WFH",  value: onLeaveToday,   icon: Clock,     color: "#C9922A" },
   ];
 
   // ── Handlers ──
   const handleAdd = async (form) => {
     const empId = await addEmployee({ ...form, salary: Number(form.salary) });
     const creds = await createEmployeeAccount({ empId, name: form.name, role: form.role }, firebaseConfig);
+    // Persist credentials into the employee doc so admin can retrieve them from the drawer
+    await saveEmployeeCredentials(empId, creds.email, creds.password);
     setShowModal(false);
-    setNewCredentials({ ...creds, empId, name: form.name });
+    setNewCredentials({ ...creds, empId, name: form.name, role: form.role, joinDate: form.joinDate, completionDate: form.completionDate, department: form.department });
   };
 
   const handleEdit = async (form) => {
@@ -1017,18 +1632,6 @@ export default function Employees() {
               transform: "translateY(-50%)", color: subColor, pointerEvents: "none" }} />
           </div>
 
-          {/* Status filter */}
-          <div style={{ position: "relative", flex: "1 1 110px", minWidth: "100px" }}>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectStyle}>
-              <option value="All">All Status</option>
-              {["Present", "Absent", "Leave", "WFH"].map(s =>
-                <option key={s} value={s}>{s}</option>
-              )}
-            </select>
-            <ChevronDown size={12} style={{ position: "absolute", right: "8px", top: "50%",
-              transform: "translateY(-50%)", color: subColor, pointerEvents: "none" }} />
-          </div>
-
           {/* Add employee button — pushes to far right */}
           <button
             onClick={() => setShowModal(true)}
@@ -1130,7 +1733,7 @@ export default function Employees() {
                       {emp.name}
                     </div>
                     <div style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8" }}>
-                      {emp.id}
+                      {formatEmpId(emp.id)}
                     </div>
                   </div>
                 </div>
@@ -1143,11 +1746,6 @@ export default function Employees() {
                 {/* Department */}
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textColor }}>{emp.department}</span>
-                </div>
-
-                {/* Status */}
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <StatusBadge status={emp.status} theme={theme} />
                 </div>
 
                 {/* Salary */}

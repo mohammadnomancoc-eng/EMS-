@@ -9,7 +9,7 @@ import {
   deleteUser,
 } from "firebase/auth";
 import {
-  doc, setDoc, getDocs, deleteDoc,
+  doc, setDoc, getDoc, getDocs, deleteDoc,
   collection, query, where, serverTimestamp, writeBatch,
 } from "firebase/firestore";
 import { auth, db, firebaseConfig } from "./config";
@@ -220,4 +220,81 @@ export async function deleteEmployeeAccount(empId) {
 
   // 6. Delete the /employees/{empId} doc — runs unconditionally.
   await deleteDoc(doc(db, "employees", empId));
+}
+
+/** Provision a test employee with test@gmail.com / test123 if not already present. */
+export async function provisionTestEmployee() {
+  const email = "test@gmail.com";
+  const password = "test123";
+  const empId = "RWTPVTLTD-IT-OFLT-062026-99";
+  const name = "Test Employee";
+  const role = "Tester";
+
+  try {
+    // Check if already provisioned in employees collection
+    const employeeDoc = await getDoc(doc(db, "employees", empId));
+    if (employeeDoc.exists()) {
+      return;
+    }
+
+    // 1. Create Auth user via secondary app (so we don't log out the current admin)
+    const secondaryApp  = initializeApp(firebaseConfig, `test-employee-create-${Date.now()}`);
+    const secondaryAuth = getAuth(secondaryApp);
+
+    let uid;
+    try {
+      const credential = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+      uid = credential.user.uid;
+    } catch (err) {
+      if (err.code === "auth/email-already-in-use") {
+        try {
+          const credential = await signInWithEmailAndPassword(secondaryAuth, email, password);
+          uid = credential.user.uid;
+        } catch (_) {
+          console.warn("Test user auth exists but cannot sign in:", _);
+          return;
+        }
+      } else {
+        console.error("Failed to create test auth user:", err);
+        return;
+      }
+    } finally {
+      await deleteApp(secondaryApp);
+    }
+
+    if (!uid) return;
+
+    // 2. Write /users doc
+    await setDoc(doc(db, "users", uid), {
+      role:     "employee",
+      empId,
+      name,
+      initials: "TE",
+      jobRole:  role,
+      email,
+      createdAt: serverTimestamp(),
+    });
+
+    // 3. Write /employees doc
+    await setDoc(doc(db, "employees", empId), {
+      id: empId,
+      name,
+      email,
+      loginEmail: email,
+      loginPassword: password,
+      role: "IT",
+      department: "IT",
+      designation: role,
+      status: "Active",
+      salary: 50000,
+      joinDate: new Date().toISOString().slice(0, 10),
+      photoUrl: "https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg",
+      photoPublicId: "test_placeholder",
+      createdAt: serverTimestamp(),
+    });
+
+    console.log("Test employee test@gmail.com provisioned successfully!");
+  } catch (err) {
+    console.error("Error provisioning test employee:", err);
+  }
 }

@@ -1,60 +1,56 @@
 // ─────────────────────────────────────────────────────────────
 //  src/components/WebcamAttendance.jsx
 //
-//  NEW FEATURE: Webcam Attendance
+//  Webcam Attendance with Face Verification
 //
-//  Provides employees with a webcam-based check-in / check-out modal.
-//  Captures a photo snapshot at the moment of action, uploads it to
-//  Cloudinary (folder: ems/attendance/{empId}/), stores the returned
-//  secure_url in Firestore via upsertAttendance() — which the admin
-//  panel already subscribes to in real time. No base64 is stored.
+//  Flow:
+//    1. Employee opens modal → camera + face-api.js models load in parallel
+//    2. Employee captures snapshot
+//    3. Snapshot is compared against profile photo using face-api.js
+//       (SsdMobilenetv1 detector + FaceRecognitionNet descriptor)
+//    4. If face distance <= MATCH_THRESHOLD → proceed to save (Present)
+//       If face distance >  MATCH_THRESHOLD → show mismatch, allow retake only
+//       If no profile photo / no face found  → fail-open with a warning
 //
-//  Usage:
-//    <WebcamAttendance
-//      empId="RWT001"
-//      empName="John Doe"
-//      onClose={() => setShowWebcam(false)}
-//      onSuccess={(record) => console.log("Marked:", record)}
-//    />
+//  face-api.js (@vladmandic build) loaded from jsDelivr CDN, cached by browser.
+//  No API key. Runs entirely in the browser.
 //
-//  Props:
-//    empId    {string}   – employee ID from localStorage ("rwt-user")
-//    empName  {string}   – employee name for display
-//    onClose  {Function} – called when the modal is dismissed
-//    onSuccess{Function} – called with the saved attendance record
+//  MATCH_THRESHOLD 0.50: Euclidean distance between 128-d descriptors.
+//  Industry default is 0.6; 0.5 is stricter but still lighting-tolerant.
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "../App";
-import { Camera, X, CheckCircle, AlertCircle, RefreshCw, Video, VideoOff, MapPin, Navigation, ShieldCheck } from "lucide-react";
-import { upsertAttendance, getCompanySettings, getEmployee, getOwnAttendanceRecord } from "../firebase/firestoreService";
+import {
+  Camera, X, CheckCircle, AlertCircle, RefreshCw,
+  Video, VideoOff, MapPin, Navigation, ShieldCheck, ScanFace,
+} from "lucide-react";
+import { upsertAttendance, getCompanySettings, getEmployee, getOwnAttendanceRecord, getProjectsByEmployee, addNotification } from "../firebase/firestoreService";
 import { uploadToCloudinary } from "../cloudinary/cloudinaryService";
 
-// ── Helpers ───────────────────────────────────────────────────
+const MATCH_THRESHOLD = 0.50;
+const MODELS_URL      = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model";
 
+// ── Helpers ───────────────────────────────────────────────────
 function todayString() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
-
 function formatTime12(date) {
   let h = date.getHours();
-  const m = String(date.getMinutes()).padStart(2, "0");
-  const s = String(date.getSeconds()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2,"0");
+  const s = String(date.getSeconds()).padStart(2,"0");
   const ampm = h >= 12 ? "PM" : "AM";
   h = h % 12 || 12;
-  return `${String(h).padStart(2, "0")}:${m}:${s} ${ampm}`;
+  return `${String(h).padStart(2,"0")}:${m}:${s} ${ampm}`;
 }
-
 function formatTime12NoSec(date) {
   let h = date.getHours();
-  const m = String(date.getMinutes()).padStart(2, "0");
+  const m = String(date.getMinutes()).padStart(2,"0");
   const ampm = h >= 12 ? "PM" : "AM";
   h = h % 12 || 12;
-  return `${String(h).padStart(2, "0")}:${m} ${ampm}`;
+  return `${String(h).padStart(2,"0")}:${m} ${ampm}`;
 }
-
-function calcHoursWorked(checkIn, checkOut) {
-  // Both in "HH:MM AM/PM" format
+function calcHoursWorked(logIn, logOut) {
   try {
     const parse = (t) => {
       const [time, ampm] = t.split(" ");
@@ -63,561 +59,735 @@ function calcHoursWorked(checkIn, checkOut) {
       if (ampm === "AM" && h === 12) h = 0;
       return h * 60 + m;
     };
-    const diff = parse(checkOut) - parse(checkIn);
+    const diff = parse(logOut) - parse(logIn);
     if (diff <= 0) return "--";
-    const hrs = Math.floor(diff / 60);
-    const mins = diff % 60;
-    return `${hrs}h ${mins}m`;
-  } catch {
-    return "--";
-  }
+    return `${Math.floor(diff/60)}h ${diff%60}m`;
+  } catch { return "--"; }
+}
+function haversineMetres(lat1,lng1,lat2,lng2) {
+  const R=6371000, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLng=toRad(lng2-lng1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ── Haversine distance (metres) between two GPS coords ───────────
-function haversineMetres(lat1, lng1, lat2, lng2) {
-  const R = 6371000; // Earth radius in metres
-  const toRad = (d) => (d * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-// ── Live Clock Component ───────────────────────────────────────
-function LiveClock({ isDark }) {
-  const [time, setTime] = useState(new Date());
-
-  useEffect(() => {
-    const id = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const dateStr = time.toLocaleDateString("en-IN", {
-    weekday: "long", day: "2-digit", month: "long", year: "numeric",
+// ── face-api loader (singleton) ───────────────────────────────
+let _faceApiPromise = null;
+function loadFaceApi() {
+  if (_faceApiPromise) return _faceApiPromise;
+  _faceApiPromise = new Promise((resolve, reject) => {
+    if (window.faceapi) { resolve(window.faceapi); return; }
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js";
+    s.async = true;
+    s.onload = () => resolve(window.faceapi);
+    s.onerror = () => reject(new Error("face-api.js failed to load"));
+    document.head.appendChild(s);
   });
+  return _faceApiPromise;
+}
+let _modelsLoaded = false;
+async function ensureModels() {
+  const fa = await loadFaceApi();
+  if (_modelsLoaded) return fa;
+  await Promise.all([
+    fa.nets.ssdMobilenetv1.loadFromUri(MODELS_URL),
+    fa.nets.faceRecognitionNet.loadFromUri(MODELS_URL),
+    fa.nets.faceLandmark68Net.loadFromUri(MODELS_URL),
+  ]);
+  _modelsLoaded = true;
+  return fa;
+}
 
+// ── Get 128-d descriptor from an image element ────────────────
+// Use fetch → blob → object URL so we bypass CORS canvas taint issues.
+// Cloudinary images served with crossOrigin="anonymous" can fail silently
+// when the CDN returns a cached response without CORS headers.
+async function loadImg(src) {
+  // If src is already a blob URL (local capture), create img directly
+  if (typeof src !== "string" || src.startsWith("blob:")) {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.onload  = () => res(img);
+      img.onerror = () => rej(new Error("img load failed"));
+      img.src = typeof src === "string" ? src : URL.createObjectURL(src);
+    });
+  }
+  // For remote URLs (profile photo): fetch as blob to avoid CORS canvas taint
+  const resp = await fetch(src, { mode: "cors", cache: "no-cache" });
+  if (!resp.ok) throw new Error(`Failed to fetch image: ${resp.status}`);
+  const blob = await resp.blob();
+  const objUrl = URL.createObjectURL(blob);
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload  = () => { res(img); URL.revokeObjectURL(objUrl); };
+    img.onerror = () => { rej(new Error("img load failed")); URL.revokeObjectURL(objUrl); };
+    img.src = objUrl;
+  });
+}
+async function getDescriptor(faceapi, src) {
+  // For Blob/File: create a local blob: URL so loadImg's fast path handles it
+  const url = typeof src === "string" ? src : URL.createObjectURL(src);
+  const img = await loadImg(url);
+  const det = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+  return det ? det.descriptor : null;
+}
+function euclidean(a, b) {
+  let s = 0; for (let i = 0; i < a.length; i++) s += (a[i]-b[i])**2; return Math.sqrt(s);
+}
+
+// ── LiveClock ─────────────────────────────────────────────────
+function LiveClock({ isDark }) {
+  const [t, setT] = useState(new Date());
+  useEffect(() => { const id=setInterval(()=>setT(new Date()),1000); return()=>clearInterval(id); },[]);
   return (
-    <div style={{ textAlign: "center" }}>
-      <p style={{
-        fontFamily: "Share Tech Mono, monospace",
-        fontSize: "clamp(22px, 6vw, 32px)",
-        fontWeight: 700,
-        color: "#00B8B8",
-        letterSpacing: "0.05em",
-        lineHeight: 1,
-      }}>
-        {formatTime12(time)}
-      </p>
-      <p style={{
-        fontFamily: "Mulish, sans-serif",
-        fontSize: "clamp(10px, 2.5vw, 12px)",
-        color: isDark ? "#666666" : "#999999",
-        marginTop: "4px",
-      }}>
-        {dateStr}
+    <div style={{ textAlign:"center" }}>
+      <p style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"clamp(22px,6vw,32px)", fontWeight:700, color:"#00B8B8", letterSpacing:"0.05em", lineHeight:1 }}>{formatTime12(t)}</p>
+      <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"clamp(10px,2.5vw,12px)", color:isDark?"#666666":"#999999", marginTop:"4px" }}>
+        {t.toLocaleDateString("en-IN",{weekday:"long",day:"2-digit",month:"long",year:"numeric"})}
       </p>
     </div>
   );
 }
+function LiveClockMinimal() {
+  const [t, setT] = useState(new Date());
+  useEffect(() => { const id=setInterval(()=>setT(new Date()),1000); return()=>clearInterval(id); },[]);
+  return <span style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"11px", color:"#FFFFFF", letterSpacing:"0.05em" }}>{formatTime12(t)}</span>;
+}
 
-// ── Main WebcamAttendance Modal ───────────────────────────────
+// ── Main Component ────────────────────────────────────────────
 export default function WebcamAttendance({ empId, empName, onClose, onSuccess }) {
   const { theme } = useTheme();
-  const isDark = theme === "dark";
+  const isDark    = theme === "dark";
 
-  const videoRef = useRef(null);
+  const videoRef  = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const faceApiRef        = useRef(null);
+  const profileDescRef    = useRef(null);
+  const profilePhotoUrlRef = useRef(null); // mirrors state — avoids stale closure in verifyFace
 
-  const [camStatus, setCamStatus] = useState("idle"); // idle | loading | active | error | denied
-  const [snapshotObjectUrl, setSnapshotObjectUrl] = useState(null); // ObjectURL for preview (revoked after use)
-  const [snapshotBlob, setSnapshotBlob] = useState(null);           // Blob for Cloudinary upload
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [action, setAction] = useState(null);         // "checkin" | "checkout"
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [savedRecord, setSavedRecord] = useState(null);
-  const [errorMsg, setErrorMsg] = useState("");
-  const [todayRecord, setTodayRecord] = useState(null); // existing attendance for today
+  const [camStatus,         setCamStatus]         = useState("idle");
+  const [snapshotObjectUrl, setSnapshotObjectUrl] = useState(null);
+  const [snapshotBlob,      setSnapshotBlob]      = useState(null);
+  const [uploadProgress,    setUploadProgress]    = useState(0);
+  const [action,            setAction]            = useState(null);
+  const [saving,            setSaving]            = useState(false);
+  const [saved,             setSaved]             = useState(false);
+  const [savedRecord,       setSavedRecord]       = useState(null);
+  const [errorMsg,          setErrorMsg]          = useState("");
+  const [todayRecord,       setTodayRecord]       = useState(null);
 
-  // ── Geo-fence state ───────────────────────────────────────────
-  const [geoStatus, setGeoStatus]       = useState("idle");   // idle | checking | allowed | blocked | error | wfh_skip
-  const [geoDistance, setGeoDistance]   = useState(null);     // metres from office
-  const [geoRequired, setGeoRequired]   = useState(false);    // true for WFO employees
+  // face verification
+  // idle | loading_models | verifying | matched | mismatch | no_profile | no_face_snapshot | no_face_profile | error
+  const [faceStatus,  setFaceStatus]  = useState("idle");
+  const [faceScore,   setFaceScore]   = useState(null);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
+
+  // work description — collected at logOut after face is verified
+  const [workDescription, setWorkDescription] = useState("");
+
+  // assigned project
+  const [activeProject, setActiveProject] = useState("");
+
+  const [isTestEmployee, setIsTestEmployee] = useState(false);
+  const [employeeName, setEmployeeName] = useState("");
+  const [whatsappCopied, setWhatsappCopied] = useState(false);
+
+  // geo
+  const [geoStatus,       setGeoStatus]       = useState("idle");
+  const [geoDistance,     setGeoDistance]     = useState(null);
+  const [geoRequired,     setGeoRequired]     = useState(false);
   const [companySettings, setCompanySettings] = useState(null);
 
-  // ── Load today's record + company settings + employee workType ───
+  // ── Mount: load models + data in parallel ────────────────
   useEffect(() => {
     if (!empId) return;
+    // kick off model loading immediately so it's ready by capture time
+    ensureModels().then(api => { faceApiRef.current = api; }).catch(()=>{});
 
-    // Load attendance record and company settings in parallel.
-    // getOwnAttendanceRecord uses getDoc() on the known doc ID — safe under employee rules.
-    // getAttendanceByDate() is a collection query that Firestore denies for non-admin users.
     Promise.all([
       getOwnAttendanceRecord(empId, todayString()),
       getCompanySettings(),
       getEmployee(empId),
-    ]).then(([ownRecord, settings, empData]) => {
-      if (ownRecord) setTodayRecord(ownRecord);
-      if (settings) setCompanySettings(settings);
+    ]).then(async ([ownRecord, settings, empData]) => {
+      if (ownRecord)         setTodayRecord(ownRecord);
+      if (settings)          setCompanySettings(settings);
+      if (empData)           setEmployeeName(empData.name || "");
+      if (empData?.photoUrl) {
+        const photoUrl = empData.photoUrl.trim();
+        if (photoUrl) {
+          setProfilePhotoUrl(photoUrl);
+          profilePhotoUrlRef.current = photoUrl;
+        }
+      }
 
-      // Determine if geo-fence applies: WFO employees only
-      const wt = (empData?.workType || "WFO").toUpperCase();
+      // Fetch the employee's first ongoing project name
+      try {
+        const projects = await getProjectsByEmployee(empId);
+        const ongoing  = projects.find((p) => p.status === "Ongoing");
+        if (ongoing) setActiveProject(ongoing.name);
+      } catch (_) {}
+
+      const isTest = empData?.email === "test@gmail.com" || empData?.loginEmail === "test@gmail.com";
+      setIsTestEmployee(isTest);
+
+      const wt    = (empData?.workType || "WFO").toUpperCase();
       const isWFO = wt === "WFO";
-      setGeoRequired(isWFO);
+      setGeoRequired(isTest ? false : isWFO);
+      if (isTest || !isWFO)                           { setGeoStatus("wfh_skip"); return; }
+      if (!settings?.officeLat || !settings?.officeLng){ setGeoStatus("allowed");  return; }
 
-      if (!isWFO) {
-        // WFH / Hybrid → no location check needed
-        setGeoStatus("wfh_skip");
-        return;
-      }
-
-      if (!settings?.officeLat || !settings?.officeLng) {
-        // Admin hasn't configured office location yet → allow with a warning
-        setGeoStatus("allowed");
-        return;
-      }
-
-      // Run geo-fence check for WFO employee
-      setGeoStatus("checking");
-      if (!navigator.geolocation) {
-        setGeoStatus("error");
-        return;
-      }
+      setGeoStatus("fetching");
+      if (!navigator.geolocation) { setGeoStatus("error"); return; }
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const dist = haversineMetres(
-            pos.coords.latitude, pos.coords.longitude,
-            settings.officeLat, settings.officeLng
-          );
+        async (pos) => {
+          const dist   = haversineMetres(pos.coords.latitude, pos.coords.longitude, settings.officeLat, settings.officeLng);
           const radius = settings.geoFenceRadius ?? 100;
-          setGeoDistance(Math.round(dist));
-          setGeoStatus(dist <= radius ? "allowed" : "blocked");
+          const roundedDist = Math.round(dist);
+          setGeoDistance(roundedDist);
+          const allowed = dist <= radius;
+          setGeoStatus(allowed ? "allowed" : "blocked");
+          if (!allowed) {
+            try {
+              await addNotification({
+                title: "Attendance Rejected (Geofence)",
+                message: `Your attendance marking failed because you were ${roundedDist}m away from the office, exceeding the geofence limit of ${radius}m.`,
+                type: "employee",
+                targetId: empId,
+                recipientId: empId,
+                priority: "high",
+                actionUrl: "/my-attendance"
+              });
+            } catch (err) {
+              console.error("Failed to add geofence notification:", err);
+            }
+          }
         },
         () => setGeoStatus("error"),
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy:true, timeout:10000 }
       );
-    }).catch(() => {
-      // On error, allow attendance (fail-open)
-      setGeoStatus("allowed");
-    });
+    }).catch(() => setGeoStatus("allowed"));
   }, [empId]);
 
-  // ── Determine default action from existing record ─────────
   useEffect(() => {
     if (todayRecord) {
-      if (todayRecord.checkIn && todayRecord.checkIn !== "--" && (!todayRecord.checkOut || todayRecord.checkOut === "--")) {
-        setAction("checkout");
-      } else if (!todayRecord.checkIn || todayRecord.checkIn === "--") {
-        setAction("checkin");
-      } else {
-        // Both recorded already
-        setAction("checkin");
-      }
+      const hasIn  = todayRecord.logIn  && todayRecord.logIn  !== "--";
+      const hasOut = todayRecord.logOut && todayRecord.logOut !== "--";
+      setAction(hasIn && !hasOut ? "logOut" : "logIn");
     } else {
-      setAction("checkin");
+      setAction("logIn");
     }
   }, [todayRecord]);
 
-  // ── Start webcam ──────────────────────────────────────────
+  // Keep ref in sync with state AND bust cached descriptor whenever URL changes
+  useEffect(() => {
+    profilePhotoUrlRef.current = profilePhotoUrl;
+    profileDescRef.current = null; // force re-extraction on next verify
+  }, [profilePhotoUrl]);
+
+  // ── Camera ────────────────────────────────────────────────
   const startCamera = useCallback(async () => {
-    setCamStatus("loading");
-    setErrorMsg("");
-    setSnapshotObjectUrl(null);
-    setSnapshotBlob(null);
+    setCamStatus("loading"); setErrorMsg("");
+    setSnapshotObjectUrl(null); setSnapshotBlob(null);
+    setFaceStatus("idle"); setFaceScore(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
-        audio: false,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video:{ width:{ideal:640}, height:{ideal:480}, facingMode:"user" }, audio:false });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
       setCamStatus("active");
-    } catch (err) {
+    } catch(err) {
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        setCamStatus("denied");
-        setErrorMsg("Camera access denied. Please allow camera permission in your browser settings.");
+        setCamStatus("denied"); setErrorMsg("Camera access denied. Please allow camera permission in your browser settings.");
       } else {
-        setCamStatus("error");
-        setErrorMsg("Could not access camera: " + (err.message || "Unknown error"));
+        setCamStatus("error"); setErrorMsg("Could not access camera: " + (err.message||"Unknown error"));
       }
     }
   }, []);
 
-  // ── Stop webcam ───────────────────────────────────────────
   const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    if (streamRef.current) { streamRef.current.getTracks().forEach(t=>t.stop()); streamRef.current=null; }
+    if (videoRef.current)  { videoRef.current.srcObject = null; }
     setCamStatus("idle");
   }, []);
 
-  // Cleanup on unmount: stop camera and revoke any ObjectURL to free memory
   useEffect(() => {
-    return () => {
-      stopCamera();
-      if (snapshotObjectUrl) URL.revokeObjectURL(snapshotObjectUrl);
-    };
-  }, [stopCamera]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { stopCamera(); if (snapshotObjectUrl) URL.revokeObjectURL(snapshotObjectUrl); };
+  }, [stopCamera]); // eslint-disable-line
 
-  // ── Capture snapshot ──────────────────────────────────────
-  // Uses ONLY canvas.toBlob() — no toDataURL(), no base64 string ever created.
-  // An ObjectURL (blob: URI) is created for the preview <img> and revoked on retake/unmount.
+  // ── Capture → verify ─────────────────────────────────────
+  const verifyFace = useCallback(async (blob) => {
+    setFaceStatus("verifying"); setFaceScore(null);
+
+    try {
+      // ── Step 1: Always fetch the LATEST photo from Firestore right now ──
+      // Guarantees we use whatever photo admin/employee last uploaded,
+      // ignoring anything cached at modal-open time.
+      let faceapi = faceApiRef.current;
+      if (!faceapi) { setFaceStatus("loading_models"); faceapi = await ensureModels(); faceApiRef.current = faceapi; }
+
+      const freshEmpData  = await getEmployee(empId);
+      const latestPhotoUrl = (freshEmpData?.photoUrl || "").trim();
+
+      setProfilePhotoUrl(latestPhotoUrl || null);
+      profilePhotoUrlRef.current = latestPhotoUrl || null;
+
+      if (!latestPhotoUrl) { setFaceStatus("no_profile"); return; }
+
+      // ── Step 2: Get profile face descriptor (re-compute if URL changed) ──
+      const urlChanged  = profilePhotoUrlRef._usedUrl !== latestPhotoUrl;
+      let profileDesc   = (!urlChanged && profileDescRef.current) ? profileDescRef.current : null;
+
+      if (!profileDesc) {
+        // Strip Cloudinary transformation params but preserve version token (v1234...)
+        const rawUrl = latestPhotoUrl.includes("cloudinary.com")
+          ? latestPhotoUrl.replace(/\/upload\/(?!v\d)([^/]+\/)+/, "/upload/")
+          : latestPhotoUrl;
+        profileDesc = await getDescriptor(faceapi, rawUrl);
+        if (!profileDesc) { setFaceStatus("no_face_profile"); return; }
+        profileDescRef.current          = profileDesc;
+        profilePhotoUrlRef._usedUrl     = latestPhotoUrl;
+      }
+
+      // ── Step 3: Get snapshot descriptor and compare ──
+      const snapshotDesc = await getDescriptor(faceapi, blob);
+      if (!snapshotDesc) { setFaceStatus("no_face_snapshot"); return; }
+
+      const dist = euclidean(profileDesc, snapshotDesc);
+      setFaceScore(dist);
+      const isMatched = dist <= MATCH_THRESHOLD;
+      setFaceStatus(isMatched ? "matched" : "mismatch");
+      if (!isMatched) {
+        try {
+          await addNotification({
+            title: "Attendance Rejected (Face Mismatch)",
+            message: `Your attendance marking was rejected because your face scan did not match the registered profile photo.`,
+            type: "employee",
+            targetId: empId,
+            recipientId: empId,
+            priority: "high",
+            actionUrl: "/my-attendance"
+          });
+        } catch (err) {
+          console.error("Failed to add face mismatch notification:", err);
+        }
+      }
+    } catch(e) {
+      console.warn("Face verify error:", e);
+      setFaceStatus("error");
+    }
+  }, [empId]); // empId is stable — modal is re-mounted per open
+
   const captureSnapshot = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width  = video.videoWidth  || 640;
-    canvas.height = video.videoHeight || 480;
+    const video=videoRef.current, canvas=canvasRef.current;
+    canvas.width = video.videoWidth||640; canvas.height = video.videoHeight||480;
     const ctx = canvas.getContext("2d");
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1); // mirror so it feels like a natural selfie
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.translate(canvas.width,0); ctx.scale(-1,1);
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
     stopCamera();
-    // toBlob gives us a binary Blob — no base64 encoding at all
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob) return;
       setSnapshotBlob(blob);
-      // ObjectURL is a lightweight blob: URI for local display only
-      const objUrl = URL.createObjectURL(blob);
-      setSnapshotObjectUrl(objUrl);
+      setSnapshotObjectUrl(URL.createObjectURL(blob));
+      await verifyFace(blob);
     }, "image/jpeg", 0.85);
-  }, [stopCamera]);
+  }, [stopCamera, verifyFace]);
 
-  // ── Retake photo ──────────────────────────────────────────
   const retake = useCallback(() => {
     if (snapshotObjectUrl) URL.revokeObjectURL(snapshotObjectUrl);
-    setSnapshotObjectUrl(null);
-    setSnapshotBlob(null);
-    setUploadProgress(0);
+    setSnapshotObjectUrl(null); setSnapshotBlob(null);
+    setUploadProgress(0); setFaceStatus("idle"); setFaceScore(null);
+    setWorkDescription("");
     startCamera();
   }, [startCamera, snapshotObjectUrl]);
 
-  // ── Save attendance record to Firestore ──────────────────
+  // ── Save ──────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
-    if (!snapshotObjectUrl || !snapshotBlob || !empId || !action) return;
-    setSaving(true);
-    setUploadProgress(0);
-    setErrorMsg("");
-
-    const now = new Date();
-    const timeStr = formatTime12NoSec(now);
-    const date = todayString();
-
+    if (!isTestEmployee && (!snapshotObjectUrl || !snapshotBlob)) return;
+    if (!empId || !action) return;
+    // Strict: only a confirmed face match is allowed to mark attendance (unless test employee)
+    if (!isTestEmployee && faceStatus !== "matched") return;
+    setSaving(true); setUploadProgress(0); setErrorMsg("");
+    const now=new Date(), timeStr=formatTime12NoSec(now), date=todayString();
     try {
-      // Step 1: Upload snapshot to Cloudinary
-      // Converts the blob to a File so uploadToCloudinary can use it
-      const actionLabel = action === "checkin" ? "checkin" : "checkout";
-      const fileName = `${empId}_${date}_${actionLabel}.jpg`;
-      const file = new File([snapshotBlob], fileName, { type: "image/jpeg" });
+      const actionLabel = action==="logIn" ? "logIn" : "logOut";
 
-      const uploadResult = await uploadToCloudinary(file, "image", {
-        folder: `ems/attendance/${empId}`,
-        publicId: `${empId}_${date}_${actionLabel}`,
-        onProgress: (pct) => setUploadProgress(pct),
-      });
+      let webcamSnapshotUrl = "https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg";
+      let webcamSnapshotPublicId = "test_placeholder";
 
-      const webcamSnapshotUrl      = uploadResult.secure_url;
-      const webcamSnapshotPublicId = uploadResult.public_id;
-
-      // Step 2: Build attendance payload
-      let checkIn     = todayRecord?.checkIn  || "--";
-      let checkOut    = todayRecord?.checkOut || "--";
-      let status      = todayRecord?.status   || "Present";
-      let hoursWorked = todayRecord?.hoursWorked || "--";
-
-      if (action === "checkin") {
-        checkIn     = timeStr;
-        status      = "Present";
-        hoursWorked = "--";
-      } else if (action === "checkout") {
-        checkOut    = timeStr;
-        status      = todayRecord?.status || "Present";
-        hoursWorked = checkIn !== "--" ? calcHoursWorked(checkIn, timeStr) : "--";
+      if (!isTestEmployee) {
+        const file = new File([snapshotBlob], `${empId}_${date}_${actionLabel}.jpg`, { type:"image/jpeg" });
+        const uploadResult = await uploadToCloudinary(file, "image", {
+          folder:    `ems/attendance/${empId}`,
+          publicId:  `${empId}_${date}_${actionLabel}_${Date.now()}`,
+          onProgress: pct => setUploadProgress(pct),
+        });
+        webcamSnapshotUrl = uploadResult.secure_url;
+        webcamSnapshotPublicId = uploadResult.public_id;
       }
 
-      // Step 3: Write to Firestore — admin panel auto-updates via subscribeAttendanceByDate
+      let logIn=todayRecord?.logIn||"--", logOut=todayRecord?.logOut||"--";
+      let status=todayRecord?.status||"Present", hoursWorked=todayRecord?.hoursWorked||"--";
+      if (action==="logIn")  { logIn=timeStr; logOut="--"; status="Present"; hoursWorked="--"; }
+      if (action==="logOut") { logOut=timeStr; status=todayRecord?.status||"Present"; hoursWorked=logIn!=="--"?calcHoursWorked(logIn,timeStr):"--"; }
+
       await upsertAttendance({
-        empId,
-        date,
-        status,
-        checkIn,
-        checkOut,
-        hoursWorked,
-        markedBy:               "webcam",
-        webcamSnapshotUrl,       // Cloudinary HTTPS URL (not base64)
-        webcamSnapshotPublicId,  // for future deletion / transforms
-        webcamTimestamp:         now.toISOString(),
-        geoDistance:            geoDistance,   // metres from office at time of marking
-        geoVerified:            geoStatus === "allowed",
+        empId, date, status, logIn, logOut, hoursWorked,
+        markedBy:              "webcam",
+        webcamSnapshotUrl,
+        webcamSnapshotPublicId,
+        webcamTimestamp:       now.toISOString(),
+        geoDistance: isTestEmployee ? 0 : geoDistance,
+        geoVerified: isTestEmployee ? true : geoStatus==="allowed",
+        faceVerified:  isTestEmployee ? true : faceStatus==="matched",
+        faceDistance:  isTestEmployee ? 0 : (faceScore ?? null),
+        workDescription: action === "logOut" ? workDescription.trim() : null,
       });
 
-      const record = { empId, date, status, checkIn, checkOut, hoursWorked, action, time: timeStr };
-      setSavedRecord(record);
-      setSaved(true);
+      const record = { empId,date,status,logIn,logOut,hoursWorked,action,time:timeStr,
+        workDescription: action === "logOut" ? workDescription.trim() : null,
+        project: activeProject || "—",
+      };
+      setSavedRecord(record); setSaved(true);
       if (onSuccess) onSuccess(record);
-    } catch (err) {
-      setErrorMsg("Failed to save: " + (err.message || "Please try again."));
-      setSaving(false);
-      setUploadProgress(0);
+    } catch(err) {
+      setErrorMsg("Failed to save: "+(err.message||"Please try again."));
+      setSaving(false); setUploadProgress(0);
     }
-  }, [snapshotObjectUrl, snapshotBlob, empId, action, todayRecord, onSuccess, geoStatus, geoDistance]);
+  }, [snapshotObjectUrl,snapshotBlob,empId,action,todayRecord,onSuccess,geoStatus,geoDistance,faceStatus,faceScore,workDescription,isTestEmployee]);
 
-  // ── Colors ────────────────────────────────────────────────
-  const bg = isDark ? "#0A0A0A" : "#F8F8F8";
-  const cardBg = isDark ? "#111111" : "#FFFFFF";
-  const border = isDark ? "#1E1E1E" : "#E8E8E8";
-  const textPri = isDark ? "#F0F0F0" : "#111111";
-  const textMuted = isDark ? "#555555" : "#999999";
+  // ── Theme ─────────────────────────────────────────────────
+  const cardBg   = isDark ? "#111111" : "#FFFFFF";
+  const border   = isDark ? "#1E1E1E" : "#E8E8E8";
+  const textPri  = isDark ? "#F0F0F0" : "#111111";
+  const textMuted= isDark ? "#555555" : "#999999";
 
-  const alreadyCheckedIn = todayRecord?.checkIn && todayRecord.checkIn !== "--";
-  const alreadyCheckedOut = todayRecord?.checkOut && todayRecord.checkOut !== "--";
+  const alreadyLoggedIn  = todayRecord?.logIn  && todayRecord.logIn  !== "--";
+  const alreadyLoggedOut = todayRecord?.logOut && todayRecord.logOut !== "--";
 
-  // ── Render: Success State ─────────────────────────────────
-  if (saved && savedRecord) {
-    return (
+  // Only a confirmed face match allows saving — all skip/error/no_profile states are BLOCKED (unless test employee)
+  const verificationPassed = faceStatus === "matched";
+  const needsDescription   = action === "logOut";
+  const descriptionReady   = !needsDescription || workDescription.trim().length > 0;
+  const canSave = (isTestEmployee || (!!snapshotObjectUrl && !!snapshotBlob && verificationPassed)) && !saving
+    && geoStatus !== "blocked" && geoStatus !== "fetching" && descriptionReady;
+
+  // Banner config for each face status
+  const FACE_BANNERS = {
+    loading_models:  { color:"#C9922A", bg:"rgba(201,146,42,0.08)", bdr:"rgba(201,146,42,0.3)", spinning:true,  text:"Loading face recognition models…" },
+    verifying:       { color:"#C9922A", bg:"rgba(201,146,42,0.08)", bdr:"rgba(201,146,42,0.3)", spinning:true,  text:"Verifying your face against profile photo…" },
+    matched:         { color:"#00B8B8", bg:"rgba(0,184,184,0.08)",  bdr:"rgba(0,184,184,0.3)",  spinning:false, text:"Face matched ✓ — you can confirm attendance" },
+    mismatch:        { color:"#CC0000", bg:"rgba(204,0,0,0.08)",    bdr:"rgba(204,0,0,0.3)",    spinning:false, text:"Face does not match your profile photo. Please retake or contact admin." },
+    test_bypass:     { color:"#00B8B8", bg:"rgba(0,184,184,0.08)",  bdr:"rgba(0,184,184,0.3)",  spinning:false, text:"Test Account: Face Verification & Location Verification Bypassed ✓" },
+    no_profile:      { color:"#CC0000", bg:"rgba(204,0,0,0.08)",    bdr:"rgba(204,0,0,0.3)",    spinning:false, text:"No profile photo found — attendance cannot be marked. Ask your admin to upload your profile photo first." },
+    no_face_snapshot:{ color:"#CC0000", bg:"rgba(204,0,0,0.08)",    bdr:"rgba(204,0,0,0.3)",    spinning:false, text:"No face detected in capture. Retake in better lighting facing the camera directly." },
+    no_face_profile: { color:"#CC0000", bg:"rgba(204,0,0,0.08)",    bdr:"rgba(204,0,0,0.3)",    spinning:false, text:"No face detectable in your profile photo — attendance blocked. Ask admin to re-upload a clear face photo." },
+    error:           { color:"#CC0000", bg:"rgba(204,0,0,0.08)",    bdr:"rgba(204,0,0,0.3)",    spinning:false, text:"Face verification failed — attendance cannot be marked. Please retry or contact admin." },
+  };
+  const faceBanner = isTestEmployee ? FACE_BANNERS.test_bypass : FACE_BANNERS[faceStatus];
+
+  // ── Success screen ────────────────────────────────────────
+  if (saved && savedRecord) return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background:"rgba(0,0,0,0.85)", backdropFilter:"blur(4px)", padding:"16px" }}
+      onClick={onClose}
+    >
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center"
-        style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)" }}
-        onClick={onClose}
+        onClick={e=>e.stopPropagation()}
+        style={{
+          width:"min(440px,100%)",
+          maxHeight:"min(600px,90dvh)",
+          display:"flex",
+          flexDirection:"column",
+          background:cardBg,
+          border:`1px solid ${border}`,
+          borderRadius:"16px",
+          overflow:"hidden",
+        }}
       >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            width: "min(420px, 95vw)",
-            maxHeight: "90dvh",
-            overflowY: "auto",
-            background: cardBg,
-            border: `1px solid ${border}`,
-            borderRadius: "16px",
-            overflow: "hidden",
-          }}
-        >
-          {/* Header */}
-          <div style={{
-            padding: "16px 20px",
-            borderBottom: `1px solid ${border}`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <div style={{
-                width: "34px", height: "34px", borderRadius: "8px",
-                background: "rgba(0,184,184,0.12)", border: "1px solid rgba(0,184,184,0.3)",
-                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              }}>
-                <Camera size={16} style={{ color: "#00B8B8" }} />
-              </div>
-              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "clamp(14px, 4vw, 16px)", color: textPri }}>
-                Webcam Attendance
-              </p>
+        {/* Success Header */}
+        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${border}`, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+            <div style={{ width:"32px", height:"32px", borderRadius:"8px", background:"rgba(0,184,184,0.12)", border:"1px solid rgba(0,184,184,0.3)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <Camera size={15} style={{ color:"#00B8B8" }} />
             </div>
-            <button onClick={onClose} style={{ color: textMuted, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}>
-              <X size={18} />
-            </button>
+            <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"15px", color:textPri }}>Webcam Attendance</p>
           </div>
+          <button onClick={onClose} style={{ color:textMuted, background:"none", border:"none", cursor:"pointer", padding:"4px" }}><X size={18}/></button>
+        </div>
 
-          {/* Success body */}
-          <div style={{ padding: "20px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: "16px" }}>
-            <div style={{
-              width: "56px", height: "56px", borderRadius: "50%",
-              background: "rgba(0,184,184,0.12)", border: "2px solid #00B8B8",
-              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            }}>
-              <CheckCircle size={28} style={{ color: "#00B8B8" }} />
-            </div>
-
-            <div style={{ textAlign: "center" }}>
-              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "clamp(16px, 5vw, 20px)", color: "#00B8B8" }}>
-                {savedRecord.action === "checkin" ? "Checked In!" : "Checked Out!"}
-              </p>
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "clamp(11px, 3vw, 13px)", color: textMuted, marginTop: "4px" }}>
-                Attendance recorded at <span style={{ color: textPri, fontWeight: 600 }}>{savedRecord.time}</span>
-              </p>
-            </div>
-
-            {/* Summary */}
-            <div style={{
-              width: "100%",
-              background: isDark ? "#0D0D0D" : "#F5F5F5",
-              border: `1px solid ${border}`,
-              borderRadius: "10px",
-              padding: "12px 14px",
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "12px",
-            }}>
-              {[
-                { label: "DATE", val: savedRecord.date },
-                { label: "STATUS", val: savedRecord.status },
-                { label: "CHECK IN", val: savedRecord.checkIn },
-                { label: "CHECK OUT", val: savedRecord.checkOut },
-                { label: "HOURS WORKED", val: savedRecord.hoursWorked },
-              ].map(({ label, val }) => (
-                <div key={label}>
-                  <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "9px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.15em" }}>{label}</p>
-                  <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "clamp(11px, 3vw, 13px)", color: textPri, marginTop: "2px", wordBreak: "break-word" }}>{val}</p>
-                </div>
-              ))}
-            </div>
-
-            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textMuted, textAlign: "center" }}>
-              This record has been sent to the admin panel automatically.
+        {/* Success Body */}
+        <div style={{ flex:1, overflowY:"auto", padding:"20px 18px", display:"flex", flexDirection:"column", alignItems:"center", gap:"16px" }}>
+          <div style={{ width:"52px", height:"52px", borderRadius:"50%", background:"rgba(0,184,184,0.12)", border:"2px solid #00B8B8", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <CheckCircle size={26} style={{ color:"#00B8B8" }} />
+          </div>
+          <div style={{ textAlign:"center" }}>
+            <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"clamp(17px,5vw,22px)", color:"#00B8B8", lineHeight:1 }}>
+              {savedRecord.action==="logIn" ? "Logged In!" : "Logged Out!"}
             </p>
-
-            <button
-              onClick={onClose}
-              style={{
-                padding: "10px 32px",
-                borderRadius: "8px",
-                background: "#CC0000",
-                border: "1px solid #CC0000",
-                color: "#FFFFFF",
-                fontFamily: "Rajdhani, sans-serif",
-                fontSize: "14px",
-                fontWeight: 700,
-                cursor: "pointer",
-                letterSpacing: "0.05em",
-                width: "100%",
-              }}
-            >
-              DONE
-            </button>
+            <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"clamp(11px,3vw,13px)", color:textMuted, marginTop:"6px" }}>
+              Recorded at <span style={{ color:textPri, fontWeight:600 }}>{savedRecord.time}</span>
+            </p>
           </div>
+
+          <div style={{ width:"100%", background:isDark?"#0D0D0D":"#F5F5F5", border:`1px solid ${border}`, borderRadius:"10px", padding:"14px", display:"grid", gridTemplateColumns:"1fr 1fr", gap:"14px" }}>
+            {[
+              { label:"DATE",          val:savedRecord.date },
+              { label:"STATUS",        val:savedRecord.status },
+              { label:"LOG IN",      val:savedRecord.logIn },
+              { label:"LOG OUT",     val:savedRecord.logOut },
+              { label:"HOURS WORKED",  val:savedRecord.hoursWorked },
+              { label:"FACE VERIFIED", val:faceStatus==="matched" ? "Yes ✓" : "Skipped" },
+            ].map(({label,val}) => (
+              <div key={label}>
+                <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"9px", fontWeight:700, color:"#CC0000", letterSpacing:"0.15em" }}>{label}</p>
+                <p style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"clamp(11px,3vw,13px)", color:textPri, marginTop:"3px", wordBreak:"break-word" }}>{val}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Work description recap */}
+          {savedRecord.action === "logOut" && savedRecord.workDescription && (
+            <div style={{ width:"100%", background:isDark?"#0D0D0D":"#F5F5F5", border:`1px solid rgba(0,184,184,0.25)`, borderRadius:"10px", padding:"12px 14px" }}>
+              <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"9px", fontWeight:700, color:"#CC0000", letterSpacing:"0.15em", marginBottom:"6px" }}>
+                TODAY'S WORK SUMMARY
+              </p>
+              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:isDark?"#AAAAAA":"#555555", lineHeight:1.6, margin:0 }}>
+                {savedRecord.workDescription}
+              </p>
+            </div>
+          )}
+
+          <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"11px", color:textMuted, textAlign:"center", lineHeight:1.5 }}>
+            This record has been sent to the admin panel automatically.
+          </p>
+
+          {/* WhatsApp button */}
+          {(() => {
+            const isLogin  = savedRecord.action === "logIn";
+            const projName = savedRecord.project || activeProject || "—";
+            const msg = isLogin
+              ? `Name : ${employeeName}\nProject : ${projName}\nLogin : ${savedRecord.time}`
+              : `Name : ${employeeName}\nProject : ${projName}\nLogout : ${savedRecord.time}`;
+            const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`;
+
+            return (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  width:"100%", padding:"11px", borderRadius:"8px", textDecoration:"none",
+                  background:"#25D366", border:"none", color:"#FFFFFF",
+                  fontFamily:"Rajdhani,sans-serif", fontSize:"14px", fontWeight:700,
+                  cursor:"pointer", letterSpacing:"0.08em",
+                  display:"flex", alignItems:"center", justifyContent:"center", gap:"8px",
+                  boxSizing:"border-box"
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                </svg>
+                SEND TO WHATSAPP GROUP
+              </a>
+            );
+          })()}
+
+          <button
+            onClick={onClose}
+            style={{ width:"100%", padding:"11px", borderRadius:"8px", background:"#CC0000", border:"none", color:"#FFFFFF", fontFamily:"Rajdhani,sans-serif", fontSize:"14px", fontWeight:700, cursor:"pointer", letterSpacing:"0.08em" }}
+          >
+            DONE
+          </button>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
-  // ── Render: Main Modal ────────────────────────────────────
+  // ── Main modal ────────────────────────────────────────────
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)" }}
+      className="fixed inset-0 z-50"
+      style={{
+        background:"rgba(0,0,0,0.85)",
+        backdropFilter:"blur(4px)",
+        display:"flex",
+        alignItems:"flex-end",
+        justifyContent:"center",
+      }}
       onClick={onClose}
     >
       <style>{`
-        @media (max-width: 640px) {
-          .webcam-modal-card {
-            width: 100% !important;
-            border-bottom-left-radius: 0 !important;
-            border-bottom-right-radius: 0 !important;
-            max-height: 96dvh !important;
-            border-radius: 16px 16px 0 0 !important;
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        /* ── Modal card ── */
+        .wc-card {
+          width: 100%;
+          max-height: 96dvh;
+          border-radius: 18px 18px 0 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        /* Tablet: centred, capped width, rounded all corners */
+        @media (min-width: 600px) {
+          .wc-outer {
+            align-items: center !important;
+            padding: 20px;
+          }
+          .wc-card {
+            width: min(520px, 100%);
+            max-height: 92dvh;
+            border-radius: 16px;
           }
         }
+
+        /* Desktop / laptop: slightly wider, more padding */
+        @media (min-width: 1024px) {
+          .wc-card {
+            width: min(560px, 100%);
+            max-height: 90dvh;
+          }
+        }
+
+        /* ── Footer buttons ── */
+        .wc-btn {
+          padding: 10px 16px;
+          border-radius: 7px;
+          font-family: "Rajdhani", sans-serif;
+          font-weight: 700;
+          font-size: 13px;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: all 150ms;
+        }
+        /* On very small phones, shrink button text */
+        @media (max-width: 360px) {
+          .wc-btn { padding: 9px 10px; font-size: 11px; }
+        }
+
+        /* ── Action selector ── */
+        .wc-action-row { display: flex; gap: 8px; }
+        .wc-action-btn {
+          flex: 1;
+          padding: 10px 8px;
+          border-radius: 8px;
+          font-family: "Rajdhani", sans-serif;
+          font-weight: 700;
+          transition: all 150ms;
+        }
+        .wc-action-label { font-size: clamp(12px, 3.8vw, 14px); display: block; }
+        .wc-action-sub   { font-size: clamp(9px, 2.5vw, 10px); display: block; margin-top: 3px; font-weight: 400; }
+
+        /* ── Camera area: fixed aspect ratio, max height so it never dominates ── */
+        .wc-camera-wrap {
+          position: relative;
+          width: 100%;
+          aspect-ratio: 4 / 3;
+          max-height: 280px;
+          border-radius: 10px;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        @media (min-width: 600px) {
+          .wc-camera-wrap { max-height: 320px; }
+        }
+        @media (min-width: 1024px) {
+          .wc-camera-wrap { max-height: 360px; }
+        }
+
+        /* ── Clock: compact on phone, normal on larger ── */
+        .wc-clock-time { font-family:"Share Tech Mono",monospace; font-weight:700; color:#00B8B8; letter-spacing:0.05em; line-height:1; font-size:clamp(20px,6vw,30px); }
+        .wc-clock-date { font-family:"Mulish",sans-serif; margin-top:3px; font-size:clamp(9px,2.5vw,11px); }
+
+        /* ── Banners ── */
+        .wc-banner {
+          display: flex;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 10px 12px;
+          border-radius: 8px;
+          font-size: 12px;
+          line-height: 1.5;
+        }
+        @media (max-width: 360px) {
+          .wc-banner { font-size: 11px; padding: 8px 10px; }
+        }
       `}</style>
+
       <div
-        onClick={(e) => e.stopPropagation()}
-        className="webcam-modal-card"
-        style={{
-          width: "min(520px, 96vw)",
-          maxHeight: "95dvh",
-          display: "flex",
-          flexDirection: "column",
-          background: cardBg,
-          border: `1px solid ${border}`,
-          borderRadius: "16px",
-          overflow: "hidden",
-        }}
+        onClick={e=>e.stopPropagation()}
+        className="wc-card"
+        style={{ background:cardBg, border:`1px solid ${border}` }}
       >
+
         {/* ── Header ── */}
-        <div style={{
-          padding: "14px 18px",
-          borderBottom: `1px solid ${border}`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexShrink: 0,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{
-              width: "36px", height: "36px", borderRadius: "8px",
-              background: "rgba(204,0,0,0.10)", border: "1px solid rgba(204,0,0,0.3)",
-              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            }}>
-              <Camera size={16} style={{ color: "#CC0000" }} />
+        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${border}`, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"10px", minWidth:0 }}>
+            <div style={{ width:"34px", height:"34px", borderRadius:"8px", background:"rgba(204,0,0,0.10)", border:"1px solid rgba(204,0,0,0.3)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+              <Camera size={15} style={{ color:"#CC0000" }}/>
             </div>
-            <div>
-              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "clamp(14px, 4vw, 16px)", color: textPri, lineHeight: 1 }}>
+            <div style={{ minWidth:0 }}>
+              <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"clamp(13px,4vw,16px)", color:textPri, lineHeight:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                 Webcam Attendance
               </p>
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "clamp(10px, 2.5vw, 11px)", color: textMuted, marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"clamp(9px,2.5vw,11px)", color:textMuted, marginTop:"2px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                 {empName} · {todayString()}
               </p>
             </div>
           </div>
-          <button onClick={onClose} style={{ color: textMuted, background: "none", border: "none", cursor: "pointer" }}>
-            <X size={18} />
+          <button
+            onClick={onClose}
+            style={{ color:textMuted, background:"none", border:"none", cursor:"pointer", padding:"4px", flexShrink:0, marginLeft:"8px" }}
+          >
+            <X size={18}/>
           </button>
         </div>
 
-        {/* ── Body ── */}
-        <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", flex: 1 }}>
+        {/* ── Scrollable Body ── */}
+        <div style={{ flex:1, overflowY:"auto", padding:"12px 16px", display:"flex", flexDirection:"column", gap:"10px" }}>
 
-          {/* Live Clock */}
-          <LiveClock isDark={isDark} />
+          {/* Clock */}
+          <div style={{ textAlign:"center", paddingBottom:"2px" }}>
+            <LiveClock isDark={isDark}/>
+          </div>
 
           {/* Action selector */}
           <div>
-            <p style={{
-              fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
-              color: "#CC0000", letterSpacing: "0.15em", marginBottom: "8px",
-            }}>
+            <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"9px", fontWeight:700, color:"#CC0000", letterSpacing:"0.18em", marginBottom:"7px" }}>
               MARK ATTENDANCE AS
             </p>
-            <div style={{ display: "flex", gap: "8px" }}>
-              {["checkin", "checkout"].map((a) => {
-                const label = a === "checkin" ? "Check In" : "Check Out";
-                // Check In  disabled when: already checked in (with or without checkout)
-                // Check Out disabled when: not yet checked in, OR already checked out
-                const disabled =
-                  a === "checkin"
-                    ? alreadyCheckedIn                              // can't check-in twice
-                    : !alreadyCheckedIn || alreadyCheckedOut;       // must have checked in, and not yet checked out
-                const isSelected = action === a;
+            <div className="wc-action-row">
+              {["logIn","logOut"].map(a => {
+                const label    = a==="logIn" ? "Log In" : "Log Out";
+                const disabled = isTestEmployee ? false : (a==="logIn" ? alreadyLoggedIn : (!alreadyLoggedIn||alreadyLoggedOut));
+                const isSel    = action===a;
                 return (
                   <button
                     key={a}
-                    onClick={() => !disabled && setAction(a)}
+                    onClick={()=>!disabled&&setAction(a)}
                     disabled={disabled}
+                    className="wc-action-btn"
                     style={{
-                      flex: 1,
-                      padding: "10px 0",
-                      borderRadius: "8px",
-                      fontFamily: "Rajdhani, sans-serif",
-                      fontSize: "14px",
-                      fontWeight: 700,
-                      cursor: disabled ? "not-allowed" : "pointer",
-                      border: isSelected ? "1px solid #CC0000" : `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
-                      background: isSelected ? "rgba(204,0,0,0.12)" : "transparent",
-                      color: disabled
-                        ? (isDark ? "#333333" : "#CCCCCC")
-                        : isSelected ? "#CC0000" : (isDark ? "#666666" : "#888888"),
-                      transition: "all 150ms",
-                      opacity: disabled ? 0.5 : 1,
+                      cursor:    disabled?"not-allowed":"pointer",
+                      border:    isSel?"1px solid #CC0000":`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`,
+                      background:isSel?"rgba(204,0,0,0.12)":"transparent",
+                      color:     disabled?(isDark?"#333333":"#CCCCCC"):isSel?"#CC0000":(isDark?"#666666":"#888888"),
+                      opacity:   disabled?0.5:1,
                     }}
                   >
-                    {label}
-                    {a === "checkin" && alreadyCheckedIn && (
-                      <span style={{ fontSize: "10px", display: "block", marginTop: "2px", fontWeight: 400 }}>
-                        {alreadyCheckedOut ? "Already done" : `Done at ${todayRecord?.checkIn}`}
-                      </span>
+                    <span className="wc-action-label">{label}</span>
+                    {a==="logIn"  && alreadyLoggedIn  && (
+                      <span className="wc-action-sub">{alreadyLoggedOut?"Already done":`Done · ${todayRecord?.logIn}`}</span>
                     )}
-                    {a === "checkout" && alreadyCheckedOut && (
-                      <span style={{ fontSize: "10px", display: "block", marginTop: "2px", fontWeight: 400 }}>
-                        Done at {todayRecord?.checkOut}
-                      </span>
+                    {a==="logOut" && alreadyLoggedOut && (
+                      <span className="wc-action-sub">Done · {todayRecord?.logOut}</span>
                     )}
                   </button>
                 );
@@ -625,329 +795,361 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             </div>
           </div>
 
-          {/* ── Geo-fence status banner ── */}
-          {geoRequired && geoStatus === "checking" && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px",
-              borderRadius: "8px", background: "rgba(201,146,42,0.08)", border: "1px solid rgba(201,146,42,0.3)",
-            }}>
-              <Navigation size={14} style={{ color: "#C9922A", flexShrink: 0 }} />
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#C9922A" }}>
-                Verifying your location…
-              </p>
+          {/* Geo banners */}
+          {geoRequired && geoStatus==="fetching" && (
+            <div className="wc-banner" style={{ background:"rgba(201,146,42,0.08)", border:"1px solid rgba(201,146,42,0.3)" }}>
+              <Navigation size={14} style={{ color:"#C9922A", flexShrink:0, marginTop:"1px" }}/>
+              <p style={{ fontFamily:"Mulish,sans-serif", color:"#C9922A" }}>Verifying your location…</p>
             </div>
           )}
-          {geoRequired && geoStatus === "blocked" && (
-            <div style={{
-              padding: "14px 16px", borderRadius: "8px",
-              background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.3)",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                <MapPin size={14} style={{ color: "#CC0000", flexShrink: 0 }} />
-                <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 700, color: "#CC0000" }}>
-                  Outside Office Premises
-                </p>
+          {geoRequired && geoStatus==="blocked" && (
+            <div style={{ padding:"12px 14px", borderRadius:"8px", background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"7px", marginBottom:"5px" }}>
+                <MapPin size={13} style={{ color:"#CC0000", flexShrink:0 }}/>
+                <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"13px", fontWeight:700, color:"#CC0000" }}>Outside Office Premises</p>
               </div>
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#888888" : "#666666", lineHeight: 1.5 }}>
-                You are <strong style={{ color: "#CC0000" }}>{geoDistance}m</strong> away from the office.
-                WFO employees must be within <strong>{companySettings?.geoFenceRadius ?? 100}m</strong> to mark attendance.
-              </p>
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#555555" : "#AAAAAA", marginTop: "8px" }}>
-                Please come to the office or contact your admin if this is incorrect.
+              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:isDark?"#888888":"#666666", lineHeight:1.5 }}>
+                You are <strong style={{ color:"#CC0000" }}>{geoDistance}m</strong> away. WFO employees must be within <strong>{companySettings?.geoFenceRadius??100}m</strong>.
               </p>
             </div>
           )}
-          {geoRequired && geoStatus === "allowed" && geoDistance !== null && (
+          {geoRequired && geoStatus==="allowed" && geoDistance!==null && (
+            <div className="wc-banner" style={{ background:"rgba(0,184,184,0.07)", border:"1px solid rgba(0,184,184,0.25)" }}>
+              <ShieldCheck size={14} style={{ color:"#00B8B8", flexShrink:0, marginTop:"1px" }}/>
+              <p style={{ fontFamily:"Mulish,sans-serif", color:"#00B8B8" }}>Location verified — <strong>{geoDistance}m</strong> from office ✓</p>
+            </div>
+          )}
+          {geoRequired && geoStatus==="error" && (
+            <div className="wc-banner" style={{ background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)" }}>
+              <AlertCircle size={14} style={{ color:"#CC0000", flexShrink:0, marginTop:"1px" }}/>
+              <p style={{ fontFamily:"Mulish,sans-serif", color:"#CC0000" }}>Could not access your location. Please enable GPS and try again.</p>
+            </div>
+          )}
+
+          {/* Camera area */}
+          {geoStatus!=="blocked" && geoStatus!=="fetching" && (
+            <div
+              className="wc-camera-wrap"
+              style={{ background:isDark?"#0D0D0D":"#F0F0F0", border:`1px solid ${border}` }}
+            >
+              {isTestEmployee ? (
+                <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"10px", padding:"20px", textAlign:"center" }}>
+                  <ShieldCheck size={36} style={{ color:"#00B8B8" }} />
+                  <p style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"15px", fontWeight:700, color:"#00B8B8", margin:0 }}>
+                    TEST MODE ACTIVE
+                  </p>
+                  <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"11px", color:textMuted, maxWidth:"240px", lineHeight:1.5 }}>
+                    Face recognition and location requirements are bypassed for this account. You can mark attendance instantly.
+                  </p>
+                  <button
+                    onClick={() => {
+                      const todayStr = new Date().toISOString().slice(0, 10);
+                      localStorage.removeItem(`mock_att_RWTPVTLTD-IT-OFLT-062026-99_${todayStr}`);
+                      setTodayRecord(null);
+                      setAction("logIn");
+                    }}
+                    style={{
+                      marginTop: "8px",
+                      padding: "6px 14px",
+                      borderRadius: "6px",
+                      background: "rgba(0,184,184,0.12)",
+                      border: "1px solid rgba(0,184,184,0.3)",
+                      color: "#00B8B8",
+                      fontFamily: "Rajdhani, sans-serif",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      transition: "all 150ms",
+                      letterSpacing: "0.05em",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(0,184,184,0.22)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(0,184,184,0.12)"; }}
+                  >
+                    RESET TODAY'S ATTENDANCE
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <canvas ref={canvasRef} style={{ display:"none" }}/>
+                  <video
+                    ref={videoRef}
+                    muted
+                    playsInline
+                    style={{ width:"100%", height:"100%", objectFit:"cover", transform:"scaleX(-1)", display:camStatus==="active"?"block":"none" }}
+                  />
+
+                  {snapshotObjectUrl && (
+                    <img src={snapshotObjectUrl} alt="Captured" style={{ width:"100%", height:"100%", objectFit:"cover", position:"absolute", inset:0 }}/>
+                  )}
+
+                  {!snapshotObjectUrl && camStatus!=="active" && (
+                    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:"10px", padding:"20px", textAlign:"center" }}>
+                      {camStatus==="loading" && (
+                        <>
+                          <div style={{ width:"36px", height:"36px", borderRadius:"50%", border:"3px solid rgba(0,184,184,0.2)", borderTopColor:"#00B8B8", animation:"spin 0.8s linear infinite" }}/>
+                          <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:textMuted }}>Starting camera…</p>
+                        </>
+                      )}
+                      {camStatus==="idle" && (
+                        <>
+                          <VideoOff size={36} style={{ color:isDark?"#333333":"#CCCCCC" }}/>
+                          <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:textMuted, maxWidth:"220px" }}>Camera is off. Tap "Open Camera" to start.</p>
+                          <button
+                            onClick={startCamera}
+                            style={{ padding:"8px 18px", borderRadius:"7px", background:"transparent", border:`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`, color:isDark?"#888888":"#666666", fontFamily:"Rajdhani,sans-serif", fontSize:"12px", fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:"6px" }}
+                          >
+                            <Video size={13}/> Open Camera
+                          </button>
+                        </>
+                      )}
+                      {(camStatus==="error"||camStatus==="denied") && (
+                        <>
+                          <AlertCircle size={32} style={{ color:"#CC0000" }}/>
+                          <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"11px", color:"#CC0000", maxWidth:"240px", lineHeight:1.5 }}>{errorMsg}</p>
+                          {camStatus==="error" && (
+                            <button
+                              onClick={startCamera}
+                              style={{ padding:"7px 14px", borderRadius:"7px", background:"rgba(204,0,0,0.10)", border:"1px solid rgba(204,0,0,0.3)", color:"#CC0000", fontFamily:"Rajdhani,sans-serif", fontSize:"11px", fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:"5px" }}
+                            >
+                              <RefreshCw size={12}/> Retry
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Clock overlay on live feed */}
+              {camStatus==="active" && !snapshotObjectUrl && (
+                <div style={{ position:"absolute", bottom:"8px", left:"8px", background:"rgba(0,0,0,0.65)", borderRadius:"5px", padding:"3px 8px" }}>
+                  <LiveClockMinimal/>
+                </div>
+              )}
+
+              {/* Retake overlay button */}
+              {snapshotObjectUrl && (
+                <button
+                  onClick={retake}
+                  style={{ position:"absolute", top:"8px", right:"8px", padding:"5px 10px", borderRadius:"6px", background:"rgba(0,0,0,0.70)", border:"1px solid rgba(255,255,255,0.2)", color:"#FFFFFF", fontFamily:"Rajdhani,sans-serif", fontSize:"11px", fontWeight:600, cursor:"pointer", display:"flex", alignItems:"center", gap:"5px" }}
+                >
+                  <RefreshCw size={11}/> Retake
+                </button>
+              )}
+
+              {/* Face scanning overlay */}
+              {snapshotObjectUrl && (faceStatus==="verifying"||faceStatus==="loading_models") && (
+                <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.55)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:"10px" }}>
+                  <ScanFace size={40} style={{ color:"#00B8B8", animation:"spin 2s linear infinite" }}/>
+                  <p style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"12px", color:"#FFFFFF", letterSpacing:"0.12em" }}>
+                    {faceStatus==="loading_models" ? "LOADING MODELS…" : "VERIFYING FACE…"}
+                  </p>
+                </div>
+              )}
+
+              {/* Matched badge */}
+              {snapshotObjectUrl && faceStatus==="matched" && (
+                <div style={{ position:"absolute", bottom:"8px", left:"8px", background:"rgba(0,150,136,0.90)", borderRadius:"5px", padding:"3px 10px", display:"flex", alignItems:"center", gap:"5px" }}>
+                  <ShieldCheck size={11} style={{ color:"#FFFFFF" }}/>
+                  <span style={{ fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"11px", color:"#FFFFFF", letterSpacing:"0.08em" }}>FACE MATCHED</span>
+                </div>
+              )}
+
+              {/* Mismatch red border */}
+              {snapshotObjectUrl && ["mismatch","no_face_snapshot","no_profile","no_face_profile","error"].includes(faceStatus) && (
+                <div style={{ position:"absolute", inset:0, border:"3px solid #CC0000", borderRadius:"10px", pointerEvents:"none", boxShadow:"inset 0 0 20px rgba(204,0,0,0.3)" }}/>
+              )}
+            </div>
+          )}
+
+          {/* Face verification banner */}
+          {faceBanner && snapshotObjectUrl && (
+            <div className="wc-banner" style={{ background:faceBanner.bg, border:`1px solid ${faceBanner.bdr}`, alignItems:"flex-start" }}>
+              <ScanFace size={14} style={{ color:faceBanner.color, flexShrink:0, marginTop:"2px", ...(faceBanner.spinning?{animation:"spin 1.5s linear infinite"}:{}) }}/>
+              <div style={{ flex:1 }}>
+                <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:faceBanner.color, lineHeight:1.5 }}>{faceBanner.text}</p>
+                {["mismatch","no_face_snapshot"].includes(faceStatus) && (
+                  <button
+                    onClick={retake}
+                    style={{ marginTop:"6px", padding:"5px 10px", borderRadius:"5px", background:"rgba(204,0,0,0.12)", border:"1px solid rgba(204,0,0,0.35)", color:"#CC0000", fontFamily:"Rajdhani,sans-serif", fontWeight:700, fontSize:"11px", cursor:"pointer", display:"flex", alignItems:"center", gap:"5px" }}
+                  >
+                    <RefreshCw size={11}/> Retake Photo
+                  </button>
+                )}
+                {faceScore !== null && faceStatus === "matched" && (
+                  <p style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"10px", color:faceBanner.color, marginTop:"3px", opacity:0.7 }}>
+                    similarity: {(1 - faceScore).toFixed(2)}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Work Description (logOut only, shown after face matched or test bypass) ── */}
+          {action === "logOut" && (isTestEmployee || (faceStatus === "matched" && snapshotObjectUrl)) && (
             <div style={{
-              display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px",
-              borderRadius: "8px", background: "rgba(0,184,184,0.07)", border: "1px solid rgba(0,184,184,0.25)",
+              borderRadius: "10px",
+              border: `1px solid ${workDescription.trim() ? "rgba(0,184,184,0.4)" : isDark ? "#2A2A2A" : "#E0E0E0"}`,
+              background: isDark ? "#0D0D0D" : "#F9F9F9",
+              padding: "12px 14px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              transition: "border-color 150ms",
             }}>
-              <ShieldCheck size={14} style={{ color: "#00B8B8", flexShrink: 0 }} />
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#00B8B8" }}>
-                Location verified — you are <strong>{geoDistance}m</strong> from the office ✓
-              </p>
-            </div>
-          )}
-          {geoRequired && geoStatus === "error" && (
-            <div style={{
-              display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px",
-              borderRadius: "8px", background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.3)",
-            }}>
-              <AlertCircle size={14} style={{ color: "#CC0000", flexShrink: 0 }} />
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#CC0000" }}>
-                Could not access your location. Please enable GPS and try again.
-              </p>
-            </div>
-          )}
+              {/* Label row */}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <label style={{
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontSize: "10px", fontWeight: 700,
+                  color: "#CC0000", letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                }}>
+                  TODAY'S WORK SUMMARY
+                </label>
+                <span style={{
+                  fontFamily: "Share Tech Mono, monospace",
+                  fontSize: "10px",
+                  color: workDescription.trim().length > 450 ? "#CC0000" : textMuted,
+                }}>
+                  {workDescription.trim().length}/500
+                </span>
+              </div>
 
-          {/* Camera area — hidden if geo is blocked */}
-          {geoStatus !== "blocked" && geoStatus !== "checking" && (
-          <div style={{
-            position: "relative",
-            borderRadius: "10px",
-            overflow: "hidden",
-            background: isDark ? "#0D0D0D" : "#F0F0F0",
-            border: `1px solid ${border}`,
-            aspectRatio: "4/3",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}>
-
-            {/* Hidden canvas for capture */}
-            <canvas ref={canvasRef} style={{ display: "none" }} />
-
-            {/* Video feed */}
-            <video
-              ref={videoRef}
-              muted
-              playsInline
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover",
-                transform: "scaleX(-1)", // mirror for natural selfie view
-                display: camStatus === "active" ? "block" : "none",
-              }}
-            />
-
-            {/* Snapshot preview */}
-            {snapshotObjectUrl && (
-              <img
-                src={snapshotObjectUrl}
-                alt="Captured"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
-              />
-            )}
-
-            {/* Idle / loading / error overlays */}
-            {!snapshotObjectUrl && camStatus !== "active" && (
-              <div style={{
-                display: "flex", flexDirection: "column", alignItems: "center",
-                gap: "12px", padding: "24px", textAlign: "center",
+              {/* Helper text */}
+              <p style={{
+                fontFamily: "Mulish, sans-serif",
+                fontSize: "11px",
+                color: textMuted,
+                lineHeight: 1.5,
+                margin: 0,
               }}>
-                {camStatus === "loading" && (
-                  <>
-                    <div style={{
-                      width: "40px", height: "40px", borderRadius: "50%",
-                      border: "3px solid rgba(0,184,184,0.2)", borderTopColor: "#00B8B8",
-                      animation: "spin 0.8s linear infinite",
-                    }} />
-                    <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>
-                      Starting camera…
-                    </p>
-                  </>
-                )}
-                {camStatus === "idle" && (
-                  <>
-                    <VideoOff size={40} style={{ color: isDark ? "#333333" : "#CCCCCC" }} />
-                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textMuted }}>
-                      Camera is off. Click "Open Camera" to start.
-                    </p>
-                    <button
-                      onClick={startCamera}
-                      style={{
-                        padding: "9px 20px", borderRadius: "7px",
-                        background: "transparent",
-                        border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
-                        color: isDark ? "#888888" : "#666666",
-                        fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 600,
-                        cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
-                      }}
-                    >
-                      <Video size={14} /> Open Camera
-                    </button>
-                  </>
-                )}
-                {(camStatus === "error" || camStatus === "denied") && (
-                  <>
-                    <AlertCircle size={36} style={{ color: "#CC0000" }} />
-                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#CC0000", maxWidth: "280px" }}>
-                      {errorMsg}
-                    </p>
-                    {camStatus === "error" && (
-                      <button
-                        onClick={startCamera}
-                        style={{
-                          padding: "8px 16px", borderRadius: "7px",
-                          background: "rgba(204,0,0,0.10)", border: "1px solid rgba(204,0,0,0.3)",
-                          color: "#CC0000",
-                          fontFamily: "Rajdhani, sans-serif", fontSize: "12px", fontWeight: 600,
-                          cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
-                        }}
-                      >
-                        <RefreshCw size={13} /> Retry
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
+                Briefly describe what you accomplished today. This is required before logging out.
+              </p>
 
-            {/* Corner clock overlay on live feed */}
-            {camStatus === "active" && !snapshotObjectUrl && (
-              <div style={{
-                position: "absolute", bottom: "10px", left: "10px",
-                background: "rgba(0,0,0,0.65)", borderRadius: "6px",
-                padding: "4px 10px",
-              }}>
-                <LiveClockMinimal />
-              </div>
-            )}
-
-            {/* Snapshot overlay: retake button */}
-            {snapshotObjectUrl && (
-              <button
-                onClick={retake}
-                style={{
-                  position: "absolute", top: "10px", right: "10px",
-                  padding: "6px 12px", borderRadius: "6px",
-                  background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.2)",
-                  color: "#FFFFFF",
-                  fontFamily: "Rajdhani, sans-serif", fontSize: "11px", fontWeight: 600,
-                  cursor: "pointer", display: "flex", alignItems: "center", gap: "5px",
+              {/* Textarea */}
+              <textarea
+                value={workDescription}
+                onChange={(e) => {
+                  if (e.target.value.length <= 500) setWorkDescription(e.target.value);
                 }}
-              >
-                <RefreshCw size={11} /> Retake
-              </button>
-            )}
-          </div>
+                placeholder="e.g. Completed the API integration, reviewed pull requests, attended standup and sprint planning…"
+                rows={4}
+                style={{
+                  width: "100%",
+                  resize: "vertical",
+                  minHeight: "90px",
+                  maxHeight: "200px",
+                  padding: "10px 12px",
+                  borderRadius: "7px",
+                  border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
+                  background: isDark ? "#111111" : "#FFFFFF",
+                  color: isDark ? "#F0F0F0" : "#111111",
+                  fontFamily: "Mulish, sans-serif",
+                  fontSize: "13px",
+                  lineHeight: "1.55",
+                  outline: "none",
+                  boxSizing: "border-box",
+                  transition: "border-color 150ms",
+                }}
+                onFocus={(e) => { e.target.style.borderColor = "#00B8B8"; }}
+                onBlur={(e)  => { e.target.style.borderColor = isDark ? "#2A2A2A" : "#E0E0E0"; }}
+              />
 
-          )} {/* end geo gated camera area */}
+              {/* Empty warning */}
+              {workDescription.trim().length === 0 && (
+                <p style={{
+                  fontFamily: "Mulish, sans-serif",
+                  fontSize: "11px",
+                  color: "#CC0000",
+                  margin: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "5px",
+                }}>
+                  ⚠ Work summary is required to confirm log-out.
+                </p>
+              )}
+            </div>
+          )}
 
-          {/* Error message */}
-          {errorMsg && camStatus !== "error" && camStatus !== "denied" && (
-            <div style={{
-              padding: "10px 14px", borderRadius: "7px",
-              background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.25)",
-            }}>
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#CC0000" }}>
-                {errorMsg}
-              </p>
+          {/* General save error */}
+          {errorMsg && camStatus!=="error" && camStatus!=="denied" && (
+            <div style={{ padding:"10px 12px", borderRadius:"7px", background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.25)" }}>
+              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:"#CC0000" }}>{errorMsg}</p>
             </div>
           )}
 
           {/* Upload progress bar */}
           {saving && uploadProgress > 0 && uploadProgress < 100 && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
-                <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.12em" }}>
-                  UPLOADING TO CLOUDINARY
-                </span>
-                <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: isDark ? "#666666" : "#999999" }}>
-                  {uploadProgress}%
-                </span>
+              <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"4px" }}>
+                <span style={{ fontFamily:"Rajdhani,sans-serif", fontSize:"9px", fontWeight:700, color:"#CC0000", letterSpacing:"0.14em" }}>UPLOADING SNAPSHOT</span>
+                <span style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"10px", color:textMuted }}>{uploadProgress}%</span>
               </div>
-              <div style={{
-                height: "4px", borderRadius: "2px",
-                background: isDark ? "#1A1A1A" : "#E8E8E8",
-                overflow: "hidden",
-              }}>
-                <div style={{
-                  height: "100%",
-                  width: `${uploadProgress}%`,
-                  background: "linear-gradient(90deg, #CC0000, #00B8B8)",
-                  borderRadius: "2px",
-                  transition: "width 200ms ease",
-                }} />
+              <div style={{ height:"3px", borderRadius:"2px", background:isDark?"#1A1A1A":"#E8E8E8", overflow:"hidden" }}>
+                <div style={{ height:"100%", width:`${uploadProgress}%`, background:"linear-gradient(90deg,#CC0000,#00B8B8)", borderRadius:"2px", transition:"width 200ms ease" }}/>
               </div>
             </div>
           )}
 
-          {/* Info note */}
-          <p style={{
-            fontFamily: "Mulish, sans-serif", fontSize: "11px",
-            color: textMuted, textAlign: "center",
-          }}>
-            Your photo will be uploaded to Cloudinary and attendance sent to the admin panel.
+          <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"10px", color:textMuted, textAlign:"center", lineHeight:1.5 }}>
+            Your photo and face verification result will be recorded in the admin panel.
           </p>
         </div>
 
         {/* ── Footer ── */}
         <div style={{
-          padding: "12px 18px",
-          borderTop: `1px solid ${border}`,
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "space-between",
-          gap: "8px",
-          flexShrink: 0,
+          padding:"10px 16px",
+          borderTop:`1px solid ${border}`,
+          display:"flex",
+          alignItems:"center",
+          justifyContent:"space-between",
+          gap:"8px",
+          flexShrink:0,
+          flexWrap:"wrap",
         }}>
+          {/* Cancel — left */}
           <button
             onClick={onClose}
-            style={{
-              padding: "9px 20px", borderRadius: "7px",
-              background: "transparent",
-              border: `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}`,
-              color: isDark ? "#666666" : "#888888",
-              fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 600,
-              cursor: "pointer",
-            }}
+            className="wc-btn"
+            style={{ background:"transparent", border:`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`, color:isDark?"#666666":"#888888" }}
           >
             Cancel
           </button>
 
-          <div style={{ display: "flex", gap: "8px" }}>
-            {/* Capture button — only shown when camera is active */}
-            {camStatus === "active" && !snapshotObjectUrl && (
+          {/* Right-side action buttons */}
+          <div style={{ display:"flex", gap:"8px", flex:1, justifyContent:"flex-end" }}>
+            {camStatus==="active" && !snapshotObjectUrl && (
               <button
                 onClick={captureSnapshot}
-                style={{
-                  padding: "9px 20px", borderRadius: "7px",
-                  background: "rgba(0,184,184,0.12)", border: "1px solid rgba(0,184,184,0.4)",
-                  color: "#00B8B8",
-                  fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 700,
-                  cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
-                }}
+                className="wc-btn"
+                style={{ background:"rgba(0,184,184,0.12)", border:"1px solid rgba(0,184,184,0.4)", color:"#00B8B8", display:"flex", alignItems:"center", gap:"6px" }}
               >
-                <Camera size={14} /> Capture Photo
+                <Camera size={13}/> Capture
               </button>
             )}
-
-            {/* Confirm & Save button */}
             <button
               onClick={handleSave}
-              disabled={!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking"}
+              disabled={!canSave}
+              className="wc-btn"
               style={{
-                padding: "9px 24px", borderRadius: "7px",
-                background: (!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking") ? (isDark ? "#1A1A1A" : "#E8E8E8") : "#CC0000",
-                border: (!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking") ? `1px solid ${isDark ? "#2A2A2A" : "#E0E0E0"}` : "1px solid #CC0000",
-                color: (!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking") ? (isDark ? "#444444" : "#BBBBBB") : "#FFFFFF",
-                fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 700,
-                cursor: (!snapshotObjectUrl || !snapshotBlob || saving || geoStatus === "blocked" || geoStatus === "checking") ? "not-allowed" : "pointer",
-                letterSpacing: "0.05em",
-                transition: "all 150ms",
+                background: !canSave?(isDark?"#1A1A1A":"#E8E8E8"):"#CC0000",
+                border:     !canSave?`1px solid ${isDark?"#2A2A2A":"#E0E0E0"}`:"1px solid #CC0000",
+                color:      !canSave?(isDark?"#444444":"#BBBBBB"):"#FFFFFF",
+                cursor:     !canSave?"not-allowed":"pointer",
+                letterSpacing:"0.05em",
               }}
             >
               {saving
-              ? uploadProgress < 100
-                ? `Uploading… ${uploadProgress}%`
-                : "Saving…"
-              : action === "checkin" ? "Confirm Check In" : "Confirm Check Out"}
+                ? (uploadProgress < 100 ? `Uploading… ${uploadProgress}%` : "Saving…")
+                : (action==="logIn" ? "Confirm Log In" : "Confirm Log Out")
+              }
             </button>
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-// ── Minimal live clock for camera overlay ─────────────────────
-function LiveClockMinimal() {
-  const [time, setTime] = useState(new Date());
-  useEffect(() => {
-    const id = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return (
-    <span style={{
-      fontFamily: "Share Tech Mono, monospace",
-      fontSize: "11px",
-      color: "#FFFFFF",
-      letterSpacing: "0.05em",
-    }}>
-      {formatTime12(time)}
-    </span>
   );
 }

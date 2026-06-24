@@ -1,93 +1,138 @@
 rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────
+//  Firestore Security Rules — Royals Webtech EMS
+//
+//  User roles are stored in /users/{uid} → { role: "admin" | "employee" }
+//
+//  Admin  → full read/write on every collection
+//  Employee → can read their own employee record, submit/read
+//             their own attendance & leave, read announcements
+//  Public → none (no collection is open without auth)
+// ─────────────────────────────────────────────────────────────
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper functions ──────────────────────────────────
+    // ── Helper functions ──────────────────────────────────────
+
     function isAuthed() {
       return request.auth != null;
     }
 
-    function userRole() {
+    function role() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
 
     function isAdmin() {
-      return isAuthed() && userRole() == "admin";
+      return isAuthed() && role() == "admin";
     }
 
     function isEmployee() {
-      return isAuthed() && userRole() == "employee";
+      return isAuthed() && role() == "employee";
     }
 
-    function ownEmpId() {
+    function myEmpId() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.empId;
     }
 
-    // ── /users ────────────────────────────────────────────
+    // ── /users ────────────────────────────────────────────────
     match /users/{uid} {
-      allow read: if isAuthed() && (request.auth.uid == uid || isAdmin());
-      allow write: if isAdmin();
+      allow read:   if isAuthed() && (isAdmin() || request.auth.uid == uid);
+      allow write:  if isAdmin();
     }
 
-    // ── /employees ────────────────────────────────────────
-    // workType field ("WFO" | "WFH" | "Hybrid") is stored here.
-    // Employees can read their own profile; admins manage all.
+    // ── /employees ────────────────────────────────────────────
     match /employees/{empId} {
-      allow read: if isAuthed();
-      allow create, update, delete: if isAdmin();
+      allow read:   if isAdmin() || (isEmployee() && myEmpId() == empId);
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isEmployee() && myEmpId() == empId);
+      allow delete: if isAdmin();
     }
 
-    // ── /departments ──────────────────────────────────────
+    // ── /departments ──────────────────────────────────────────
     match /departments/{deptId} {
-      allow read: if isAuthed();
-      allow create, update, delete: if isAdmin();
+      allow read:   if isAuthed();
+      allow write:  if isAdmin();
     }
 
-    // ── /leaveRequests ────────────────────────────────────
+    // ── /attendance ───────────────────────────────────────────
+    match /attendance/{recordId} {
+      allow read:   if isAdmin() ||
+                       (isEmployee() && resource.data.empId == myEmpId());
+      allow create: if isAdmin() ||
+                       (isEmployee() && request.resource.data.empId == myEmpId());
+      allow update: if isAdmin() ||
+                       (isEmployee() && resource.data.empId == myEmpId());
+      allow delete: if isAdmin();
+    }
+
+    // ── /leaveRequests ────────────────────────────────────────
     match /leaveRequests/{reqId} {
-      allow read: if isAdmin() || (isEmployee() && resource.data.empId == ownEmpId());
-      allow create: if isEmployee() && request.resource.data.empId == ownEmpId();
+      allow read:   if isAdmin() ||
+                       (isEmployee() && resource.data.empId == myEmpId());
+      allow create: if isEmployee() && request.resource.data.empId == myEmpId();
+      allow update: if isAdmin() ||
+                       (isEmployee() && resource.data.empId == myEmpId()
+                        && resource.data.status == "Pending");
+      allow delete: if isAdmin();
+    }
+
+    // ── /settings ─────────────────────────────────────────────
+    match /settings/{docId} {
+      allow read:   if isAuthed();
+      allow write:  if isAdmin();
+    }
+
+    // ── /media ────────────────────────────────────────────────
+    match /media/{mediaId} {
+      allow read:   if isAuthed();
+      allow create: if isEmployee() && request.resource.data.uploadedBy == myEmpId();
+      allow update,
+            delete: if isAdmin();
+    }
+
+    // ── /idcard_templates ─────────────────────────────────────
+    // THIS was the missing rule causing "Missing or insufficient permissions"
+    match /idcard_templates/{tplId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ── /projects ─────────────────────────────────────────────
+    match /projects/{projectId} {
+      allow read:   if isAdmin() ||
+                       (isEmployee() && resource.data.empId == myEmpId());
+      allow create: if isAdmin();
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
-    // ── /attendance ───────────────────────────────────────
-    // Employees can read, create and update their OWN attendance records.
-    // IMPORTANT: The read rule uses resource.data.empId — this works correctly
-    // for single-document reads (getDoc) but Firestore DENIES collection queries
-    // for employees because it can't guarantee all docs pass the rule.
-    // Therefore the webcam attendance modal uses getOwnAttendanceRecord(empId, date)
-    // which calls getDoc("attendance/{empId}_{date}") — always safe for employees.
-    match /attendance/{recordId} {
-      allow read: if isAdmin() || (isEmployee() && resource.data.empId == ownEmpId());
-      allow create, update: if isAdmin()
-                            || (isEmployee() && request.resource.data.empId == ownEmpId());
-      allow delete: if isAdmin();
-    }
-
-    // ── /media ────────────────────────────────────────────
-    match /media/{mediaId} {
-      allow read: if isAuthed();
-      allow create: if isEmployee() && request.resource.data.uploadedBy == ownEmpId();
-      allow update, delete: if isAdmin();
-    }
-
-    // ── /settings ────────────────────────────────────────
-    // All settings documents live under /settings/{docId}.
-    // Documents used:
-    //   company        – company info, work schedule, geo-fence (employees read for webcam geo-check)
-    //   notifications  – admin notification preferences
-    //   appearance     – UI appearance preferences
-    //   security       – 2FA, session timeout
-    //   sessions       – active session list
-    //   system         – auto-backup flag, maintenance mode, last backup timestamp
-    //   backup         – manual backup metadata
-    //
-    // Employees need to read "company" for the geo-fence check.
-    // All other settings docs are admin-only.
-    match /settings/{docId} {
-      allow read: if isAuthed();
+    // ── /announcements ────────────────────────────────────────
+    match /announcements/{annoId} {
+      allow read:  if isAuthed();
       allow write: if isAdmin();
+    }
+
+    // ── /notifications ────────────────────────────────────────
+    //  Admin  → full read/write (create, delete, list all)
+    //  Employee → read notifications targeted to them (all / their empId / their dept)
+    //             update only the readBy field (mark as read)
+    match /notifications/{notifId} {
+      allow read:   if isAdmin() ||
+                       (isEmployee() && (
+                         resource.data.type == "all" ||
+                         (resource.data.type == "employee" && resource.data.targetId == myEmpId()) ||
+                         (resource.data.type == "department" &&
+                          resource.data.targetId ==
+                            get(/databases/$(database)/documents/employees/$(myEmpId())).data.department)
+                       ));
+      allow create: if isAdmin();
+      allow update: if isAdmin() ||
+                       (isEmployee() &&
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["readBy"]));
+      allow delete: if isAdmin();
+      // Allow employees to list notifications (needed for onSnapshot queries)
+      allow list:   if isAuthed();
     }
 
   }

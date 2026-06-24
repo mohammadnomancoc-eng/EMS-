@@ -15,6 +15,10 @@
 //  (via subscribeAuthState, which already clears localStorage on sign-out).
 //  If localStorage says logged-in but Firebase session is gone (e.g. expired
 //  token), the next page render will re-check and redirect cleanly.
+//
+//  TEMPLATE BUILDER FIX:
+//  • Added /idcard-template and /idcard-template/:id routes so
+//    IdCardTemplateBuilder is reachable from the admin panel.
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect, createContext, useContext } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -28,12 +32,17 @@ import Dashboard from "./pages/Dashboard";
 import MyAttendance from "./pages/employee/MyAttendance";
 import MyLeave from "./pages/employee/MyLeave";
 import MyProfile from "./pages/employee/MyProfile";
+import MyProjects from "./pages/employee/MyProjects";
 import Announcements from "./pages/employee/Announcements";
 import Employees from "./pages/Employees";
 import LeaveManagement from "./pages/LeaveManagement";
 import Attendance from "./pages/Attendance";
 import Departments from "./pages/Departments";
 import Settings from "./pages/Settings";
+import IdCards from "./pages/IdCards";
+import IdCardTemplateBuilder from "./pages/IdCardTemplateBuilder";
+import AssignedProjects from "./pages/AssignedProjects";
+import Notifications from "./pages/Notifications";
 import { subscribeAuthState } from "./firebase/authService";
 
 export const ThemeContext = createContext();
@@ -74,7 +83,7 @@ function EmployeeRoute({ children }) {
 // • No admin found        → render children (show the setup form)
 // • Firestore error       → treat as "no admin" so setup can still proceed
 function SetupGuard({ children }) {
-  const [status, setStatus] = useState("checking"); // "checking" | "allowed" | "deny"
+  const [status, setStatus] = useState("logIng"); // "logIng" | "allowed" | "deny"
 
   useEffect(() => {
     let cancelled = false;
@@ -92,7 +101,7 @@ function SetupGuard({ children }) {
     return () => { cancelled = true; };
   }, []);
 
-  if (status === "checking") {
+  if (status === "logIng") {
     return (
       <div style={{
         minHeight: "100vh", background: "#0A0A0A",
@@ -130,6 +139,8 @@ function App() {
       if (!user) {
         localStorage.removeItem("rwt-role");
         localStorage.removeItem("rwt-user");
+        const todayStr = new Date().toISOString().slice(0, 10);
+        localStorage.removeItem(`mock_att_RWTPVTLTD-IT-OFLT-062026-99_${todayStr}`);
       }
     });
     return unsub;
@@ -168,6 +179,12 @@ function App() {
             <Route path="leave"       element={<LeaveManagement />} />
             <Route path="departments" element={<Departments />} />
             <Route path="settings"    element={<Settings />} />
+            <Route path="id-cards"    element={<IdCards />} />
+            {/* ── Template Builder routes ── */}
+            <Route path="idcard-template"     element={<IdCardTemplateBuilder />} />
+            <Route path="idcard-template/:id" element={<IdCardTemplateBuilder />} />
+            <Route path="assigned-projects"   element={<AssignedProjects />} />
+            <Route path="notifications"       element={<Notifications />} />
           </Route>
 
           {/* ── Employee Routes (guarded by EmployeeRoute) ── */}
@@ -181,6 +198,7 @@ function App() {
           >
             <Route path="my-attendance" element={<MyAttendance />} />
             <Route path="my-leave"      element={<MyLeave />} />
+            <Route path="my-projects"   element={<MyProjects />} />
             <Route path="my-profile"    element={<MyProfile />} />
             <Route path="announcements" element={<Announcements />} />
           </Route>

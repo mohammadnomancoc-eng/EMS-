@@ -66,6 +66,24 @@ async function registerMessagingServiceWorker() {
   try {
     const registration = await navigator.serviceWorker.register(swUrl, { scope: "/" });
     console.log("[FCM Service Worker] Registered successfully with scope:", registration.scope);
+
+    // Wait for the service worker to become active before returning.
+    // getToken() requires an active SW; without this wait it fails with
+    // "Subscription failed - no active Service Worker".
+    if (registration.installing || registration.waiting) {
+      await new Promise((resolve) => {
+        const sw = registration.installing || registration.waiting;
+        sw.addEventListener("statechange", function handler() {
+          if (sw.state === "activated") {
+            sw.removeEventListener("statechange", handler);
+            resolve();
+          }
+        });
+        // If the SW is already activated by the time we attach the listener
+        if (sw.state === "activated") resolve();
+      });
+    }
+
     return registration;
   } catch (error) {
     console.error("[FCM Service Worker] Registration failed:", error);

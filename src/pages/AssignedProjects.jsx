@@ -23,6 +23,7 @@ import {
   updateProject,
   deleteProject,
 } from "../firebase/firestoreService";
+import { getThumbnailUrl } from "../cloudinary/cloudinaryService";
 
 // ── Utility ───────────────────────────────────────────────────
 function fmt(dateStr) {
@@ -423,15 +424,26 @@ function EmployeeDetail({ emp, isDark, onBack }) {
           border: `1px solid ${isDark ? "#1A1A1A" : "#E5E5E5"}`,
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-            <div style={{
-              width: "46px", height: "46px", borderRadius: "50%",
-              background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)",
-              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-            }}>
-              <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "16px" }}>
-                {(emp.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
-              </span>
-            </div>
+            {emp.photoUrl ? (
+              <img
+                src={getThumbnailUrl(emp.photoUrl, 92)}
+                alt={emp.name}
+                style={{
+                  width: "46px", height: "46px", borderRadius: "50%", objectFit: "cover",
+                  border: "2px solid rgba(204,0,0,0.25)", flexShrink: 0,
+                }}
+              />
+            ) : (
+              <div style={{
+                width: "46px", height: "46px", borderRadius: "50%",
+                background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)",
+                display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>
+                <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "16px" }}>
+                  {(emp.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+                </span>
+              </div>
+            )}
             <div>
               <h2 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "19px", color: isDark ? "#F0F0F0" : "#111", margin: 0 }}>
                 {emp.name}
@@ -570,15 +582,17 @@ function EmployeeList({ isDark, onSelect }) {
     return unsub;
   }, []);
 
-  const filtered = employees.filter((e) => {
-    const q = search.toLowerCase();
-    return (
-      (e.name || "").toLowerCase().includes(q) ||
-      (e.department || "").toLowerCase().includes(q) ||
-      (e.designation || "").toLowerCase().includes(q) ||
-      (e.id || "").toLowerCase().includes(q)
-    );
-  });
+  const filtered = employees
+    .filter((e) => {
+      const q = search.toLowerCase();
+      return (
+        (e.name || "").toLowerCase().includes(q) ||
+        (e.department || "").toLowerCase().includes(q) ||
+        (e.designation || "").toLowerCase().includes(q) ||
+        (e.id || "").toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
   return (
     <>
@@ -647,15 +661,26 @@ function EmployeeList({ isDark, onSelect }) {
               }}
             >
               {/* Avatar */}
-              <div style={{
-                width: "40px", height: "40px", borderRadius: "50%", flexShrink: 0,
-                background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "14px" }}>
-                  {(emp.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
-                </span>
-              </div>
+              {emp.photoUrl ? (
+                <img
+                  src={getThumbnailUrl(emp.photoUrl, 80)}
+                  alt={emp.name}
+                  style={{
+                    width: "40px", height: "40px", borderRadius: "50%", objectFit: "cover",
+                    border: "1.5px solid rgba(204,0,0,0.25)", flexShrink: 0,
+                  }}
+                />
+              ) : (
+                <div style={{
+                  width: "40px", height: "40px", borderRadius: "50%", flexShrink: 0,
+                  background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "14px" }}>
+                    {(emp.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+                  </span>
+                </div>
+              )}
 
               {/* Info */}
               <div style={{ flex: 1, minWidth: 0 }}>

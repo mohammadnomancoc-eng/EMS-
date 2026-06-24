@@ -22,7 +22,124 @@ import {
   updateTeamProject,
   deleteTeamProject,
 } from "../firebase/firestoreService";
-import { uploadToCloudinary } from "../cloudinary/cloudinaryService";
+import { uploadToCloudinary, getThumbnailUrl } from "../cloudinary/cloudinaryService";
+
+// ── Reusable Avatar (photo with initials fallback) ────────────
+function EmpAvatar({ src, name, size = 24 }) {
+  const initials = (name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase();
+  if (src) {
+    return (
+      <img
+        src={getThumbnailUrl(src, size * 2)}
+        alt={name}
+        style={{
+          width: size, height: size, borderRadius: "50%", objectFit: "cover",
+          border: "1.5px solid rgba(204,0,0,0.25)", flexShrink: 0,
+        }}
+        onError={(e) => { e.target.style.display = "none"; e.target.nextSibling.style.display = "flex"; }}
+      />
+    );
+  }
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", flexShrink: 0,
+      background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: Math.max(size * 0.38, 9) }}>
+        {initials}
+      </span>
+    </div>
+  );
+}
+
+// ── Custom Assign-Member Dropdown (with photos) ───────────────
+function AssignMemberDropdown({ employees, project, isDark, border, textPri, textSub, onAssign }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const available = employees
+    .filter((emp) => !(project.memberIds || []).includes(emp.id))
+    .filter((emp) => {
+      const q = search.toLowerCase();
+      return (emp.name || "").toLowerCase().includes(q) || (emp.id || "").toLowerCase().includes(q);
+    })
+    .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+  return (
+    <div style={{ position: "relative", marginBottom: "12px" }}>
+      <div
+        onClick={() => setOpen(!open)}
+        style={{
+          padding: "8px 12px", borderRadius: "8px", fontSize: "12px",
+          fontFamily: "Mulish, sans-serif", cursor: "pointer",
+          background: isDark ? "#0D0D0D" : "#F8F8F8",
+          border: `1px solid ${open ? "#CC0000" : border}`,
+          color: textSub, display: "flex", alignItems: "center", gap: "6px",
+        }}
+      >
+        <PlusCircle size={13} color="#CC0000" />
+        Assign Developer / Employee...
+      </div>
+      {open && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
+          marginTop: "4px", borderRadius: "8px", overflow: "hidden",
+          background: isDark ? "#0A0A0A" : "#FFFFFF",
+          border: `1px solid ${border}`,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+          maxHeight: "220px", display: "flex", flexDirection: "column",
+        }}>
+          <div style={{ padding: "6px 8px", borderBottom: `1px solid ${isDark ? "#1A1A1A" : "#EEE"}` }}>
+            <input
+              autoFocus
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search employee..."
+              style={{
+                width: "100%", padding: "6px 8px", borderRadius: "6px", outline: "none",
+                fontSize: "12px", fontFamily: "Mulish, sans-serif", boxSizing: "border-box",
+                background: isDark ? "#111" : "#F5F5F5", border: `1px solid ${isDark ? "#222" : "#DDD"}`,
+                color: textPri,
+              }}
+            />
+          </div>
+          <div style={{ overflowY: "auto", flex: 1 }}>
+            {available.length === 0 ? (
+              <p style={{ padding: "12px", textAlign: "center", fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub, margin: 0 }}>
+                No employees available
+              </p>
+            ) : (
+              available.map((emp) => (
+                <div
+                  key={emp.id}
+                  onClick={() => { onAssign(emp.id); setOpen(false); setSearch(""); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "10px",
+                    padding: "8px 10px", cursor: "pointer",
+                    transition: "background 100ms",
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = isDark ? "#111" : "#FFF5F5"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                >
+                  <EmpAvatar src={emp.photoUrl} name={emp.name} size={26} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textPri, margin: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {emp.name}
+                    </p>
+                    <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "9px", color: "#00B8B8", margin: 0 }}>
+                      {formatEmpId(emp.id)} · {emp.designation || emp.department || "Employee"}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Utility ───────────────────────────────────────────────────
 function fmt(dateStr) {
@@ -203,42 +320,23 @@ function ProjectDetailsModal({ theme, project, employees, onClose, onUpdateProje
             <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>TEAM MEMBERS ({project.memberIds?.length || 0})</span>
           </div>
           
-          {/* Add member select box */}
-          <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-            <select
-              onChange={async (e) => {
-                const empId = e.target.value;
-                if (!empId) return;
-                const currentMembers = project.memberIds || [];
-                if (!currentMembers.includes(empId)) {
-                  const updatedMembers = [...currentMembers, empId];
-                  await updateTeamProject(project.id, { memberIds: updatedMembers });
-                  onUpdateProject({ ...project, memberIds: updatedMembers });
-                }
-                e.target.value = "";
-              }}
-              style={{
-                flex: 1,
-                padding: "8px 12px",
-                borderRadius: "8px",
-                outline: "none",
-                fontSize: "12px",
-                fontFamily: "Mulish, sans-serif",
-                background: isDark ? "#0D0D0D" : "#F8F8F8",
-                border: `1px solid ${border}`,
-                color: textPri,
-              }}
-            >
-              <option value="">+ Assign Developer / Employee...</option>
-              {employees
-                .filter((emp) => !(project.memberIds || []).includes(emp.id))
-                .map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.name} ({formatEmpId(emp.id)})
-                  </option>
-                ))}
-            </select>
-          </div>
+          {/* Add member dropdown with photos */}
+          <AssignMemberDropdown
+            employees={employees}
+            project={project}
+            isDark={isDark}
+            border={border}
+            textPri={textPri}
+            textSub={textSub}
+            onAssign={async (empId) => {
+              const currentMembers = project.memberIds || [];
+              if (!currentMembers.includes(empId)) {
+                const updatedMembers = [...currentMembers, empId];
+                await updateTeamProject(project.id, { memberIds: updatedMembers });
+                onUpdateProject({ ...project, memberIds: updatedMembers });
+              }
+            }}
+          />
 
           {/* Assigned members list */}
           {(!project.memberIds || project.memberIds.length === 0) ? (
@@ -253,20 +351,7 @@ function ProjectDetailsModal({ theme, project, employees, onClose, onUpdateProje
                 return (
                   <div key={memberId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: "6px", background: isDark ? "#0D0D0D" : "#F9F9F9", border: `1px solid ${border}` }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <div style={{
-                        width: "24px",
-                        height: "24px",
-                        borderRadius: "50%",
-                        background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
-                      }}>
-                        <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "9px" }}>
-                          {(emp.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
-                        </span>
-                      </div>
+                      <EmpAvatar src={emp.photoUrl} name={emp.name} size={28} />
                       <div style={{ minWidth: 0 }}>
                         <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textPri, margin: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {emp.name}
@@ -788,7 +873,7 @@ function ProjectModal({ isDark, existing, employees, onClose, onSave }) {
               <label style={labelStyle}>Tech Lead / Supervisor</label>
               <select style={inputStyle} value={form.techLead} onChange={(e) => set("techLead", e.target.value)}>
                 <option value="">Select Tech Lead...</option>
-                {employees.map((emp) => (
+                {[...employees].sort((a, b) => (a.name || "").localeCompare(b.name || "")).map((emp) => (
                   <option key={emp.id} value={emp.name}>{emp.name}</option>
                 ))}
               </select>

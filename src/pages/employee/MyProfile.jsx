@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useTheme } from "../../App";
 import {
   User, Mail, Phone, Building2, Briefcase,
@@ -158,10 +159,10 @@ function OfferLetterModal({ url, fileName, theme, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       style={{
-        position: "fixed", inset: 0, zIndex: 1000,
+        position: "fixed", inset: 0, zIndex: 9999,
         background: "rgba(0,0,0,0.80)", backdropFilter: "blur(4px)",
         display: "flex", flexDirection: "column",
       }}
@@ -260,7 +261,8 @@ function OfferLetterModal({ url, fileName, theme, onClose }) {
           If the document doesn't load, click DOWNLOAD to open it directly.
         </span>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

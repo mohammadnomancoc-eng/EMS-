@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useTheme } from "../App";
 import {
   Users, UserCheck, UserX, UserMinus,
@@ -254,10 +255,10 @@ function CredentialsModal({ theme, credentials, onClose }) {
     </button>
   );
 
-  return (
+  return createPortal(
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
-      zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center",
       padding: "16px",
     }}>
       <div style={{
@@ -361,7 +362,8 @@ function CredentialsModal({ theme, credentials, onClose }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -431,8 +433,8 @@ function EmployeeModal({ theme, onClose, onSave, departments }) {
 
   const previewEmail = form.name ? generateEmail(form.name) : "—";
 
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200,
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999,
       display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: "12px",
@@ -534,7 +536,8 @@ function EmployeeModal({ theme, onClose, onSave, departments }) {
         )}
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

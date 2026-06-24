@@ -1,6 +1,6 @@
 // src/firebase/messaging.js
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp, collection, query, where, getDocs } from "firebase/firestore";
 import app, { db } from "./config";
 
 // Default public VAPID key. The user can customize this by setting VITE_FIREBASE_VAPID_KEY in .env.
@@ -148,5 +148,81 @@ export function listenForegroundMessages(onMessageReceived) {
   } catch (error) {
     console.warn("[FCM] Messaging not supported or could not listen:", error.message);
     return () => {};
+  }
+}
+
+/** Sends an FCM push notification to all devices registered under a target user. */
+export async function sendFCMPush(targetUserId, title, body, actionUrl = "/") {
+  if (!targetUserId) return;
+  try {
+    const devicesRef = collection(db, "users", targetUserId, "devices");
+    const snap = await getDocs(devicesRef);
+    if (snap.empty) {
+      console.log(`[FCM] No registered devices for user ${targetUserId}`);
+      return;
+    }
+
+    const tokens = [];
+    snap.forEach((doc) => {
+      const d = doc.data();
+      if (d.token) tokens.push(d.token);
+    });
+
+    if (tokens.length === 0) return;
+
+    // Fallback to API Key if VITE_FIREBASE_SERVER_KEY is not defined
+    const serverKey = import.meta.env.VITE_FIREBASE_SERVER_KEY || import.meta.env.VITE_FIREBASE_API_KEY;
+
+    console.log(`[FCM] Sending push notification to ${tokens.length} devices for user ${targetUserId}...`);
+
+    await Promise.all(tokens.map(async (token) => {
+      try {
+        const response = await fetch("https://fcm.googleapis.com/fcm/send", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `key=${serverKey}`
+          },
+          body: JSON.stringify({
+            to: token,
+            notification: {
+              title,
+              body,
+              icon: "/rwtlogo.png",
+              click_action: actionUrl
+            },
+            data: {
+              title,
+              body,
+              icon: "/rwtlogo.png",
+              actionUrl
+            }
+          })
+        });
+        const resData = await response.json();
+        console.log("[FCM] Push sent result:", resData);
+      } catch (err) {
+        console.error("[FCM] Error sending to token:", err);
+      }
+    }));
+  } catch (error) {
+    console.error("[FCM] Error in sendFCMPush:", error);
+  }
+}
+
+/** Sends an FCM push notification to all registered admin users. */
+export async function sendFCMPushToAdmins(title, body, actionUrl = "/") {
+  try {
+    const q = query(collection(db, "users"), where("role", "==", "admin"));
+    const snap = await getDocs(q);
+    const adminUids = [];
+    snap.forEach((doc) => {
+      adminUids.push(doc.id);
+    });
+
+    console.log(`[FCM] Found ${adminUids.length} admin users to notify via push.`);
+    await Promise.all(adminUids.map((uid) => sendFCMPush(uid, title, body, actionUrl)));
+  } catch (error) {
+    console.error("[FCM] Error in sendFCMPushToAdmins:", error);
   }
 }

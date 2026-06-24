@@ -8,6 +8,7 @@
 //    • Completed Projects – finished projects with completion dates
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useTheme } from "../App";
 import {
   FolderKanban, Users, ArrowLeft, Clock, CheckCircle2,
@@ -17,6 +18,7 @@ import {
 import {
   subscribeEmployees,
   subscribeProjectsByEmployee,
+  subscribeTeamProjects,
   addProject,
   updateProject,
   deleteProject,
@@ -115,9 +117,9 @@ function ProjectModal({ isDark, emp, onClose, existing }) {
     marginBottom: "5px", display: "block",
   };
 
-  return (
+  return createPortal(
     <div style={{
-      position: "fixed", inset: 0, zIndex: 200,
+      position: "fixed", inset: 0, zIndex: 9999,
       background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
       display: "flex", alignItems: "center", justifyContent: "center", padding: "16px",
     }}>
@@ -226,13 +228,15 @@ function ProjectModal({ isDark, emp, onClose, existing }) {
         </div>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+    </div>,
+    document.body
   );
 }
 
 // ── Project Card ──────────────────────────────────────────────
 function ProjectCard({ project, isDark, onEdit, onDelete }) {
-  const isOngoing = project.status === "Ongoing";
+  const isOngoing  = project.status === "Ongoing";
+  const isTeam     = project._source === "team"; // read-only team project
   return (
     <div style={{
       borderRadius: "10px", padding: "16px 18px",
@@ -245,24 +249,66 @@ function ProjectCard({ project, isDark, onEdit, onDelete }) {
       onMouseLeave={(e) => { e.currentTarget.style.borderColor = isDark ? "#1A1A1A" : "#EBEBEB"; }}
     >
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "15px", color: isDark ? "#F0F0F0" : "#111", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {project.name}
-          </p>
-          {project.description && (
-            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#555" : "#888", margin: "3px 0 0", lineHeight: 1.4 }}>
-              {project.description}
-            </p>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1, minWidth: 0 }}>
+          {/* Logo */}
+          {project.logoUrl ? (
+            <div style={{
+              width: 60, height: 60, borderRadius: 6, flexShrink: 0,
+              background: isDark ? "#121212" : "#F0F0F0",
+              border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              padding: "4px", boxSizing: "border-box"
+            }}>
+              <img src={project.logoUrl} alt={project.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            </div>
+          ) : (
+            <div style={{
+              width: 60, height: 60, borderRadius: 6, flexShrink: 0,
+              background: isDark ? "#121212" : "#F0F0F0",
+              border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <FolderKanban size={24} color="#CC0000" />
+            </div>
           )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+              <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "15px", color: isDark ? "#F0F0F0" : "#111", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {project.name}
+              </p>
+              {isTeam && (
+                <span style={{
+                  fontSize: "10px", fontFamily: "Mulish, sans-serif", fontWeight: 700,
+                  padding: "2px 7px", borderRadius: "20px",
+                  background: "rgba(204,0,0,0.1)", color: "#CC0000",
+                  border: "1px solid rgba(204,0,0,0.2)", letterSpacing: "0.04em", whiteSpace: "nowrap",
+                }}>TEAM PROJECT</span>
+              )}
+            </div>
+            {project.description && (
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#555" : "#888", margin: "3px 0 0", lineHeight: 1.4 }}>
+                {project.description}
+              </p>
+            )}
+            {isTeam && project.techLead && (
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#555" : "#999", margin: "3px 0 0" }}>
+                Tech Lead: <strong style={{ color: isDark ? "#AAA" : "#555" }}>{project.techLead}</strong>
+              </p>
+            )}
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
           <Badge status={project.status} />
-          <button onClick={() => onEdit(project)} title="Edit" style={{ background: "none", border: "none", color: isDark ? "#444" : "#BBB", cursor: "pointer", padding: 4, display: "flex" }}>
-            <Edit2 size={14} />
-          </button>
-          <button onClick={() => onDelete(project)} title="Delete" style={{ background: "none", border: "none", color: isDark ? "#444" : "#BBB", cursor: "pointer", padding: 4, display: "flex" }}>
-            <Trash2 size={14} />
-          </button>
+          {!isTeam && (
+            <>
+              <button onClick={() => onEdit(project)} title="Edit" style={{ background: "none", border: "none", color: isDark ? "#444" : "#BBB", cursor: "pointer", padding: 4, display: "flex" }}>
+                <Edit2 size={14} />
+              </button>
+              <button onClick={() => onDelete(project)} title="Delete" style={{ background: "none", border: "none", color: isDark ? "#444" : "#BBB", cursor: "pointer", padding: 4, display: "flex" }}>
+                <Trash2 size={14} />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -273,19 +319,19 @@ function ProjectCard({ project, isDark, onEdit, onDelete }) {
             Start: <strong style={{ color: isDark ? "#AAAAAA" : "#555" }}>{fmt(project.startDate)}</strong>
           </span>
         </div>
-        {isOngoing && project.expectedEndDate && (
+        {isOngoing && (project.expectedEndDate || project.endDate) && (
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
             <Clock size={12} color="#00B8B8" />
             <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#666" : "#888" }}>
-              Expected: <strong style={{ color: "#00B8B8" }}>{fmt(project.expectedEndDate)}</strong>
+              Expected: <strong style={{ color: "#00B8B8" }}>{fmt(project.expectedEndDate || project.endDate)}</strong>
             </span>
           </div>
         )}
-        {!isOngoing && project.completionDate && (
+        {!isOngoing && (project.completionDate || project.endDate) && (
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
             <CalendarCheck size={12} color="#00C864" />
             <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#666" : "#888" }}>
-              Completed: <strong style={{ color: "#00C864" }}>{fmt(project.completionDate)}</strong>
+              {isTeam ? "End" : "Completed"}: <strong style={{ color: "#00C864" }}>{fmt(project.completionDate || project.endDate)}</strong>
             </span>
           </div>
         )}
@@ -296,22 +342,46 @@ function ProjectCard({ project, isDark, onEdit, onDelete }) {
 
 // ── Employee Detail View ──────────────────────────────────────
 function EmployeeDetail({ emp, isDark, onBack }) {
-  const [projects, setProjects]   = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [modal, setModal]         = useState(null); // null | { mode: "add" | "edit", project? }
-  const [activeTab, setActiveTab] = useState("ongoing"); // "ongoing" | "completed"
+  const [empProjects, setEmpProjects]     = useState([]);
+  const [teamProjects, setTeamProjects]   = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [modal, setModal]                 = useState(null);
+  const [activeTab, setActiveTab]         = useState("ongoing");
 
   useEffect(() => {
     setLoading(true);
-    const unsub = subscribeProjectsByEmployee(emp.id, (data) => {
-      setProjects(data);
-      setLoading(false);
+    let empLoaded  = false;
+    let teamLoaded = false;
+    const tryDone  = () => { if (empLoaded && teamLoaded) setLoading(false); };
+
+    const unsubEmp = subscribeProjectsByEmployee(emp.id, (data) => {
+      setEmpProjects(data);
+      empLoaded = true;
+      tryDone();
     });
-    return unsub;
+    const unsubTeam = subscribeTeamProjects((data) => {
+      // Only keep team projects where this employee is a member
+      setTeamProjects(
+        data
+          .filter((p) => (p.memberIds || []).includes(emp.id))
+          .map((p) => ({ ...p, _source: "team" }))
+      );
+      teamLoaded = true;
+      tryDone();
+    });
+    return () => { unsubEmp(); unsubTeam(); };
   }, [emp.id]);
 
-  const ongoing   = projects.filter((p) => p.status === "Ongoing");
-  const completed = projects.filter((p) => p.status === "Completed");
+  // Merge: avoid duplicates by project name (team projects take precedence)
+  const allProjects = [
+    ...teamProjects,
+    ...empProjects.filter(
+      (ep) => !teamProjects.some((tp) => tp.name.trim().toLowerCase() === ep.name.trim().toLowerCase())
+    ),
+  ];
+
+  const ongoing   = allProjects.filter((p) => p.status === "Ongoing");
+  const completed = allProjects.filter((p) => p.status === "Completed");
 
   const handleDelete = async (project) => {
     if (!window.confirm(`Delete project "${project.name}"? This cannot be undone.`)) return;

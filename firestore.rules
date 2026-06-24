@@ -38,8 +38,14 @@ service cloud.firestore {
 
     // ── /users ────────────────────────────────────────────────
     match /users/{uid} {
-      allow read:   if isAuthed() && (isAdmin() || request.auth.uid == uid);
+      allow read:   if isAuthed();
       allow write:  if isAdmin();
+    }
+
+    // ── /users/{uid}/devices ──────────────────────────────────
+    match /users/{uid}/devices/{deviceId} {
+      allow read:   if isAuthed();
+      allow write:  if isAuthed() && request.auth.uid == uid;
     }
 
     // ── /employees ────────────────────────────────────────────
@@ -134,7 +140,7 @@ service cloud.firestore {
                           resource.data.targetId ==
                             get(/databases/$(database)/documents/employees/$(myEmpId())).data.department)
                        ));
-      allow create: if isAdmin();
+      allow create: if isAuthed();
       allow update: if isAdmin() ||
                        (isEmployee() &&
                         request.resource.data.diff(resource.data).affectedKeys().hasOnly(["readBy"]));

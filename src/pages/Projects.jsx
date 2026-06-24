@@ -8,6 +8,7 @@
 //    • View details of the project and employees working on it
 // ─────────────────────────────────────────────────────────────
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useTheme } from "../App";
 import {
   FolderKanban, Users, Clock, CheckCircle2, AlertCircle,
@@ -51,6 +52,249 @@ function StatusBadge({ status }) {
       <span style={{ width: 6, height: 6, borderRadius: "50%", background: cfg.dot, flexShrink: 0 }} />
       {status}
     </span>
+  );
+}
+
+// ── Project Details Modal (Pop-up) ────────────────────────────
+function ProjectDetailsModal({ theme, project, employees, onClose, onUpdateProject }) {
+  const isDark = theme === "dark";
+  const bg = isDark ? "#0A0A0A" : "#FFFFFF";
+  const border = isDark ? "#1A1A1A" : "#E5E5E5";
+  const textPri = isDark ? "#F0F0F0" : "#111111";
+  const textSub = isDark ? "#666666" : "#888888";
+
+  // Helper to format employee IDs
+  const formatEmpId = (id) => {
+    if (!id) return "";
+    return id.slice(0, 5).toUpperCase();
+  };
+
+  return createPortal(
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9999,
+        background: "rgba(0,0,0,0.75)",
+        backdropFilter: "blur(4px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "16px",
+      }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        style={{
+          background: bg,
+          border: `1px solid ${border}`,
+          borderRadius: "12px",
+          width: "100%",
+          maxWidth: "520px",
+          maxHeight: "90vh",
+          overflowY: "auto",
+          padding: "24px",
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          gap: "18px",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+        }}
+      >
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          style={{
+            position: "absolute",
+            right: "16px",
+            top: "16px",
+            background: "none",
+            border: "none",
+            color: textSub,
+            cursor: "pointer",
+            padding: "4px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#CC0000")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = textSub)}
+        >
+          <X size={18} />
+        </button>
+
+        {/* Header */}
+        <div style={{ borderBottom: `1px solid ${border}`, paddingBottom: "12px", paddingRight: "24px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+            <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#00B8B8" }}>
+              PROJECT DETAILS
+            </span>
+            <StatusBadge status={project.status} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "4px" }}>
+            <div style={{
+              width: "84px",
+              height: "84px",
+              borderRadius: "10px",
+              background: isDark ? "#121212" : "#F5F5F5",
+              border: `1px solid ${border}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              flexShrink: 0,
+              padding: "4px",
+              boxSizing: "border-box"
+            }}>
+              {project.logoUrl ? (
+                <img src={project.logoUrl} alt={project.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              ) : (
+                <FolderKanban size={28} color="#CC0000" />
+              )}
+            </div>
+            <h2 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "20px", color: textPri, margin: 0 }}>
+              {project.name}
+            </h2>
+          </div>
+          {project.description && (
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub, margin: "10px 0 0", lineHeight: 1.5 }}>
+              {project.description}
+            </p>
+          )}
+        </div>
+
+        {/* Client Info */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: isDark ? "#0D0D0D" : "#F9F9F9", padding: "12px", borderRadius: "8px", border: `1px solid ${border}` }}>
+          <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>CLIENT INFORMATION</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, fontWeight: 600 }}>{project.clientName || "—"}</span>
+            {project.clientPhone && (
+              <a href={`tel:${project.clientPhone}`} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", color: "#00B8B8", textDecoration: "none", fontFamily: "Mulish, sans-serif" }}>
+                <Phone size={12} /> {project.clientPhone}
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Lead Info */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>TECH LEAD</span>
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, margin: 0, fontWeight: 600 }}>
+            {project.techLead || "—"}
+          </p>
+        </div>
+
+        {/* Dates */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+          <div>
+            <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>START DATE</span>
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, margin: "2px 0 0" }}>{fmt(project.startDate)}</p>
+          </div>
+          <div>
+            <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>END DATE</span>
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, margin: "2px 0 0" }}>{fmt(project.endDate)}</p>
+          </div>
+        </div>
+
+        {/* Members */}
+        <div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+            <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>TEAM MEMBERS ({project.memberIds?.length || 0})</span>
+          </div>
+          
+          {/* Add member select box */}
+          <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+            <select
+              onChange={async (e) => {
+                const empId = e.target.value;
+                if (!empId) return;
+                const currentMembers = project.memberIds || [];
+                if (!currentMembers.includes(empId)) {
+                  const updatedMembers = [...currentMembers, empId];
+                  await updateTeamProject(project.id, { memberIds: updatedMembers });
+                  onUpdateProject({ ...project, memberIds: updatedMembers });
+                }
+                e.target.value = "";
+              }}
+              style={{
+                flex: 1,
+                padding: "8px 12px",
+                borderRadius: "8px",
+                outline: "none",
+                fontSize: "12px",
+                fontFamily: "Mulish, sans-serif",
+                background: isDark ? "#0D0D0D" : "#F8F8F8",
+                border: `1px solid ${border}`,
+                color: textPri,
+              }}
+            >
+              <option value="">+ Assign Developer / Employee...</option>
+              {employees
+                .filter((emp) => !(project.memberIds || []).includes(emp.id))
+                .map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name} ({formatEmpId(emp.id)})
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          {/* Assigned members list */}
+          {(!project.memberIds || project.memberIds.length === 0) ? (
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub, margin: 0, fontStyle: "italic" }}>
+              No developers assigned to this project yet.
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "200px", overflowY: "auto" }}>
+              {project.memberIds.map((memberId) => {
+                const emp = employees.find((e) => e.id === memberId);
+                if (!emp) return null;
+                return (
+                  <div key={memberId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: "6px", background: isDark ? "#0D0D0D" : "#F9F9F9", border: `1px solid ${border}` }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <div style={{
+                        width: "24px",
+                        height: "24px",
+                        borderRadius: "50%",
+                        background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}>
+                        <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "9px" }}>
+                          {(emp.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+                        </span>
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textPri, margin: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {emp.name}
+                        </p>
+                        <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "9px", color: "#00B8B8", margin: 0 }}>
+                          {formatEmpId(emp.id)}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const updatedMembers = (project.memberIds || []).filter((id) => id !== memberId);
+                        await updateTeamProject(project.id, { memberIds: updatedMembers });
+                        onUpdateProject({ ...project, memberIds: updatedMembers });
+                      }}
+                      title="Remove developer"
+                      style={{ background: "none", border: "none", color: "#CC0000", cursor: "pointer", display: "flex" }}
+                    >
+                      <MinusCircle size={14} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -141,289 +385,184 @@ export default function Projects() {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr md(350px)", gap: "24px" }} className="grid grid-cols-1 lg:grid-cols-3">
-        {/* Left Side: Projects List & Search */}
-        <div className="lg:col-span-2" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {/* Search bar */}
-          <div style={{ position: "relative" }}>
-            <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#555" }} />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search projects by name, client, tech lead..."
-              style={{
-                width: "100%", padding: "10px 12px 10px 34px", borderRadius: "9px", outline: "none",
-                fontFamily: "Mulish, sans-serif", fontSize: "13px",
-                background: isDark ? "#0D0D0D" : "#F8F8F8",
-                border: `1px solid ${border}`,
-                color: textPri,
-                boxSizing: "border-box",
-              }}
-              onFocus={(e) => { e.target.style.border = "1px solid #00B8B8"; e.target.style.boxShadow = "0 0 0 3px rgba(0,184,184,0.1)"; }}
-              onBlur={(e) => { e.target.style.border = `1px solid ${border}`; e.target.style.boxShadow = "none"; }}
-            />
-          </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        {/* Search bar */}
+        <div style={{ position: "relative" }}>
+          <Search size={14} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#555" }} />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search projects by name, client, tech lead..."
+            style={{
+              width: "100%", padding: "10px 12px 10px 34px", borderRadius: "9px", outline: "none",
+              fontFamily: "Mulish, sans-serif", fontSize: "13px",
+              background: isDark ? "#0D0D0D" : "#F8F8F8",
+              border: `1px solid ${border}`,
+              color: textPri,
+              boxSizing: "border-box",
+            }}
+          />
+        </div>
 
-          {loading ? (
-            <div style={{ display: "flex", justifyContent: "center", padding: "48px" }}>
-              <Loader2 size={24} color="#CC0000" style={{ animation: "spin 0.8s linear infinite" }} />
-            </div>
-          ) : filteredProjects.length === 0 ? (
-            <div style={{
-              display: "flex", flexDirection: "column", alignItems: "center", justifyItems: "center",
-              padding: "56px 24px", gap: "10px",
-              borderRadius: "12px", border: `1px dashed ${border}`, background: cardBg,
-            }}>
-              <FolderKanban size={36} color={isDark ? "#222" : "#DDD"} />
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", color: textSub, margin: 0 }}>
-                {search ? "No projects match your search." : "No projects found."}
-              </p>
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {filteredProjects.map((p) => {
-                const isSelected = selectedProject?.id === p.id;
-                const isOngoing = p.status === "Ongoing";
-                const isHold = p.status === "On Hold";
-                const memberCount = p.memberIds?.length || 0;
-                
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => setSelectedProject(p)}
-                    style={{
-                      borderRadius: "10px", padding: "16px 18px",
-                      background: cardBg,
-                      border: `1px solid ${isSelected ? "#CC0000" : border}`,
-                      cursor: "pointer",
-                      transition: "all 180ms",
-                      display: "flex", flexDirection: "column", gap: "10px",
-                    }}
-                    onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.borderColor = isDark ? "#333" : "#CCC"; }}
-                    onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.borderColor = border; }}
-                  >
-                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px", color: textPri, margin: 0 }}>
-                          {p.name}
-                        </p>
-                        {p.description && (
-                          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub, margin: "3px 0 0", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                            {p.description}
-                          </p>
+        {loading ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "200px" }}>
+            <Loader2 className="animate-spin" size={24} color="#CC0000" />
+          </div>
+        ) : filteredProjects.length === 0 ? (
+          <div style={{
+            textAlign: "center", padding: "40px 20px", borderRadius: "12px",
+            background: cardBg, border: `1px solid ${border}`,
+            color: textSub, fontFamily: "Mulish, sans-serif", fontSize: "13px"
+          }}>
+            No projects found.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {filteredProjects.map((p) => {
+              const count = p.memberIds?.length || 0;
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => setSelectedProject(p)}
+                  style={{
+                    borderRadius: "12px",
+                    background: cardBg,
+                    border: `1px solid ${selectedProject?.id === p.id ? "#CC0000" : border}`,
+                    padding: "16px 20px",
+                    cursor: "pointer",
+                    transition: "border-color 200ms, transform 200ms",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "10px",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = "translateY(-1px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "none";
+                  }}
+                >
+                  {/* Top line: Name, Edit/Delete, Status */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{
+                        width: "60px",
+                        height: "60px",
+                        borderRadius: "8px",
+                        background: isDark ? "#121212" : "#F5F5F5",
+                        border: `1px solid ${border}`,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                        flexShrink: 0,
+                        padding: "4px",
+                        boxSizing: "border-box"
+                      }}>
+                        {p.logoUrl ? (
+                          <img src={p.logoUrl} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        ) : (
+                          <FolderKanban size={22} color="#CC0000" />
                         )}
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <h3 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "17px", color: textPri, margin: 0 }}>
+                          {p.name}
+                        </h3>
                         <StatusBadge status={p.status} />
-                        <button onClick={(e) => { e.stopPropagation(); setModal({ mode: "edit", project: p }); }} title="Edit" style={{ background: "none", border: "none", color: textSub, cursor: "pointer", padding: 4, display: "flex" }}>
-                          <Edit2 size={14} />
-                        </button>
-                        <button onClick={(e) => handleDelete(p, e)} title="Delete" style={{ background: "none", border: "none", color: textSub, cursor: "pointer", padding: 4, display: "flex" }}>
-                          <Trash2 size={14} />
-                        </button>
                       </div>
                     </div>
-
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "14px", borderTop: `1px solid ${border}`, paddingTop: "10px", marginTop: "4px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                        <Calendar size={12} color={isDark ? "#555" : "#AAA"} />
-                        <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub }}>
-                          Start: <strong style={{ color: textPri }}>{fmt(p.startDate)}</strong>
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                        <CalendarCheck size={12} color={isDark ? "#555" : "#AAA"} />
-                        <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub }}>
-                          End: <strong style={{ color: textPri }}>{fmt(p.endDate)}</strong>
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                        <User size={12} color={isDark ? "#555" : "#AAA"} />
-                        <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub }}>
-                          Lead: <strong style={{ color: textPri }}>{p.techLead || "—"}</strong>
-                        </span>
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                        <Users size={12} color={isDark ? "#555" : "#AAA"} />
-                        <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub }}>
-                          Team Size: <strong style={{ color: textPri }}>{memberCount}</strong>
-                        </span>
-                      </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setModal({ mode: "edit", project: p })}
+                        title="Edit project info"
+                        style={{
+                          background: "none", border: "none", color: textSub, cursor: "pointer",
+                          padding: "4px", display: "flex", alignItems: "center", justifyContent: "center"
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = "#00B8B8"}
+                        onMouseLeave={(e) => e.currentTarget.style.color = textSub}
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (confirm(`Are you sure you want to delete "${p.name}"?`)) {
+                            await deleteTeamProject(p.id);
+                            if (selectedProject?.id === p.id) {
+                              setSelectedProject(null);
+                            }
+                          }
+                        }}
+                        title="Delete project"
+                        style={{
+                          background: "none", border: "none", color: textSub, cursor: "pointer",
+                          padding: "4px", display: "flex", alignItems: "center", justifyContent: "center"
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = "#CC0000"}
+                        onMouseLeave={(e) => e.currentTarget.style.color = textSub}
+                      >
+                        <Trash2 size={14} />
+                      </button>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
-        {/* Right Side: Selected Project Details & Team Member Assignment */}
-        <div className="lg:col-span-1">
-          {selectedProject ? (
-            <div style={{
-              borderRadius: "12px", padding: "20px",
-              background: cardBg,
-              border: `1px solid ${border}`,
-              display: "flex", flexDirection: "column", gap: "18px",
-              position: "sticky", top: "80px"
-            }}>
-              {/* Header */}
-              <div style={{ borderBottom: `1px solid ${border}`, paddingBottom: "12px" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-                  <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#00B8B8" }}>
-                    PROJECT DETAILS
-                  </span>
-                  <StatusBadge status={selectedProject.status} />
-                </div>
-                <h2 style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "20px", color: textPri, margin: 0 }}>
-                  {selectedProject.name}
-                </h2>
-                {selectedProject.description && (
-                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub, margin: "6px 0 0", lineHeight: 1.5 }}>
-                    {selectedProject.description}
-                  </p>
-                )}
-              </div>
-
-              {/* Client Info */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px", background: isDark ? "#0A0A0A" : "#F9F9F9", padding: "12px", borderRadius: "8px", border: `1px solid ${border}` }}>
-                <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>CLIENT INFORMATION</span>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, fontWeight: 600 }}>{selectedProject.clientName || "—"}</span>
-                  {selectedProject.clientPhone && (
-                    <a href={`tel:${selectedProject.clientPhone}`} style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", color: "#00B8B8", textDecoration: "none", fontFamily: "Mulish, sans-serif" }}>
-                      <Phone size={12} /> {selectedProject.clientPhone}
-                    </a>
+                  {/* Description if present */}
+                  {p.description && (
+                    <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub, margin: 0, lineHeight: 1.4 }}>
+                      {p.description}
+                    </p>
                   )}
-                </div>
-              </div>
 
-              {/* Lead Info */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>TECH LEAD</span>
-                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, margin: 0, fontWeight: 600 }}>
-                  {selectedProject.techLead || "—"}
-                </p>
-              </div>
-
-              {/* Dates */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <div>
-                  <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>START DATE</span>
-                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, margin: "2px 0 0" }}>{fmt(selectedProject.startDate)}</p>
-                </div>
-                <div>
-                  <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>END DATE</span>
-                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textPri, margin: "2px 0 0" }}>{fmt(selectedProject.endDate)}</p>
-                </div>
-              </div>
-
-              {/* Members */}
-              <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-                  <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.1em" }}>TEAM MEMBERS ({selectedProject.memberIds?.length || 0})</span>
-                </div>
-                
-                {/* Add member select box */}
-                <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-                  <select
-                    onChange={async (e) => {
-                      const empId = e.target.value;
-                      if (!empId) return;
-                      const currentMembers = selectedProject.memberIds || [];
-                      if (!currentMembers.includes(empId)) {
-                        const updatedMembers = [...currentMembers, empId];
-                        await updateTeamProject(selectedProject.id, { memberIds: updatedMembers });
-                        setSelectedProject({ ...selectedProject, memberIds: updatedMembers });
-                      }
-                      e.target.value = "";
-                    }}
-                    style={{
-                      flex: 1, padding: "8px 12px", borderRadius: "8px", outline: "none",
-                      fontSize: "12px", fontFamily: "Mulish, sans-serif",
-                      background: isDark ? "#0D0D0D" : "#F8F8F8",
-                      border: `1px solid ${border}`,
-                      color: textPri,
-                    }}
-                  >
-                    <option value="">+ Assign Developer / Employee...</option>
-                    {employees
-                      .filter((emp) => !(selectedProject.memberIds || []).includes(emp.id))
-                      .map((emp) => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.name} ({formatEmpId(emp.id)})
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                {/* Assigned members list */}
-                {(!selectedProject.memberIds || selectedProject.memberIds.length === 0) ? (
-                  <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub, margin: 0, fontStyle: "italic" }}>
-                    No developers assigned to this project yet.
-                  </p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "200px", overflowY: "auto" }}>
-                    {selectedProject.memberIds.map((memberId) => {
-                      const emp = employees.find((e) => e.id === memberId);
-                      if (!emp) return null;
-                      return (
-                        <div key={memberId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px", borderRadius: "6px", background: isDark ? "#0D0D0D" : "#F9F9F9", border: `1px solid ${border}` }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <div style={{
-                              width: "24px", height: "24px", borderRadius: "50%",
-                              background: "linear-gradient(135deg, #CC0000 0%, #990000 100%)",
-                              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                            }}>
-                              <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "9px" }}>
-                                {(emp.name || "?").split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
-                              </span>
-                            </div>
-                            <div style={{ minWidth: 0 }}>
-                              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textPri, margin: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {emp.name}
-                              </p>
-                              <p style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "9px", color: "#00B8B8", margin: 0 }}>
-                                {formatEmpId(emp.id)}
-                              </p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={async () => {
-                              const updatedMembers = (selectedProject.memberIds || []).filter((id) => id !== memberId);
-                              await updateTeamProject(selectedProject.id, { memberIds: updatedMembers });
-                              setSelectedProject({ ...selectedProject, memberIds: updatedMembers });
-                            }}
-                            title="Remove developer"
-                            style={{ background: "none", border: "none", color: "#CC0000", cursor: "pointer", display: "flex" }}
-                          >
-                            <MinusCircle size={14} />
-                          </button>
-                        </div>
-                      );
-                    })}
+                  {/* Details strip */}
+                  <div style={{
+                    display: "flex", flexWrap: "wrap", gap: "16px",
+                    borderTop: `1px solid ${isDark ? "#121212" : "#F0F0F0"}`,
+                    paddingTop: "10px", marginTop: "4px"
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <Calendar size={12} color="#CC0000" />
+                      <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textSub }}>
+                        Start: <strong style={{ color: textPri }}>{fmt(p.startDate)}</strong>
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <CalendarCheck size={12} color="#CC0000" />
+                      <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textSub }}>
+                        End: <strong style={{ color: textPri }}>{fmt(p.endDate)}</strong>
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <User size={12} color="#00B8B8" />
+                      <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textSub }}>
+                        Lead: <strong style={{ color: textPri }}>{p.techLead || "—"}</strong>
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <Briefcase size={12} color="#00B8B8" />
+                      <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textSub }}>
+                        Team Size: <strong style={{ color: textPri }}>{count}</strong>
+                      </span>
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div style={{
-              borderRadius: "12px", padding: "32px 24px",
-              background: cardBg,
-              border: `1px solid ${border}`,
-              textAlign: "center",
-              display: "flex", flexDirection: "column", gap: "10px",
-              alignItems: "center"
-            }}>
-              <Briefcase size={32} color={isDark ? "#222" : "#DDD"} />
-              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", color: textSub, margin: 0 }}>
-                Select a project from the list to view full details and manage team members.
-              </p>
-            </div>
-          )}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
+
+      {/* Selected Project Details Modal */}
+      {selectedProject && (
+        <ProjectDetailsModal
+          theme={theme}
+          project={selectedProject}
+          employees={employees}
+          onClose={() => setSelectedProject(null)}
+          onUpdateProject={(updated) => setSelectedProject(updated)}
+        />
+      )}
 
       {/* Project Form Modal */}
       {modal && (
@@ -456,11 +595,22 @@ function ProjectModal({ isDark, existing, employees, onClose, onSave }) {
     clientPhone: existing?.clientPhone || "",
     startDate: existing?.startDate || "",
     endDate: existing?.endDate || "",
+    logoUrl: existing?.logoUrl || "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const handleLogoChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      set("logoUrl", reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSave = async () => {
     if (!form.name.trim()) { setError("Project name is required."); return; }
@@ -477,6 +627,7 @@ function ProjectModal({ isDark, existing, employees, onClose, onSave }) {
         clientPhone: form.clientPhone.trim(),
         startDate: form.startDate,
         endDate: form.endDate || "",
+        logoUrl: form.logoUrl || "",
       };
       if (isEdit) {
         await updateTeamProject(existing.id, payload);
@@ -506,9 +657,9 @@ function ProjectModal({ isDark, existing, employees, onClose, onSave }) {
     marginBottom: "5px", display: "block",
   };
 
-  return (
+  return createPortal(
     <div style={{
-      position: "fixed", inset: 0, zIndex: 200,
+      position: "fixed", inset: 0, zIndex: 9999,
       background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
       display: "flex", alignItems: "center", justifyContent: "center", padding: "16px",
     }}>
@@ -547,6 +698,51 @@ function ProjectModal({ isDark, existing, employees, onClose, onSave }) {
               <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: "#CC0000" }}>{error}</span>
             </div>
           )}
+
+          {/* Logo Upload Section */}
+          <div style={{ display: "flex", alignItems: "center", gap: "16px", background: isDark ? "#0D0D0D" : "#F9F9F9", padding: "12px", borderRadius: "8px", border: `1px solid ${isDark ? "#1A1A1A" : "#E5E5E5"}` }}>
+            <div style={{
+              width: "96px",
+              height: "96px",
+              borderRadius: "10px",
+              background: isDark ? "#121212" : "#F5F5F5",
+              border: `1px solid ${isDark ? "#222" : "#DDD"}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              flexShrink: 0,
+              padding: "4px",
+              boxSizing: "border-box"
+            }}>
+              {form.logoUrl ? (
+                <img src={form.logoUrl} alt="Preview" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              ) : (
+                <FolderKanban size={32} color="#CC0000" />
+              )}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", fontWeight: 700, color: isDark ? "#888" : "#777", letterSpacing: "0.06em", textTransform: "uppercase" }}>PROJECT LOGO</span>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <label style={{
+                  padding: "6px 12px", borderRadius: "6px", background: "#CC0000", color: "#FFF",
+                  fontFamily: "Mulish, sans-serif", fontSize: "12px", fontWeight: 600, cursor: "pointer"
+                }}>
+                  Upload Image
+                  <input type="file" accept="image/*" onChange={handleLogoChange} style={{ display: "none" }} />
+                </label>
+                {form.logoUrl && (
+                  <button onClick={() => set("logoUrl", "")} style={{
+                    padding: "6px 12px", borderRadius: "6px", background: "transparent",
+                    border: `1px solid ${isDark ? "#222" : "#DDD"}`, color: "#CC0000",
+                    fontFamily: "Mulish, sans-serif", fontSize: "12px", fontWeight: 600, cursor: "pointer"
+                  }}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
 
           <div>
             <label style={labelStyle}>Project Name *</label>
@@ -628,6 +824,7 @@ function ProjectModal({ isDark, existing, employees, onClose, onSave }) {
         </div>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+    </div>,
+    document.body
   );
 }

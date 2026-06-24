@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useTheme } from "../App";
 import {
   Search, Plus, Filter, Download, Edit2, Trash2,
@@ -219,10 +220,10 @@ function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
   const sub    = isDark ? "#A0A0A0" : "#888888";
   const color  = getAvatarColor(emp.id);
 
-  return (
+  return createPortal(
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
-      zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center",
       padding: "16px",
     }}>
       <div style={{
@@ -326,7 +327,8 @@ function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -399,10 +401,10 @@ function CredentialsModal({ theme, credentials, onClose }) {
     </button>
   );
 
-  return (
+  return createPortal(
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
-      zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center",
       padding: "16px",
     }}>
       <div style={{
@@ -535,7 +537,8 @@ function CredentialsModal({ theme, credentials, onClose }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -720,8 +723,8 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
 
   const previewEmail = form.name ? generateEmail(form.name) : "—";
 
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200,
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999,
       display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ background: bg, border: `1px solid ${border}`, borderRadius: "12px",
@@ -833,7 +836,8 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
           </p>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -920,8 +924,8 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
     </div>
   );
 
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 200,
+  return createPortal(
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 9999,
       display: "flex", alignItems: "center", justifyContent: "center",
       padding: "72px 16px 16px",
       backdropFilter: "blur(4px)" }}
@@ -1407,7 +1411,8 @@ function EmployeeCard({ emp, theme, onTap, onEdit, onDelete }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

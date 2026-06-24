@@ -227,17 +227,19 @@ function DeptCard({ dept, empList, theme, onEdit, onDelete }) {
                 <div
                   key={emp.id}
                   title={emp.name}
-                  className="rounded-full flex items-center justify-center flex-shrink-0"
+                  className="rounded-full flex-shrink-0 overflow-hidden"
                   style={{
                     width: "28px", height: "28px",
-                    background: accentPalette[Math.abs(emp.id.charCodeAt(0) || 0) % accentPalette.length],
+                    background: emp.photoUrl ? "transparent" : accentPalette[Math.abs(emp.id.charCodeAt(0) || 0) % accentPalette.length],
                     border: `2px solid ${isDark ? "#111111" : "#FFFFFF"}`,
                     cursor: "default",
+                    display: "flex", alignItems: "center", justifyContent: "center",
                   }}
                 >
-                  <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "9px" }}>
-                    {getInitials(emp.name)}
-                  </span>
+                  {emp.photoUrl
+                    ? <img src={emp.photoUrl} alt={emp.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "9px" }}>{getInitials(emp.name)}</span>
+                  }
                 </div>
               ))}
               {deptEmps.length > 8 && (

@@ -186,11 +186,15 @@ function DetailModal({ req, employeesMap, onClose, onApprove, onReject, theme })
         <div style={{ overflowY: "auto", flex: 1 }}>
           {/* Employee Info */}
           <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: `1px solid ${divider}` }}>
-            <div className="rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ width: "44px", height: "44px", background: `${color}22`, border: `2px solid ${color}55` }}>
-              <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color }}>
-                {getInitials(req.employee)}
-              </span>
+            <div className="rounded-full flex-shrink-0 overflow-hidden"
+              style={{ width: "44px", height: "44px",
+                background: employeesMap[req.empId]?.photoUrl ? "transparent" : `${color}22`,
+                border: `2px solid ${color}55`,
+                display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {employeesMap[req.empId]?.photoUrl
+                ? <img src={employeesMap[req.empId].photoUrl} alt={req.employee} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "14px", color }}>{getInitials(req.employee)}</span>
+              }
             </div>
             <div className="flex-1 min-w-0">
               <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "clamp(14px, 4vw, 17px)", color: textPri, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -288,11 +292,15 @@ function MobileLeaveCard({ req, theme, border, divider, textPri, textMuted, onVi
     }}>
       {/* Top: avatar + name + status */}
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-        <div className="rounded-full flex items-center justify-center flex-shrink-0"
-          style={{ width: "36px", height: "36px", background: `${req._color}22`, border: `1.5px solid ${req._color}55` }}>
-          <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px", color: req._color }}>
-            {getInitials(req.employee)}
-          </span>
+        <div className="rounded-full flex-shrink-0 overflow-hidden"
+          style={{ width: "36px", height: "36px",
+            background: req._photoUrl ? "transparent" : `${req._color}22`,
+            border: `1.5px solid ${req._color}55`,
+            display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {req._photoUrl
+            ? <img src={req._photoUrl} alt={req.employee} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px", color: req._color }}>{getInitials(req.employee)}</span>
+          }
         </div>
         <div className="flex-1 min-w-0">
           <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", fontWeight: 600, color: textPri, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -405,7 +413,7 @@ function LeaveManagement() {
   const wfhCount = requests.filter((r) => (r.type === "WFH" || r.requestType === "WFH") && r.status === "Approved").length;
 
   const filtered = requests
-    .map((r) => ({ ...r, _color: getDeptColor(r.empId, employeesMap) }))
+    .map((r) => ({ ...r, _color: getDeptColor(r.empId, employeesMap), _photoUrl: employeesMap[r.empId]?.photoUrl || null }))
     .filter((r) => {
       const empName    = (r.employee || "").toLowerCase();
       const matchSearch = empName.includes(search.toLowerCase()) ||
@@ -623,11 +631,15 @@ function LeaveManagement() {
                     >
                       {/* Employee */}
                       <div className="flex items-center gap-3">
-                        <div className="rounded-full flex items-center justify-center flex-shrink-0"
-                          style={{ width: "32px", height: "32px", background: `${req._color}22`, border: `1.5px solid ${req._color}55` }}>
-                          <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px", color: req._color }}>
-                            {getInitials(req.employee)}
-                          </span>
+                        <div className="rounded-full flex-shrink-0 overflow-hidden"
+                          style={{ width: "32px", height: "32px",
+                            background: req._photoUrl ? "transparent" : `${req._color}22`,
+                            border: `1.5px solid ${req._color}55`,
+                            display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {req._photoUrl
+                            ? <img src={req._photoUrl} alt={req.employee} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            : <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "11px", color: req._color }}>{getInitials(req.employee)}</span>
+                          }
                         </div>
                         <div className="min-w-0">
                           <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", fontWeight: 600, color: textPri, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

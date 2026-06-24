@@ -256,12 +256,13 @@ function ConfirmDeleteModal({ theme, emp, onConfirm, onCancel, deleting }) {
         }}>
           <div style={{
             width: "38px", height: "38px", borderRadius: "50%", flexShrink: 0,
-            background: `${color}20`, border: `2px solid ${color}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
+            background: emp.photoUrl ? "transparent" : `${color}20`, border: `2px solid ${color}`,
+            display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
           }}>
-            <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", color }}>
-              {getInitials(emp.name)}
-            </span>
+            {emp.photoUrl
+              ? <img src={emp.photoUrl} alt={emp.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <span style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px", color }}>{getInitials(emp.name)}</span>
+            }
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontFamily: "Mulish, sans-serif", fontWeight: 700, fontSize: "14px", color: text,

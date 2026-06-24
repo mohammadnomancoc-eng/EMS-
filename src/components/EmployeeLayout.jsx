@@ -119,6 +119,25 @@ function EmployeeSidebar({ open, onClose }) {
   const isDark    = theme === "dark";
   const user      = getStoredUser();
 
+  // Live employee photo from Firestore
+  const [photoUrl, setPhotoUrl] = useState(user.photoUrl || null);
+
+  useEffect(() => {
+    if (!user.empId) return;
+    getEmployee(user.empId)
+      .then((emp) => {
+        if (emp?.photoUrl) {
+          setPhotoUrl(emp.photoUrl);
+          // Update localStorage so header also gets it immediately
+          try {
+            const stored = JSON.parse(localStorage.getItem("rwt-user") || "{}");
+            localStorage.setItem("rwt-user", JSON.stringify({ ...stored, photoUrl: emp.photoUrl }));
+          } catch (_) {}
+        }
+      })
+      .catch(() => {});
+  }, [user.empId]);
+
   // BUG-10 FIX: fetch real monthly quota from Firestore
   const [leaveTaken,  setLeaveTaken]  = useState(0);
   const [wfhTaken,    setWfhTaken]    = useState(0);
@@ -293,12 +312,14 @@ function EmployeeSidebar({ open, onClose }) {
             style={{ background: isDark ? "#111111" : "#F5F5F5", border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}` }}
           >
             <div
-              className="rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ width: "34px", height: "34px", background: "#CC0000" }}
+              className="rounded-full flex-shrink-0 overflow-hidden"
+              style={{ width: "34px", height: "34px", background: "#CC0000",
+                display: "flex", alignItems: "center", justifyContent: "center" }}
             >
-              <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>
-                {user.initials}
-              </span>
+              {photoUrl
+                ? <img src={photoUrl} alt={user.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>{user.initials}</span>
+              }
             </div>
             <div className="flex-1 min-w-0">
               <p style={{ fontFamily: "Rajdhani, sans-serif", color: isDark ? "#F0F0F0" : "#111111", fontWeight: 600, fontSize: "14px", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -351,6 +372,15 @@ function EmployeeHeader({ onMenuClick }) {
   const page = pageTitles[pathname] || { title: "Employee Portal", crumb: "EMPLOYEE / PORTAL" };
   const user = getStoredUser();
   const isDark = theme === "dark";
+
+  // Live employee photo
+  const [photoUrl, setPhotoUrl] = useState(user.photoUrl || null);
+  useEffect(() => {
+    if (!user.empId) return;
+    getEmployee(user.empId)
+      .then((emp) => { if (emp?.photoUrl) setPhotoUrl(emp.photoUrl); })
+      .catch(() => {});
+  }, [user.empId]);
 
   // ── Notification state ──
   const [notifications, setNotifications] = useState([]);
@@ -533,16 +563,18 @@ function EmployeeHeader({ onMenuClick }) {
 
         {/* Avatar */}
         <div
-          className="rounded-full flex items-center justify-center cursor-pointer flex-shrink-0"
+          className="rounded-full cursor-pointer flex-shrink-0 overflow-hidden"
           style={{
             width:     "32px", height: "32px", background: "#CC0000",
             border:    "2px solid #CC0000",
             boxShadow: `0 0 0 2px ${isDark ? "#0A0A0A" : "#FFFFFF"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
-          <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>
-            {user.initials}
-          </span>
+          {photoUrl
+            ? <img src={photoUrl} alt={user.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>{user.initials}</span>
+          }
         </div>
       </div>
 

@@ -314,12 +314,15 @@ function AttendanceMobileCard({ rec, theme, isDark, textPri, textMuted, border, 
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         <div style={{
           width: "36px", height: "36px", borderRadius: "50%",
-          background: color, flexShrink: 0,
+          background: rec.photoUrl ? "transparent" : color,
+          border: rec.photoUrl ? `1.5px solid ${color}` : "none",
+          flexShrink: 0, overflow: "hidden",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>
-            {getInitials(rec.empName)}
-          </span>
+          {rec.photoUrl
+            ? <img src={rec.photoUrl} alt={rec.empName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>{getInitials(rec.empName)}</span>
+          }
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "14px", fontWeight: 600, color: textPri, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -540,12 +543,14 @@ function CalendarViewModal({ employee, theme, onClose }) {
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{
               width: "38px", height: "38px", borderRadius: "50%",
-              background: avatarColor, flexShrink: 0,
-              display: "flex", alignItems: "center", justifyContent: "center",
+              background: employee.photoUrl ? "transparent" : avatarColor, flexShrink: 0,
+              border: employee.photoUrl ? `1.5px solid ${avatarColor}` : "none",
+              display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden",
             }}>
-              <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "13px" }}>
-                {getInitials(employee.name)}
-              </span>
+              {employee.photoUrl
+                ? <img src={employee.photoUrl} alt={employee.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFF", fontWeight: 700, fontSize: "13px" }}>{getInitials(employee.name)}</span>
+              }
             </div>
             <div>
               <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px", color: textPri, margin: 0 }}>
@@ -861,6 +866,7 @@ export default function Attendance() {
       markedBy:    att?.markedBy || "manual",
       webcamSnapshotUrl: att?.webcamSnapshotUrl || null,
       workDescription: att?.workDescription || null,
+      photoUrl:    emp.photoUrl || null,
     };
   });
 
@@ -1197,8 +1203,15 @@ export default function Attendance() {
                       {/* Employee */}
                       <td style={{ padding: "11px 14px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                          <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>{getInitials(rec.empName)}</span>
+                          <div style={{ width: "32px", height: "32px", borderRadius: "50%",
+                            background: rec.photoUrl ? "transparent" : color,
+                            border: rec.photoUrl ? `1.5px solid ${color}` : "none",
+                            overflow: "hidden",
+                            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {rec.photoUrl
+                              ? <img src={rec.photoUrl} alt={rec.empName} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>{getInitials(rec.empName)}</span>
+                            }
                           </div>
                           <div>
                             <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "13px", fontWeight: 600, color: textPri, lineHeight: 1.2 }}>{rec.empName}</p>

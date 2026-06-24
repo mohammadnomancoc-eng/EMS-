@@ -877,12 +877,15 @@ function Dashboard() {
                 onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
               >
                 <div
-                  className="rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ width: "28px", height: "28px", background: "#CC0000" }}
+                  className="rounded-full flex-shrink-0 overflow-hidden"
+                  style={{ width: "28px", height: "28px", background: emp.photoUrl ? "transparent" : "#CC0000",
+                    border: emp.photoUrl ? "1.5px solid #CC0000" : "none",
+                    display: "flex", alignItems: "center", justifyContent: "center" }}
                 >
-                  <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "9px" }}>
-                    {getInitials(emp.name)}
-                  </span>
+                  {emp.photoUrl
+                    ? <img src={emp.photoUrl} alt={emp.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "9px" }}>{getInitials(emp.name)}</span>
+                  }
                 </div>
                 <div className="flex-1 min-w-0">
                   <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "13px", color: textPri, lineHeight: 1.2 }}>
@@ -958,11 +961,15 @@ function Dashboard() {
                 }}
               >
                 <div className="flex items-center gap-2">
-                  <div className="rounded-full flex items-center justify-center flex-shrink-0"
-                    style={{ width: "26px", height: "26px", background: "#CC0000" }}>
-                    <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "9px" }}>
-                      {getInitials(emp.name)}
-                    </span>
+                  <div className="rounded-full flex-shrink-0 overflow-hidden"
+                    style={{ width: "26px", height: "26px",
+                      background: emp.photoUrl ? "transparent" : "#CC0000",
+                      border: emp.photoUrl ? "1.5px solid #CC0000" : "none",
+                      display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {emp.photoUrl
+                      ? <img src={emp.photoUrl} alt={emp.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "9px" }}>{getInitials(emp.name)}</span>
+                    }
                   </div>
                   <div className="min-w-0">
                     <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 600, fontSize: "12px", color: textPri, lineHeight: 1.1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

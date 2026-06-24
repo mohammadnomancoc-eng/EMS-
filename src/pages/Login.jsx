@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import logo from "../assets/logo.png";
 import { loginUser } from "../firebase/authService";
+import { getEmployee } from "../firebase/firestoreService";
 
 function Login() {
   const navigate = useNavigate();
@@ -25,6 +26,14 @@ function Login() {
     try {
       const user = await loginUser(email, password);
       localStorage.setItem("rwt-role", user.role);
+      // Fetch employee photo if role is employee
+      let photoUrl = null;
+      if (user.role === "employee" && user.empId) {
+        try {
+          const empDoc = await getEmployee(user.empId);
+          photoUrl = empDoc?.photoUrl || null;
+        } catch (_) {}
+      }
       localStorage.setItem(
         "rwt-user",
         JSON.stringify({
@@ -33,6 +42,7 @@ function Login() {
           initials: user.initials,
           empId: user.empId ?? null,
           uid: user.uid,
+          photoUrl,
         })
       );
       navigate(user.role === "admin" ? "/dashboard" : "/my-attendance");

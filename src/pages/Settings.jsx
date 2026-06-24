@@ -17,7 +17,7 @@ import {
   Sun, Moon, Monitor, ChevronRight, ChevronDown,
   Download, Trash2, RefreshCw, Save,
   Database, HardDrive, LogOut, MapPin,
-  ShieldCheck, Wifi, AlertCircle, Menu, X,
+  ShieldCheck, Wifi, AlertCircle, Menu, X, MessageCircle,
 } from "lucide-react";
 
 // ── Shared primitives ──────────────────────────────────
@@ -608,6 +608,7 @@ function CompanySection({ theme }) {
     workingDays: "monday-friday", workStart: "09:00", workEnd: "18:00",
     leaveYear: "april", payDay: "last-working", currency: "INR",
     officeLat: "", officeLng: "", geoFenceRadius: "100",
+    whatsappGroupLink: "",
   };
 
   const [form,         setForm]         = useState(defaultForm);
@@ -633,9 +634,10 @@ function CompanySection({ theme }) {
           leaveYear:      data.leaveYear       || f.leaveYear,
           payDay:         data.payDay          || f.payDay,
           currency:       data.currency        || f.currency,
-          officeLat:      data.officeLat  != null ? String(data.officeLat)      : "",
-          officeLng:      data.officeLng  != null ? String(data.officeLng)      : "",
-          geoFenceRadius: data.geoFenceRadius != null ? String(data.geoFenceRadius) : "100",
+          officeLat:         data.officeLat  != null ? String(data.officeLat)      : "",
+          officeLng:         data.officeLng  != null ? String(data.officeLng)      : "",
+          geoFenceRadius:    data.geoFenceRadius != null ? String(data.geoFenceRadius) : "100",
+          whatsappGroupLink: data.whatsappGroupLink || "",
         }));
       }
       setFetchLoading(false);
@@ -656,13 +658,14 @@ function CompanySection({ theme }) {
     setLoading(true);
     try {
       await saveCompanySettings({
-        name:           form.company,  gstin:          form.gstin,      pan:      form.pan,
-        address:        form.address,  workingDays:    form.workingDays, workStart: form.workStart,
-        workEnd:        form.workEnd,  leaveYear:      form.leaveYear,   payDay:   form.payDay,
-        currency:       form.currency,
-        officeLat:      form.officeLat      ? parseFloat(form.officeLat)      : null,
-        officeLng:      form.officeLng      ? parseFloat(form.officeLng)      : null,
-        geoFenceRadius: form.geoFenceRadius ? parseInt(form.geoFenceRadius)   : 100,
+        name:              form.company,  gstin:          form.gstin,      pan:      form.pan,
+        address:           form.address,  workingDays:    form.workingDays, workStart: form.workStart,
+        workEnd:           form.workEnd,  leaveYear:      form.leaveYear,   payDay:   form.payDay,
+        currency:          form.currency,
+        officeLat:         form.officeLat      ? parseFloat(form.officeLat)      : null,
+        officeLng:         form.officeLng      ? parseFloat(form.officeLng)      : null,
+        geoFenceRadius:    form.geoFenceRadius ? parseInt(form.geoFenceRadius)   : 100,
+        whatsappGroupLink: form.whatsappGroupLink.trim() || null,
       });
       setSaved(true); setTimeout(() => setSaved(false), 2500);
     } catch {} finally { setLoading(false); }
@@ -710,6 +713,25 @@ function CompanySection({ theme }) {
             options={[{ value: "1", label: "1st of Month" }, { value: "last-working", label: "Last Working Day" }, { value: "custom", label: "Custom Date" }]} />
           <SelectField label="Currency" value={form.currency} onChange={set("currency")} theme={theme} options={["INR", "USD", "EUR", "GBP", "AED"]} />
         </div>
+        <SaveBtn onClick={handleSave} saved={saved} loading={loading} theme={theme} />
+      </div>
+
+      {/* WhatsApp Group */}
+      <div className="p-4 sm:p-5 rounded-xl mb-4" style={{ background: surface, border: `1px solid ${border}` }}>
+        <div className="flex items-center gap-2 mb-3">
+          <MessageCircle size={14} style={{ color: "#25D366" }} />
+          <p style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700, color: "#CC0000", letterSpacing: "0.18em" }}>WHATSAPP GROUP</p>
+        </div>
+        <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted, marginBottom: "16px" }}>
+          Paste the WhatsApp group invite link here. Employees will be able to share their attendance directly to this group.
+        </p>
+        <Field
+          label="WhatsApp Group Invite Link"
+          value={form.whatsappGroupLink}
+          onChange={set("whatsappGroupLink")}
+          theme={theme}
+          placeholder="https://chat.whatsapp.com/XXXXXXXXXXXXXX"
+        />
         <SaveBtn onClick={handleSave} saved={saved} loading={loading} theme={theme} />
       </div>
 

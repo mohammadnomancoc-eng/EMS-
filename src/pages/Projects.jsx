@@ -22,6 +22,7 @@ import {
   updateTeamProject,
   deleteTeamProject,
 } from "../firebase/firestoreService";
+import { uploadToCloudinary } from "../cloudinary/cloudinaryService";
 
 // ── Utility ───────────────────────────────────────────────────
 function fmt(dateStr) {
@@ -598,18 +599,36 @@ function ProjectModal({ isDark, existing, employees, onClose, onSave }) {
     logoUrl: existing?.logoUrl || "",
   });
   const [saving, setSaving] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
   const [error, setError] = useState("");
 
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
-  const handleLogoChange = (e) => {
+  const handleLogoChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      set("logoUrl", reader.result);
-    };
-    reader.readAsDataURL(file);
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/svg+xml", "image/gif"];
+    if (!allowed.includes(file.type)) {
+      setError("Logo must be JPG, PNG, WEBP, SVG, or GIF.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Logo must be under 5 MB.");
+      return;
+    }
+    setError("");
+    setLogoUploading(true);
+    try {
+      const result = await uploadToCloudinary(file, "image", {
+        folder: "ems/projects",
+        publicId: `project_logo_${Date.now()}`,
+      });
+      set("logoUrl", result.secure_url);
+    } catch (err) {
+      setError(err.message || "Failed to upload logo.");
+    } finally {
+      setLogoUploading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -725,11 +744,16 @@ function ProjectModal({ isDark, existing, employees, onClose, onSave }) {
               <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", fontWeight: 700, color: isDark ? "#888" : "#777", letterSpacing: "0.06em", textTransform: "uppercase" }}>PROJECT LOGO</span>
               <div style={{ display: "flex", gap: "8px" }}>
                 <label style={{
-                  padding: "6px 12px", borderRadius: "6px", background: "#CC0000", color: "#FFF",
-                  fontFamily: "Mulish, sans-serif", fontSize: "12px", fontWeight: 600, cursor: "pointer"
+                  padding: "6px 12px", borderRadius: "6px",
+                  background: logoUploading ? "#881111" : "#CC0000", color: "#FFF",
+                  fontFamily: "Mulish, sans-serif", fontSize: "12px", fontWeight: 600,
+                  cursor: logoUploading ? "wait" : "pointer",
+                  opacity: logoUploading ? 0.7 : 1,
+                  display: "flex", alignItems: "center", gap: "6px",
                 }}>
-                  Upload Image
-                  <input type="file" accept="image/*" onChange={handleLogoChange} style={{ display: "none" }} />
+                  {logoUploading && <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />}
+                  {logoUploading ? "Uploading…" : "Upload Image"}
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif" onChange={handleLogoChange} disabled={logoUploading} style={{ display: "none" }} />
                 </label>
                 {form.logoUrl && (
                   <button onClick={() => set("logoUrl", "")} style={{

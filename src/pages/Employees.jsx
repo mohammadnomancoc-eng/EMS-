@@ -1343,7 +1343,8 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
         <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
           onChange={e => handlePhotoChange(e.target.files?.[0])} />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1411,8 +1412,7 @@ function EmployeeCard({ emp, theme, onTap, onEdit, onDelete }) {
           </button>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }
 
@@ -1480,15 +1480,17 @@ export default function Employees() {
   const subColor  = isDark ? "#A0A0A0" : "#888888";
   const inputBg   = isDark ? "#111111" : "#FFFFFF";
 
-  // ── Filtered list ──
-  const filtered = data.filter(e => {
-    const q = search.toLowerCase();
-    const matchSearch = e.name.toLowerCase().includes(q)
-      || e.role.toLowerCase().includes(q)
-      || e.id.toLowerCase().includes(q);
-    const matchDept   = deptFilter   === "All" || e.department === deptFilter;
-    return matchSearch && matchDept;
-  });
+  // ── Filtered and Sorted list ──
+  const filtered = data
+    .filter(e => {
+      const q = search.toLowerCase();
+      const matchSearch = e.name.toLowerCase().includes(q)
+        || e.role.toLowerCase().includes(q)
+        || e.id.toLowerCase().includes(q);
+      const matchDept   = deptFilter   === "All" || e.department === deptFilter;
+      return matchSearch && matchDept;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   // ── KPI stats — same logic as Dashboard ──────────────────────
   // Present: employees with attendance record "Present" or "WFH" today

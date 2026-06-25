@@ -509,6 +509,7 @@ function MyLeave() {
         empId, from, to, days, reason,
         leaveType: requestType === "Leave" ? leaveType : null,
         requestType,
+        employeeName: profile.name,
       });
       setAllRequests((prev) => [{
         id, empId, from, to, days, reason,

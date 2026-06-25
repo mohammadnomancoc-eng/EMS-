@@ -27,6 +27,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./config";
 import { sendFCMPush, sendFCMPushToAdmins } from "./messaging";
+import { sendOneSignalPush } from "../utils/onesignal";
 
 // ── Helpers ───────────────────────────────────────────────────
 const col = (name) => collection(db, name);
@@ -816,7 +817,25 @@ export async function addNotification(data) {
       });
     }
   } catch (fcmErr) {
-    console.warn("[FCM] Failed to trigger push notification:", fcmErr);
+    console.warn("[FCM] Failed to trigger FCM push notification:", fcmErr);
+  }
+
+  // Dispatch OneSignal Web Push notification asynchronously
+  try {
+    const title = data.title || "EMS Notification";
+    const body = data.message || data.body || "";
+    const actionUrl = data.actionUrl || "/";
+
+    sendOneSignalPush({
+      title,
+      body,
+      actionUrl,
+      targetRole: data.recipientRole === "admin" ? "admin" : null,
+      targetEmpId: data.type === "employee" ? (data.recipientId || data.targetId) : null,
+      targetDepartment: data.type === "department" ? (data.recipientId || data.targetId) : null
+    });
+  } catch (oneSignalErr) {
+    console.warn("[OneSignal] Failed to trigger push notification:", oneSignalErr);
   }
 
   return ref.id;

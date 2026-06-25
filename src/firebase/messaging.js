@@ -169,9 +169,110 @@ export function listenForegroundMessages(onMessageReceived) {
   }
 }
 
-/** Sends an FCM push notification to all devices registered under a target user. */
+/** Helper to convert PEM formatted private key to ArrayBuffer */
+function pemToArrayBuffer(pem) {
+  // Replace escaped newlines if any
+  const cleanPem = pem
+    .replace(/\\n/g, "\n")
+    .replace("-----BEGIN PRIVATE KEY-----", "")
+    .replace("-----END PRIVATE KEY-----", "")
+    .replace(/\s+/g, "");
+  
+  const binaryString = window.atob(cleanPem);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
+/** Generates Google OAuth 2.0 Access Token using Web Crypto API */
+async function getGoogleAccessToken(clientEmail, privateKey) {
+  const iat = Math.floor(Date.now() / 1000);
+  const exp = iat + 3600;
+
+  const header = {
+    alg: "RS256",
+    typ: "JWT"
+  };
+
+  const payload = {
+    iss: clientEmail,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    exp: exp,
+    iat: iat
+  };
+
+  const base64url = (source) => {
+    let encoded = window.btoa(JSON.stringify(source));
+    return encoded.replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+  };
+
+  const stringifiedHeader = base64url(header);
+  const stringifiedPayload = base64url(payload);
+  const tokenInput = `${stringifiedHeader}.${stringifiedPayload}`;
+
+  const privateKeyBuffer = pemToArrayBuffer(privateKey);
+  const cryptoKey = await window.crypto.subtle.importKey(
+    "pkcs8",
+    privateKeyBuffer,
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      hash: { name: "SHA-256" }
+    },
+    false,
+    ["sign"]
+  );
+
+  const encoder = new TextEncoder();
+  const signatureBuffer = await window.crypto.subtle.sign(
+    "RSASSA-PKCS1-v1_5",
+    cryptoKey,
+    encoder.encode(tokenInput)
+  );
+
+  const signatureBytes = new Uint8Array(signatureBuffer);
+  let signatureString = "";
+  for (let i = 0; i < signatureBytes.byteLength; i++) {
+    signatureString += String.fromCharCode(signatureBytes[i]);
+  }
+  const encodedSignature = window.btoa(signatureString)
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+
+  const jwt = `${tokenInput}.${encodedSignature}`;
+
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
+  });
+
+  const resData = await response.json();
+  if (!response.ok) {
+    throw new Error(`OAuth error: ${resData.error_description || resData.error}`);
+  }
+  return resData.access_token;
+}
+
+/** Sends an FCM push notification to all devices registered under a target user using FCM HTTP v1 */
 export async function sendFCMPush(targetUserId, title, body, actionUrl = "/") {
   if (!targetUserId) return;
+  
+  const clientEmail = import.meta.env.VITE_FIREBASE_SERVICE_ACCOUNT_CLIENT_EMAIL;
+  const privateKey = import.meta.env.VITE_FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
+
+  if (!clientEmail || !privateKey || !projectId) {
+    console.warn("[FCM] Client email, private key, or project ID not configured in .env. Skipping push notification.");
+    return;
+  }
+
   try {
     const devicesRef = collection(db, "users", targetUserId, "devices");
     const snap = await getDocs(devicesRef);
@@ -188,32 +289,44 @@ export async function sendFCMPush(targetUserId, title, body, actionUrl = "/") {
 
     if (tokens.length === 0) return;
 
-    // Fallback to API Key if VITE_FIREBASE_SERVER_KEY is not defined
-    const serverKey = import.meta.env.VITE_FIREBASE_SERVER_KEY || import.meta.env.VITE_FIREBASE_API_KEY;
+    // Get signed OAuth access token
+    const accessToken = await getGoogleAccessToken(clientEmail, privateKey);
 
-    console.log(`[FCM] Sending push notification to ${tokens.length} devices for user ${targetUserId}...`);
+    console.log(`[FCM] Sending push notification via HTTP v1 to ${tokens.length} devices for user ${targetUserId}...`);
 
     await Promise.all(tokens.map(async (token) => {
       try {
-        const response = await fetch("https://fcm.googleapis.com/fcm/send", {
+        const response = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `key=${serverKey}`
+            "Authorization": `Bearer ${accessToken}`
           },
           body: JSON.stringify({
-            to: token,
-            notification: {
-              title,
-              body,
-              icon: "/rwtlogo.png",
-              click_action: actionUrl
-            },
-            data: {
-              title,
-              body,
-              icon: "/rwtlogo.png",
-              actionUrl
+            message: {
+              token: token,
+              notification: {
+                title,
+                body
+              },
+              webpush: {
+                notification: {
+                  title,
+                  body,
+                  icon: "/rwtlogo.png",
+                  badge: "/favicon.svg",
+                  tag: "ems-notification",
+                  renotify: true
+                },
+                fcmOptions: {
+                  link: actionUrl
+                },
+                data: {
+                  title,
+                  body,
+                  actionUrl
+                }
+              }
             }
           })
         });
@@ -228,7 +341,7 @@ export async function sendFCMPush(targetUserId, title, body, actionUrl = "/") {
   }
 }
 
-/** Sends an FCM push notification to all registered admin users. */
+/** Sends an FCM push notification to all registered admin users using FCM HTTP v1 */
 export async function sendFCMPushToAdmins(title, body, actionUrl = "/") {
   try {
     const q = query(collection(db, "users"), where("role", "==", "admin"));
@@ -244,3 +357,6 @@ export async function sendFCMPushToAdmins(title, body, actionUrl = "/") {
     console.error("[FCM] Error in sendFCMPushToAdmins:", error);
   }
 }
+
+
+

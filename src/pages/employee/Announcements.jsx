@@ -3,8 +3,9 @@ import { useTheme } from "../../App";
 import {
   Megaphone, Bell, Shield, Briefcase,
   Star, ChevronDown, ChevronUp, Pin,
-  Calendar, Tag, Filter,
+  Calendar, Tag, Filter, Building2, User,
 } from "lucide-react";
+import { getEmployee, subscribeNotificationsForEmployee } from "../../firebase/firestoreService";
 
 // ── Responsive hook ────────────────────────────────────────────
 function useIsMobile() {
@@ -17,93 +18,20 @@ function useIsMobile() {
   return isMobile;
 }
 
-// ── Mock Announcements ─────────────────────────────────────────
-const mockAnnouncements = [
-  {
-    id: 1,
-    title: "Office Closed on May 12 – Buddha Purnima",
-    category: "Holiday",
-    priority: "high",
-    pinned: true,
-    date: "2026-05-08",
-    author: "Pooja Nair",
-    authorRole: "HR Manager",
-    body: "Dear Team, please note that our office will remain closed on Monday, May 12, 2026 on account of Buddha Purnima. Enjoy the long weekend! Normal operations resume on Tuesday, May 13. Any urgent matters should be escalated to your respective team leads via email.",
-  },
-  {
-    id: 2,
-    title: "Q2 Performance Review – Schedule Released",
-    category: "HR",
-    priority: "medium",
-    pinned: true,
-    date: "2026-05-06",
-    author: "Pooja Nair",
-    authorRole: "HR Manager",
-    body: "The Q2 performance review cycle kicks off from May 20, 2026. Self-assessments are due by May 25. Manager reviews will be conducted between May 26–30. Please ensure your KPIs and project contributions are up to date in the portal before May 20.",
-  },
-  {
-    id: 3,
-    title: "New Leave Policy – Effective June 1, 2026",
-    category: "Policy",
-    priority: "high",
-    pinned: false,
-    date: "2026-05-05",
-    author: "Sneha Patil",
-    authorRole: "Project Manager",
-    body: "Effective June 1, 2026, the company's leave policy will be updated. Monthly casual leave quota increases from 2 to 3 days. Carry-forward of unused leave is now capped at 12 days per year. Paternity leave is extended to 10 days. Full policy document will be shared by HR by May 15.",
-  },
-  {
-    id: 4,
-    title: "Office Renovation – 3rd Floor Temporarily Unavailable",
-    category: "Facilities",
-    priority: "medium",
-    pinned: false,
-    date: "2026-05-04",
-    author: "Admin",
-    authorRole: "Administration",
-    body: "The 3rd floor will undergo renovation work from May 12–16, 2026. Teams currently seated on the 3rd floor (Engineering B and QA) will be temporarily relocated to the 2nd floor co-working spaces. Detailed seating maps will be circulated by May 10.",
-  },
-  {
-    id: 5,
-    title: "Team Outing – Vote for Your Preferred Date",
-    category: "Events",
-    priority: "low",
-    pinned: false,
-    date: "2026-05-02",
-    author: "Pooja Nair",
-    authorRole: "HR Manager",
-    body: "We are planning a team outing for the month of June! Please fill in the Google Form shared on the company WhatsApp group to vote for your preferred date and activity. Deadline for voting is May 15. Your participation makes it more fun for everyone!",
-  },
-  {
-    id: 6,
-    title: "System Maintenance – Sunday May 17, 2026",
-    category: "IT",
-    priority: "medium",
-    pinned: false,
-    date: "2026-04-30",
-    author: "Vikram Singh",
-    authorRole: "DevOps Engineer",
-    body: "Scheduled system maintenance will be carried out on Sunday, May 17, 2026 from 11:00 PM to 3:00 AM IST. All internal tools, the employee portal, and project management platforms may be intermittently unavailable during this window. Please plan accordingly.",
-  },
-];
-
 // ── Category Config ────────────────────────────────────────────
 const categoryConfig = {
-  Holiday:    { color: "#00B8B8", bg: "rgba(0,184,184,0.10)",   border: "rgba(0,184,184,0.30)",   icon: Star      },
-  HR:         { color: "#C9922A", bg: "rgba(201,146,42,0.10)",  border: "rgba(201,146,42,0.30)",  icon: Briefcase },
-  Policy:     { color: "#CC0000", bg: "rgba(204,0,0,0.10)",     border: "rgba(204,0,0,0.30)",     icon: Shield    },
-  Facilities: { color: "#A0A0A0", bg: "rgba(160,160,160,0.10)", border: "rgba(160,160,160,0.30)", icon: Tag       },
-  Events:     { color: "#00B8B8", bg: "rgba(0,184,184,0.10)",   border: "rgba(0,184,184,0.30)",   icon: Bell      },
-  IT:         { color: "#C9922A", bg: "rgba(201,146,42,0.10)",  border: "rgba(201,146,42,0.30)",  icon: Tag       },
+  Everyone:   { color: "#C9922A", bg: "rgba(201,146,42,0.10)",  border: "rgba(201,146,42,0.30)",  icon: Megaphone  },
+  Department: { color: "#6366F1", bg: "rgba(99,102,241,0.10)",  border: "rgba(99,102,241,0.30)",  icon: Building2  },
+  Personal:   { color: "#00B8B8", bg: "rgba(0,184,184,0.10)",   border: "rgba(0,184,184,0.30)",   icon: User       },
 };
 
-const priorityDot = { high: "#CC0000", medium: "#C9922A", low: "#00B8B8" };
+const priorityDot = { high: "#CC0000", normal: "#C9922A", low: "#00B8B8" };
 const categories  = ["All", ...Object.keys(categoryConfig)];
 
 // ── Announcement Card ──────────────────────────────────────────
 function AnnouncementCard({ item, theme, isMobile }) {
   const [expanded, setExpanded] = useState(false);
-  const cfg     = categoryConfig[item.category] || categoryConfig.Facilities;
+  const cfg     = categoryConfig[item.category] || categoryConfig.Everyone;
   const CatIcon = cfg.icon;
 
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
@@ -124,7 +52,7 @@ function AnnouncementCard({ item, theme, isMobile }) {
       }}
     >
       {/* Priority bar */}
-      <div style={{ height: "3px", background: priorityDot[item.priority] }} />
+      <div style={{ height: "3px", background: priorityDot[item.priority] || priorityDot.normal }} />
 
       <div style={{ padding: isMobile ? "14px" : "20px" }}>
         {/* Top row: icon + content + toggle */}
@@ -178,9 +106,9 @@ function AnnouncementCard({ item, theme, isMobile }) {
 
               <span style={{
                 fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 600,
-                color: priorityDot[item.priority],
-                background: `${priorityDot[item.priority]}18`,
-                border: `1px solid ${priorityDot[item.priority]}55`,
+                color: priorityDot[item.priority] || priorityDot.normal,
+                background: `${priorityDot[item.priority] || priorityDot.normal}18`,
+                border: `1px solid ${priorityDot[item.priority] || priorityDot.normal}55`,
                 borderRadius: "4px", padding: "1px 8px",
                 textTransform: "uppercase", whiteSpace: "nowrap",
               }}>
@@ -257,24 +185,92 @@ function AnnouncementCard({ item, theme, isMobile }) {
 export default function Announcements() {
   const { theme }  = useTheme();
   const isMobile   = useIsMobile();
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState("All");
-  const [showFilterMenu,  setShowFilterMenu]  = useState(false);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
 
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
   const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
   const textMuted = theme === "dark" ? "#A0A0A0" : "#888888";
 
-  const pinned   = mockAnnouncements.filter((a) => a.pinned);
-  const filtered = mockAnnouncements.filter(
+  useEffect(() => {
+    const stored = localStorage.getItem("rwt-user");
+    if (!stored) {
+      setLoading(false);
+      return;
+    }
+    let user;
+    try {
+      user = JSON.parse(stored);
+    } catch {
+      setLoading(false);
+      return;
+    }
+    if (!user?.empId) {
+      setLoading(false);
+      return;
+    }
+
+    let unsub = () => {};
+
+    getEmployee(user.empId)
+      .then((emp) => {
+        const dept = emp?.department || "";
+        unsub = subscribeNotificationsForEmployee(user.empId, dept, (list) => {
+          const mapped = list.map((n) => {
+            let category = "Everyone";
+            if (n.type === "department") category = "Department";
+            if (n.type === "employee") category = "Personal";
+
+            return {
+              id: n.id,
+              title: n.title,
+              body: n.message || n.body || "",
+              category,
+              priority: n.priority || "normal",
+              pinned: n.priority === "high",
+              date: n.createdAt?.toDate ? n.createdAt.toDate().toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+              author: n.createdBy || "Admin",
+              authorRole: n.type === "department" ? `Dept: ${n.targetId || n.department || "—"}` : n.type === "employee" ? "Direct" : "Global",
+            };
+          });
+          setNotifications(mapped);
+          setLoading(false);
+        });
+      })
+      .catch((err) => {
+        console.error("Failed to load employee department:", err);
+        setLoading(false);
+      });
+
+    return () => unsub();
+  }, []);
+
+  if (loading) {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "300px" }}>
+        <div style={{
+          width: "28px", height: "28px", borderRadius: "50%",
+          border: "2px solid rgba(204,0,0,0.1)", borderTopColor: "#CC0000",
+          animation: "spin 0.8s linear infinite",
+        }} />
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  const pinned   = notifications.filter((a) => a.pinned);
+  const filtered = notifications.filter(
     (a) => !a.pinned && (activeCategory === "All" || a.category === activeCategory)
   );
 
   const stats = [
-    { label: "Total",     value: mockAnnouncements.length,                                                                             color: theme === "dark" ? "#F0F0F0" : "#111111", sub: "announcements"  },
-    { label: "Pinned",    value: mockAnnouncements.filter((a) => a.pinned).length,                                                     color: "#C9922A", sub: "must-read"    },
-    { label: "High",      value: mockAnnouncements.filter((a) => a.priority === "high").length,                                        color: "#CC0000", sub: "priority"     },
-    { label: "This Week", value: mockAnnouncements.filter((a) => new Date(a.date) >= new Date(Date.now() - 7 * 86400000)).length,      color: "#00B8B8", sub: "new this week" },
+    { label: "Total",     value: notifications.length,                                                                             color: theme === "dark" ? "#F0F0F0" : "#111111", sub: "messages"  },
+    { label: "Pinned",    value: notifications.filter((a) => a.pinned).length,                                                     color: "#C9922A", sub: "must-read"    },
+    { label: "High",      value: notifications.filter((a) => a.priority === "high").length,                                        color: "#CC0000", sub: "priority"     },
+    { label: "This Week", value: notifications.filter((a) => new Date(a.date) >= new Date(Date.now() - 7 * 86400000)).length,      color: "#00B8B8", sub: "new this week" },
   ];
 
   return (

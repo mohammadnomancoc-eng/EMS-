@@ -784,7 +784,7 @@ export async function addNotification(data) {
     targetId: data.recipientId || data.targetId || null, // backward compatibility
     recipientRole: data.recipientRole || null,
     department: data.department || (data.type === "department" ? data.targetId : null),
-    actionUrl: data.actionUrl || "",
+    actionUrl: data.actionUrl || "/announcements",
     read: false,
     readAt: null,
     readBy: [],
@@ -800,7 +800,7 @@ export async function addNotification(data) {
   try {
     const title = data.title || "EMS Notification";
     const body = data.message || data.body || "";
-    const actionUrl = data.actionUrl || "/";
+    const actionUrl = data.actionUrl || "/announcements";
 
     sendOneSignalPush({
       title,

@@ -26,7 +26,6 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./config";
-import { sendFCMPush, sendFCMPushToAdmins } from "./messaging";
 import { sendOneSignalPush } from "../utils/onesignal";
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -796,29 +795,6 @@ export async function addNotification(data) {
     pushSentAt: null,
     createdBy: data.createdBy || "System"
   });
-
-  // Dispatch FCM Web Push notification asynchronously
-  try {
-    const title = data.title || "EMS Notification";
-    const body = data.message || data.body || "";
-    const actionUrl = data.actionUrl || "/";
-
-    if (data.recipientRole === "admin" || data.type === "all") {
-      sendFCMPushToAdmins(title, body, actionUrl);
-    } else if (data.recipientId || data.targetId) {
-      const empId = data.recipientId || data.targetId;
-      const q = query(collection(db, "users"), where("empId", "==", empId));
-      getDocs(q).then((snap) => {
-        snap.forEach((doc) => {
-          sendFCMPush(doc.id, title, body, actionUrl);
-        });
-      }).catch((err) => {
-        console.warn("[FCM] Error querying target user for push notification:", err);
-      });
-    }
-  } catch (fcmErr) {
-    console.warn("[FCM] Failed to trigger FCM push notification:", fcmErr);
-  }
 
   // Dispatch OneSignal Web Push notification asynchronously
   try {

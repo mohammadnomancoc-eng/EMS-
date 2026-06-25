@@ -35,6 +35,7 @@ import {
   deleteNotification,
 } from "../firebase/firestoreService";
 import NotificationPanel from "./NotificationPanel";
+import { getThumbnailUrl } from "../cloudinary/cloudinaryService";
 
 const SIDEBAR_W = 252;
 
@@ -95,7 +96,17 @@ function Sidebar({ open, onClose }) {
   };
 
   const userRaw = localStorage.getItem("rwt-user");
-  const user    = userRaw ? JSON.parse(userRaw) : { initials: "AD", name: "Admin" };
+  const [user, setUser] = useState(userRaw ? JSON.parse(userRaw) : { initials: "AD", name: "Admin" });
+
+  // Re-read user from localStorage when photo is updated
+  useEffect(() => {
+    const refresh = () => {
+      const raw = localStorage.getItem("rwt-user");
+      setUser(raw ? JSON.parse(raw) : { initials: "AD", name: "Admin" });
+    };
+    window.addEventListener("rwt-user-updated", refresh);
+    return () => window.removeEventListener("rwt-user-updated", refresh);
+  }, []);
 
   return (
     <>
@@ -222,11 +233,15 @@ function Sidebar({ open, onClose }) {
           >
             <div
               className="rounded-full flex items-center justify-center flex-shrink-0"
-              style={{ width: "34px", height: "34px", background: "#CC0000" }}
+              style={{ width: "34px", height: "34px", background: "#CC0000", overflow: "hidden" }}
             >
-              <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>
-                {user.initials || "AD"}
-              </span>
+              {user.photoUrl
+                ? <img src={getThumbnailUrl(user.photoUrl, 68)} alt={user.name || "Admin"}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "12px" }}>
+                    {user.initials || "AD"}
+                  </span>
+              }
             </div>
             <div className="flex-1 min-w-0">
               <p style={{ fontFamily: "Rajdhani, sans-serif", color: isDark ? "#F0F0F0" : "#111111", fontWeight: 600, fontSize: "14px", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -280,8 +295,18 @@ function Header({ onMenuClick }) {
   const page = pageTitles[pathname] || { title: "Dashboard", crumb: "WORKSPACE / DASHBOARD" };
 
   const userRaw = localStorage.getItem("rwt-user");
-  const user    = userRaw ? JSON.parse(userRaw) : { initials: "AD" };
+  const [user, setUser] = useState(userRaw ? JSON.parse(userRaw) : { initials: "AD" });
   const isDark  = theme === "dark";
+
+  // Re-read user when photo is updated from Settings
+  useEffect(() => {
+    const refresh = () => {
+      const raw = localStorage.getItem("rwt-user");
+      setUser(raw ? JSON.parse(raw) : { initials: "AD" });
+    };
+    window.addEventListener("rwt-user-updated", refresh);
+    return () => window.removeEventListener("rwt-user-updated", refresh);
+  }, []);
 
   // Subscribe to all notifications in real-time
   useEffect(() => {
@@ -466,11 +491,16 @@ function Header({ onMenuClick }) {
             width:  "32px", height: "32px", background: "#CC0000",
             border: "2px solid #CC0000",
             boxShadow: `0 0 0 2px ${isDark ? "#0A0A0A" : "#FFFFFF"}`,
+            overflow: "hidden",
           }}
         >
-          <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>
-            {user.initials || "AD"}
-          </span>
+          {user.photoUrl
+            ? <img src={getThumbnailUrl(user.photoUrl, 64)} alt={user.name || "Admin"}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "11px" }}>
+                {user.initials || "AD"}
+              </span>
+          }
         </div>
       </div>
 

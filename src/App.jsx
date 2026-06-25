@@ -139,24 +139,8 @@ function App() {
   useEffect(() => {
     const unsub = subscribeAuthState((user) => {
       if (user) {
-        // Initialize OneSignal
+        // Initialize OneSignal for push notifications
         initOneSignal(user);
-
-        // Setup FCM for the logged-in user dynamically
-        import("./firebase/messaging").then(({ setupFCM, listenForegroundMessages }) => {
-          setupFCM(user.uid);
-          listenForegroundMessages((payload) => {
-            console.log("Foreground message received:", payload);
-            if (Notification.permission === "granted") {
-              new Notification(payload.notification?.title || "EMS Update", {
-                body: payload.notification?.body || "",
-                icon: "/rwtlogo.png"
-              });
-            }
-          });
-        }).catch((err) => {
-          console.warn("[FCM] Failed to load/setup messaging module:", err);
-        });
       } else {
         logoutOneSignal();
         localStorage.removeItem("rwt-role");

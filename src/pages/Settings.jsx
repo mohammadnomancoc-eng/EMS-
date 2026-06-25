@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "../App";
 import {
   getCompanySettings, saveCompanySettings,
@@ -18,7 +18,9 @@ import {
   Download, Trash2, RefreshCw, Save,
   Database, HardDrive, LogOut, MapPin,
   ShieldCheck, Wifi, AlertCircle, Menu, X, MessageCircle,
+  Camera,
 } from "lucide-react";
+import { uploadToCloudinary, getThumbnailUrl } from "../cloudinary/cloudinaryService";
 
 // ── Shared primitives ──────────────────────────────────
 
@@ -186,7 +188,10 @@ function ProfileSection({ theme }) {
   const textPri = isDark ? "#F0F0F0" : "#111111";
   const textSub = isDark ? "#666666" : "#999999";
 
-  const stored = JSON.parse(localStorage.getItem("rwt-user") || "{}");
+  const fileRef = useRef(null);
+  const storedRaw = localStorage.getItem("rwt-user") || "{}";
+  const stored = JSON.parse(storedRaw);
+
   const [form, setForm] = useState({
     name:        stored.name        || "Admin",
     designation: stored.designation || "Super Admin",
@@ -195,9 +200,13 @@ function ProfileSection({ theme }) {
     email:       auth.currentUser?.email || "",
     company:     "Royals Webtech Pvt. Ltd.",
   });
-  const [saved,   setSaved]   = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState("");
+  const [photoUrl,     setPhotoUrl]     = useState(stored.photoUrl || "");
+  const [uploading,    setUploading]    = useState(false);
+  const [uploadPct,    setUploadPct]    = useState(0);
+  const [uploadErr,    setUploadErr]    = useState("");
+  const [saved,        setSaved]        = useState(false);
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState("");
   const set = (key) => (val) => setForm(f => ({ ...f, [key]: val }));
 
   useEffect(() => {
@@ -206,43 +215,157 @@ function ProfileSection({ theme }) {
     getDoc(doc(db, "users", uid)).then(snap => {
       if (snap.exists()) {
         const d = snap.data();
-        setForm(f => ({ ...f, name: d.name || f.name, designation: d.designation || f.designation, phone: d.phone || f.phone, timezone: d.timezone || f.timezone }));
+        setForm(f => ({
+          ...f,
+          name:        d.name        || f.name,
+          designation: d.designation || f.designation,
+          phone:       d.phone       || f.phone,
+          timezone:    d.timezone    || f.timezone,
+        }));
+        if (d.photoUrl) setPhotoUrl(d.photoUrl);
       }
     }).catch(() => {});
   }, []);
+
+  const handlePhotoChange = async (file) => {
+    if (!file) return;
+    setUploadErr(""); setUploading(true); setUploadPct(0);
+    try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error("Not logged in");
+      const result = await uploadToCloudinary(file, "image", {
+        folder:     "ems/admins",
+        publicId:   `admin_${uid}_profile_${Date.now()}`,
+        onProgress: (pct) => setUploadPct(pct),
+      });
+      const newUrl = result.secure_url;
+      const newPid = result.public_id;
+      // Persist to Firestore
+      await updateDoc(doc(db, "users", uid), {
+        photoUrl:      newUrl,
+        photoPublicId: newPid,
+      });
+      // Sync localStorage so Layout picks it up immediately
+      const freshStored = JSON.parse(localStorage.getItem("rwt-user") || "{}");
+      localStorage.setItem("rwt-user", JSON.stringify({ ...freshStored, photoUrl: newUrl }));
+      setPhotoUrl(newUrl);
+      // Notify other components (header avatar) via storage event
+      window.dispatchEvent(new Event("rwt-user-updated"));
+    } catch (err) {
+      setUploadErr(err.message || "Upload failed.");
+    } finally {
+      setUploading(false); setUploadPct(0);
+    }
+  };
 
   const handleSave = async () => {
     setLoading(true); setError("");
     try {
       const uid = auth.currentUser?.uid;
       if (!uid) throw new Error("Not logged in");
-      await updateDoc(doc(db, "users", uid), { name: form.name, designation: form.designation, phone: form.phone, timezone: form.timezone });
-      const updated = { ...stored, name: form.name, designation: form.designation };
-      localStorage.setItem("rwt-user", JSON.stringify(updated));
+      await updateDoc(doc(db, "users", uid), {
+        name: form.name, designation: form.designation,
+        phone: form.phone, timezone: form.timezone,
+      });
+      const freshStored = JSON.parse(localStorage.getItem("rwt-user") || "{}");
+      localStorage.setItem("rwt-user", JSON.stringify({
+        ...freshStored, name: form.name, designation: form.designation,
+      }));
+      window.dispatchEvent(new Event("rwt-user-updated"));
       setSaved(true); setTimeout(() => setSaved(false), 2500);
     } catch (err) { setError(err.message || "Failed to save profile."); }
     finally { setLoading(false); }
   };
 
-  const initials = form.name ? form.name.trim().split(/\s+/).map(n => n[0]).join("").toUpperCase().slice(0, 2) : "AD";
+  const initials = form.name
+    ? form.name.trim().split(/\s+/).map(n => n[0]).join("").toUpperCase().slice(0, 2)
+    : "AD";
 
   return (
     <div>
       <SectionTitle title="Profile Settings" sub="Update your personal and admin information" />
 
-      {/* Avatar card — stacks nicely at any width */}
+      {/* Avatar card */}
       <div className="flex items-center gap-4 mb-6 p-4 sm:p-5 rounded-xl" style={{ background: surface, border: `1px solid ${border}` }}>
-        <div className="rounded-full flex items-center justify-center flex-shrink-0"
-          style={{ width: "64px", height: "64px", background: "#CC0000", border: "3px solid #CC0000", boxShadow: "0 0 0 3px " + (isDark ? "#0A0A0A" : "#F4F4F4") }}>
-          <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "22px" }}>{initials}</span>
+        {/* Clickable avatar with camera overlay */}
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <div
+            style={{
+              width: "72px", height: "72px", borderRadius: "50%", overflow: "hidden",
+              background: "#CC0000",
+              border: "3px solid #CC0000",
+              boxShadow: "0 0 0 3px " + (isDark ? "#0A0A0A" : "#F4F4F4"),
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            {photoUrl
+              ? <img src={getThumbnailUrl(photoUrl, 144)} alt={form.name}
+                  style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : <span style={{ fontFamily: "Rajdhani, sans-serif", color: "#FFFFFF", fontWeight: 700, fontSize: "24px" }}>{initials}</span>
+            }
+            {/* Upload progress overlay */}
+            {uploading && (
+              <div style={{
+                position: "absolute", inset: 0, borderRadius: "50%",
+                background: "rgba(0,0,0,0.6)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <span style={{ fontFamily: "Rajdhani, sans-serif", fontSize: "13px", fontWeight: 700, color: "#00B8B8" }}>
+                  {uploadPct}%
+                </span>
+              </div>
+            )}
+          </div>
+          {/* Camera button */}
+          <button
+            id="admin-photo-upload-btn"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            title="Change profile photo"
+            style={{
+              position: "absolute", bottom: 0, right: 0,
+              width: "26px", height: "26px", borderRadius: "50%",
+              background: "#CC0000", border: "2px solid " + (isDark ? "#111111" : "#FFFFFF"),
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: uploading ? "not-allowed" : "pointer",
+              opacity: uploading ? 0.6 : 1,
+              transition: "transform 150ms ease",
+            }}
+            onMouseEnter={e => { if (!uploading) e.currentTarget.style.transform = "scale(1.15)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+          >
+            <Camera size={12} color="#fff" />
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            style={{ display: "none" }}
+            onChange={e => handlePhotoChange(e.target.files?.[0])}
+          />
         </div>
-        <div className="min-w-0">
-          <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "clamp(15px, 4vw, 18px)", color: textPri, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{form.name}</p>
-          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub }}>{form.designation} · Royals Webtech</p>
+
+        <div className="min-w-0 flex-1">
+          <p style={{ fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "clamp(15px, 4vw, 18px)", color: textPri, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {form.name}
+          </p>
+          <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textSub }}>
+            {form.designation} · Royals Webtech
+          </p>
           <div className="flex items-center gap-1 mt-1">
             <div className="rounded-full" style={{ width: "6px", height: "6px", background: "#00B8B8" }} />
             <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "10px", color: "#00B8B8" }}>ONLINE</span>
           </div>
+          {uploadErr && (
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#CC0000", marginTop: "4px" }}>
+              ⚠ {uploadErr}
+            </p>
+          )}
+          {!uploading && !uploadErr && (
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: textSub, marginTop: "4px" }}>
+              Click the camera icon to update your photo
+            </p>
+          )}
         </div>
       </div>
 
@@ -258,10 +381,10 @@ function ProfileSection({ theme }) {
         </div>
         <SelectField label="Timezone" value={form.timezone} onChange={set("timezone")} theme={theme}
           options={[
-            { value: "Asia/Kolkata",     label: "IST — India Standard Time (UTC+5:30)" },
-            { value: "Asia/Dubai",       label: "GST — Gulf Standard Time (UTC+4)" },
-            { value: "Europe/London",    label: "GMT — Greenwich Mean Time (UTC+0)" },
-            { value: "America/New_York", label: "EST — Eastern Standard Time (UTC-5)" },
+            { value: "Asia/Kolkata",        label: "IST — India Standard Time (UTC+5:30)" },
+            { value: "Asia/Dubai",          label: "GST — Gulf Standard Time (UTC+4)" },
+            { value: "Europe/London",       label: "GMT — Greenwich Mean Time (UTC+0)" },
+            { value: "America/New_York",    label: "EST — Eastern Standard Time (UTC-5)" },
             { value: "America/Los_Angeles", label: "PST — Pacific Standard Time (UTC-8)" },
           ]} />
         {error && (

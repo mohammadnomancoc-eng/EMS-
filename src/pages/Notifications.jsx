@@ -152,7 +152,7 @@ function CreateModal({ isDark, employees, departments, onClose, onSend }) {
                 <ChevronDown size={12} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", color: textMut, pointerEvents: "none" }} />
                 <select value={targetId} onChange={(e) => setTargetId(e.target.value)} style={{ ...inputStyle, paddingRight: "30px", appearance: "none", cursor: "pointer" }}>
                   <option value="">— Select employee —</option>
-                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name} · {e.department || "—"}</option>)}
+                  {employees.map((e) => <option key={e.id} value={e.empId}>{e.name} · {e.department || "—"}</option>)}
                 </select>
               </div>
             </div>

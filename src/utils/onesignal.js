@@ -24,17 +24,22 @@ export async function initOneSignal(user) {
       // Login the user session to OneSignal
       await OneSignal.login(user.uid);
       
+      const role = user.role || (user.email === "admin@royalswebtech.com" ? "admin" : null);
+      const empId = user.empId || (role === "admin" ? "admin" : null);
+
       // Tag the user for targeted push notifications
-      if (user.role) {
-        await OneSignal.User.addTag("role", user.role);
+      if (role) {
+        await OneSignal.User.addTag("role", role);
       }
-      if (user.empId) {
-        await OneSignal.User.addTag("empId", user.empId);
+      if (empId) {
+        await OneSignal.User.addTag("empId", empId);
       }
+      console.log("[OneSignal] Checking department tag. user.department =", user.department);
       if (user.department) {
+        console.log(`[OneSignal] Calling OneSignal.User.addTag("department", "${user.department}")`);
         await OneSignal.User.addTag("department", user.department);
       }
-      console.log(`[OneSignal] User ${user.uid} initialized with role: ${user.role}`);
+      console.log(`[OneSignal] User ${user.uid} initialized with role: ${role}, empId: ${empId}, department: ${user.department || "none"}`);
     }
   } catch (err) {
     console.error("[OneSignal] Initialization error:", err);

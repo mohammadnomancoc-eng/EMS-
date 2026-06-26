@@ -44,6 +44,7 @@ export async function loginUser(email, password) {
       initials: "TE",
       jobRole: "Tester",
       email: "test@gmail.com",
+      department: "IT",
     };
   }
 
@@ -53,7 +54,16 @@ export async function loginUser(email, password) {
   }
 
   const profile = profileSnap.data();
-  return { uid, ...profile };
+  let department = null;
+  if (profile.role === "employee" && profile.empId) {
+    try {
+      const empSnap = await getDoc(doc(db, "employees", profile.empId));
+      if (empSnap.exists()) {
+        department = empSnap.data().department || null;
+      }
+    } catch (_) {}
+  }
+  return { uid, department, ...profile };
 }
 
 /**
@@ -82,13 +92,22 @@ export function subscribeAuthState(callback) {
         initials: "TE",
         jobRole: "Tester",
         email: "test@gmail.com",
+        department: "IT",
       });
       return;
     }
     try {
       const profileSnap = await getDoc(doc(db, "users", user.uid));
       if (profileSnap.exists()) {
-        callback({ uid: user.uid, ...profileSnap.data() });
+        const profile = profileSnap.data();
+        let department = null;
+        if (profile.role === "employee" && profile.empId) {
+          const empSnap = await getDoc(doc(db, "employees", profile.empId));
+          if (empSnap.exists()) {
+            department = empSnap.data().department || null;
+          }
+        }
+        callback({ uid: user.uid, department, ...profile });
       } else {
         callback(null);
       }

@@ -4,6 +4,7 @@ import { Eye, EyeOff, LogIn } from "lucide-react";
 import logo from "../assets/logo.png";
 import { loginUser } from "../firebase/authService";
 import { getEmployee } from "../firebase/firestoreService";
+import { initOneSignal } from "../utils/onesignal";
 
 function Login() {
   const navigate = useNavigate();
@@ -45,6 +46,12 @@ function Login() {
           photoUrl,
         })
       );
+      // Explicitly initialize OneSignal on login
+      try {
+        await initOneSignal(user);
+      } catch (oneSignalErr) {
+        console.warn("[OneSignal] Login initialization failed:", oneSignalErr);
+      }
       navigate(user.role === "admin" ? "/dashboard" : "/my-attendance");
     } catch (err) {
       const code = err.code ?? "";

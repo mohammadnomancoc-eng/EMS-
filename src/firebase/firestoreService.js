@@ -61,13 +61,19 @@ export async function getEmployee(empId) {
 /** Fetch all employees (one-time) */
 export async function getEmployees() {
   const snap = await getDocs(col("employees"));
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs.map((d) => {
+    const data = d.data();
+    return { id: d.id, empId: data.empId || d.id, ...data };
+  });
 }
 
 /** Real-time employees listener — returns unsubscribe fn */
 export function subscribeEmployees(callback) {
   return onSnapshot(col("employees"), (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    callback(snap.docs.map((d) => {
+      const data = d.data();
+      return { id: d.id, empId: data.empId || d.id, ...data };
+    }));
   });
 }
 

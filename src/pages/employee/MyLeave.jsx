@@ -5,6 +5,7 @@ import {
   getLeaveRequestsByEmployee,
   submitLeaveRequest,
 } from "../../firebase/firestoreService";
+import { sendOneSignalPush } from "../../utils/onesignal";
 
 // ── Responsive hook ────────────────────────────────────────────
 function useIsMobile() {
@@ -511,6 +512,26 @@ function MyLeave() {
         requestType,
         employeeName: profile.name,
       });
+
+      console.log("[OneSignal] Calling sendOneSignalPush...");
+      try {
+        const dates = from === to ? from : `${from} to ${to}`;
+        const title = requestType === "Leave" ? "New Leave Request" : "New WFH Request";
+        const body = requestType === "Leave"
+          ? `${profile.name} requested ${leaveType} leave for ${dates}`
+          : `${profile.name} requested WFH for ${dates}`;
+        
+        await sendOneSignalPush({
+          title,
+          body,
+          actionUrl: "/leave",
+          targetRole: "admin"
+        });
+      } catch (pushErr) {
+        console.error("[OneSignal] Failed to send push notification:", pushErr);
+      }
+      console.log("[OneSignal] sendOneSignalPush called.");
+
       setAllRequests((prev) => [{
         id, empId, from, to, days, reason,
         leaveType: requestType === "Leave" ? leaveType : null,

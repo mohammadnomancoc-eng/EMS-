@@ -4,8 +4,11 @@ import { CalendarOff, Home, Plus, X, AlertCircle, Check } from "lucide-react";
 import {
   getLeaveRequestsByEmployee,
   submitLeaveRequest,
+  getAdminEmails,
+  getEmployee,
 } from "../../firebase/firestoreService";
 import { sendOneSignalPush } from "../../utils/onesignal";
+import { sendEmail } from "../../utils/email";
 
 // ── Responsive hook ────────────────────────────────────────────
 function useIsMobile() {
@@ -27,8 +30,7 @@ function getProfile() {
   return { name: "Employee", role: "", initials: "?", empId: null };
 }
 
-const LEAVE_QUOTA = 2;
-const WFH_QUOTA   = 2;
+
 
 function countThisMonth(records, type) {
   const now = new Date();
@@ -470,6 +472,9 @@ function MyLeave() {
   const [submitting,  setSubmitting]  = useState(false);
   const [fetchError,  setFetchError]  = useState("");
 
+  const [leaveQuota, setLeaveQuota] = useState(2);
+  const [wfhQuota,   setWfhQuota]   = useState(2);
+
   // ── Theme tokens ──
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
   const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
@@ -491,14 +496,23 @@ function MyLeave() {
         setFetchError("Failed to load requests. Please refresh.");
         setLoading(false);
       });
+
+    getEmployee(empId)
+      .then((emp) => {
+        if (emp) {
+          if (emp.leaveQuota !== undefined) setLeaveQuota(emp.leaveQuota);
+          if (emp.wfhQuota !== undefined) setWfhQuota(emp.wfhQuota);
+        }
+      })
+      .catch((err) => console.error("Failed to load employee quota:", err));
   }, [empId]);
 
   const leaveHistory   = allRequests.filter((r) => r.requestType === "Leave");
   const wfhHistory     = allRequests.filter((r) => r.requestType === "WFH");
   const leaveThisMonth = countThisMonth(allRequests, "Leave");
   const wfhThisMonth   = countThisMonth(allRequests, "WFH");
-  const leaveQuotaState = { taken: leaveThisMonth, total: LEAVE_QUOTA };
-  const wfhQuotaState   = { taken: wfhThisMonth,   total: WFH_QUOTA   };
+  const leaveQuotaState = { taken: leaveThisMonth, total: leaveQuota };
+  const wfhQuotaState   = { taken: wfhThisMonth,   total: wfhQuota   };
   const quota = activeTab === "Leave" ? leaveQuotaState : wfhQuotaState;
 
   const handleSubmit = async ({ from, to, reason, leaveType, requestType }) => {
@@ -531,6 +545,57 @@ function MyLeave() {
         console.error("[OneSignal] Failed to send push notification:", pushErr);
       }
       console.log("[OneSignal] sendOneSignalPush called.");
+
+      // Send email notifications to admins via Resend
+      try {
+        const adminEmails = await getAdminEmails();
+        if (adminEmails.length > 0) {
+          const emailSubject = `New ${requestType} Request from ${profile.name}`;
+          const dates = from === to ? from : `${from} to ${to}`;
+          const emailHtml = `
+            <div style="font-family: 'Mulish', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+              <h2 style="font-family: 'Rajdhani', sans-serif; color: #CC0000; margin-top: 0; border-bottom: 2px solid #CC0000; padding-bottom: 10px;">Royals Webtech Pvt. Ltd.</h2>
+              <p>Hello Admin,</p>
+              <p>A new <strong>${requestType}</strong> request has been submitted. Details are below:</p>
+              <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                <tr style="background-color: #f8f8f8;">
+                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold; width: 150px;">Employee</td>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8;">${profile.name}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Request Type</td>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8;">${requestType} ${leaveType ? `(${leaveType})` : ''}</td>
+                </tr>
+                <tr style="background-color: #f8f8f8;">
+                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Dates</td>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8;">${dates}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Reason</td>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8;">${reason || 'No reason provided'}</td>
+                </tr>
+              </table>
+              <p style="margin-top: 25px;">
+                <a href="https://royals-ems-portal.vercel.app/leave" style="background-color: #CC0000; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Log in to EMS to Review</a>
+              </p>
+              <hr style="border: 0; border-top: 1px solid #e8e8e8; margin-top: 30px;" />
+              <p style="font-size: 11px; color: #888888; text-align: center;">This is an automated notification from the Royals Webtech Employee Management System.</p>
+            </div>
+          `;
+
+          await Promise.all(
+            adminEmails.map((email) =>
+              sendEmail({
+                to: email,
+                subject: emailSubject,
+                html: emailHtml
+              })
+            )
+          );
+        }
+      } catch (emailErr) {
+        console.error("[Email] Failed to send email to admins:", emailErr);
+      }
 
       setAllRequests((prev) => [{
         id, empId, from, to, days, reason,

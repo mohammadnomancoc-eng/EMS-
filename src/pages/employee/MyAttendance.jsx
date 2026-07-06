@@ -5,7 +5,7 @@ import {
   Home, TrendingUp, TrendingDown, Camera, FileText, X as XIcon,
 } from "lucide-react";
 import WebcamAttendance from "../../components/WebcamAttendance";
-import { getAttendanceByEmployee } from "../../firebase/firestoreService";
+import { getAttendanceByEmployee, getEmployee } from "../../firebase/firestoreService";
 
 // ── Count-up hook ─────────────────────────────────────
 function useCountUp(target, duration = 800) {
@@ -285,6 +285,9 @@ function MyAttendance() {
   const [fetchError, setFetchError] = useState("");
   const [viewWorkDesc, setViewWorkDesc] = useState(null);
 
+  const [leaveQuota, setLeaveQuota] = useState(2);
+  const [wfhQuota,   setWfhQuota]   = useState(2);
+
   useEffect(() => {
     if (!empId) { setLoading(false); setFetchError("Employee ID not found. Please log in again."); return; }
     setLoading(true);
@@ -295,6 +298,15 @@ function MyAttendance() {
         setFetchError("Failed to load attendance. Please refresh.");
         setLoading(false);
       });
+
+    getEmployee(empId)
+      .then((emp) => {
+        if (emp) {
+          if (emp.leaveQuota !== undefined) setLeaveQuota(emp.leaveQuota);
+          if (emp.wfhQuota !== undefined) setWfhQuota(emp.wfhQuota);
+        }
+      })
+      .catch((err) => console.error("Failed to load employee quota:", err));
   }, [empId]);
 
   const refreshRecords = () => {
@@ -314,9 +326,6 @@ function MyAttendance() {
   const leaveCount    = monthRecords.filter((r) => r.status === "Leave").length;
   const wfhCount      = monthRecords.filter((r) => r.status === "WFH").length;
   const attendancePct = workingDays > 0 ? Math.round((presentCount / workingDays) * 100) : 0;
-
-  const LEAVE_QUOTA = 2;
-  const WFH_QUOTA   = 2;
 
   const today    = new Date().toLocaleDateString("en-IN", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const getHour  = new Date().getHours();
@@ -449,13 +458,13 @@ function MyAttendance() {
         <StatCard
           theme={theme} label="Leave This Month"
           icon={CalendarOff} isQuota
-          taken={leaveCount} total={LEAVE_QUOTA}
+          taken={leaveCount} total={leaveQuota}
           quotaColor="#C9922A"
         />
         <StatCard
           theme={theme} label="WFH This Month"
           icon={Home} isQuota
-          taken={wfhCount} total={WFH_QUOTA}
+          taken={wfhCount} total={wfhQuota}
           quotaColor="#00B8B8"
         />
       </div>

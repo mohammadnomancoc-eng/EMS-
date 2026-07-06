@@ -27,6 +27,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./config";
 import { sendOneSignalPush } from "../utils/onesignal";
+import { sendEmail } from "../utils/email";
 
 // ── Helpers ───────────────────────────────────────────────────
 const col = (name) => collection(db, name);
@@ -76,6 +77,22 @@ export function subscribeEmployees(callback) {
     }));
   });
 }
+
+/** Fetch all admin emails from the users collection */
+export async function getAdminEmails() {
+  try {
+    const q = query(col("users"), where("role", "==", "admin"));
+    const snap = await getDocs(q);
+    const emails = snap.docs
+      .map((d) => d.data().email)
+      .filter((email) => typeof email === "string" && email.trim().length > 0);
+    return emails;
+  } catch (err) {
+    console.error("Failed to fetch admin emails:", err);
+    return [];
+  }
+}
+
 
 /** Add a new employee with a generated RWT-style ID.
  *
@@ -317,6 +334,73 @@ export async function updateLeaveStatus(id, status) {
         priority: status === "Approved" ? "normal" : "high",
         actionUrl: "/my-leave"
       });
+
+      // Send email to employee
+      try {
+        let employeeEmail = null;
+        const empSnap = await getDoc(doc(db, "employees", leaveData.empId));
+        if (empSnap.exists()) {
+          employeeEmail = empSnap.data().email;
+        }
+
+        if (!employeeEmail) {
+          const uq = query(col("users"), where("empId", "==", leaveData.empId));
+          const usnap = await getDocs(uq);
+          if (!usnap.empty) {
+            employeeEmail = usnap.docs[0].data().email;
+          }
+        }
+
+        if (employeeEmail) {
+          const dates = leaveData.from === leaveData.to ? leaveData.from : `${leaveData.from} to ${leaveData.to}`;
+          const emailSubject = `Your ${leaveData.requestType || "Leave"} Request has been ${status}`;
+          
+          let approverName = "Admin";
+          try {
+            const rawUser = localStorage.getItem("rwt-user");
+            if (rawUser) {
+              approverName = JSON.parse(rawUser).name || "Admin";
+            }
+          } catch (_) {}
+
+          const emailHtml = `
+            <div style="font-family: 'Mulish', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+              <h2 style="font-family: 'Rajdhani', sans-serif; color: #CC0000; margin-top: 0; border-bottom: 2px solid #CC0000; padding-bottom: 10px;">Royals Webtech Pvt. Ltd.</h2>
+              <p>Hello ${leaveData.employeeName || "Employee"},</p>
+              <p>Your request for <strong>${leaveData.requestType || "Leave"}</strong> has been <strong>${status}</strong>.</p>
+              
+              <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+                <tr style="background-color: #f8f8f8;">
+                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold; width: 150px;">Status</td>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold; color: ${status === 'Approved' ? '#00B8B8' : '#CC0000'};">${status}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Dates</td>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8;">${dates}</td>
+                </tr>
+                <tr style="background-color: #f8f8f8;">
+                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Approver</td>
+                  <td style="padding: 10px; border: 1px solid #e8e8e8;">${approverName}</td>
+                </tr>
+              </table>
+
+              <p style="margin-top: 25px;">
+                <a href="https://royals-ems-portal.vercel.app/announcements" style="background-color: #CC0000; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Go to EMS Announcements</a>
+              </p>
+              <hr style="border: 0; border-top: 1px solid #e8e8e8; margin-top: 30px;" />
+              <p style="font-size: 11px; color: #888888; text-align: center;">This is an automated notification from the Royals Webtech Employee Management System.</p>
+            </div>
+          `;
+
+          await sendEmail({
+            to: employeeEmail,
+            subject: emailSubject,
+            html: emailHtml
+          });
+        }
+      } catch (emailErr) {
+        console.error("[Email] Failed to send leave status email:", emailErr);
+      }
     }
   } catch (err) {
     console.error("Failed to add leave status notification:", err);
@@ -418,20 +502,7 @@ export async function upsertAttendance({
     if (workDescription)        payload.workDescription        = workDescription;
     localStorage.setItem(key, JSON.stringify(payload));
     
-    // Trigger notification for testing purposes
-    try {
-      const actionLabel = logOut && logOut !== "--" ? "Logged Out" : "Logged In";
-      const timeStr = logOut && logOut !== "--" ? logOut : logIn;
-      await addNotification({
-        title: "Attendance Marked (Test)",
-        message: `Test Employee successfully marked ${actionLabel.toLowerCase()} at ${timeStr}.`,
-        type: "employee",
-        targetId: empId,
-        recipientId: empId,
-        priority: "normal",
-        actionUrl: "/my-attendance"
-      });
-    } catch (_) {}
+
     return;
   }
   const id = `${empId}_${date}`;
@@ -451,22 +522,7 @@ export async function upsertAttendance({
 
   await setDoc(doc(db, "attendance", id), payload, { merge: true });
 
-  // Trigger notification for production employee
-  try {
-    const actionLabel = logOut && logOut !== "--" ? "Logged Out" : "Logged In";
-    const timeStr = logOut && logOut !== "--" ? logOut : logIn;
-    await addNotification({
-      title: "Attendance Marked Successfully",
-      message: `You successfully marked your ${actionLabel.toLowerCase()} at ${timeStr}.`,
-      type: "employee",
-      targetId: empId,
-      recipientId: empId,
-      priority: "normal",
-      actionUrl: "/my-attendance"
-    });
-  } catch (err) {
-    console.error("Failed to add attendance success notification:", err);
-  }
+
 }
 
 /** Real-time attendance listener for a specific date */
@@ -762,6 +818,7 @@ export function subscribeNotificationsForEmployee(empId, department, callback) {
     (snap) => {
       const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       const visible = all.filter((n) => {
+        if (n.recipientRole === "admin") return false;
         if (n.type === "all") return true;
         if (n.type === "employee" && (n.recipientId === empId || n.targetId === empId)) return true;
         if (n.type === "department" && (n.department === department || n.targetId === department)) return true;

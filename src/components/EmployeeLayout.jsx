@@ -43,10 +43,6 @@ import NotificationPanel from "./NotificationPanel";
 const SIDEBAR_W        = 252; // desktop
 const SIDEBAR_W_TABLET = 220; // 768–1023px
 
-// Monthly quota limits — must match MyLeave.jsx constants
-const LEAVE_QUOTA = 2;
-const WFH_QUOTA   = 2;
-
 const navItems = [
   { to: "/my-attendance",  icon: CalendarCheck,  label: "My Attendance",  section: "WORKSPACE" },
   { to: "/my-leave",       icon: CalendarOff,    label: "Leave & WFH",    section: "WORKSPACE" },
@@ -122,17 +118,24 @@ function EmployeeSidebar({ open, onClose }) {
   // Live employee photo from Firestore
   const [photoUrl, setPhotoUrl] = useState(user.photoUrl || null);
 
+  const [leaveQuota, setLeaveQuota] = useState(2);
+  const [wfhQuota,   setWfhQuota]   = useState(2);
+
   useEffect(() => {
     if (!user.empId) return;
     getEmployee(user.empId)
       .then((emp) => {
-        if (emp?.photoUrl) {
-          setPhotoUrl(emp.photoUrl);
-          // Update localStorage so header also gets it immediately
-          try {
-            const stored = JSON.parse(localStorage.getItem("rwt-user") || "{}");
-            localStorage.setItem("rwt-user", JSON.stringify({ ...stored, photoUrl: emp.photoUrl }));
-          } catch (_) {}
+        if (emp) {
+          if (emp.photoUrl) {
+            setPhotoUrl(emp.photoUrl);
+            // Update localStorage so header also gets it immediately
+            try {
+              const stored = JSON.parse(localStorage.getItem("rwt-user") || "{}");
+              localStorage.setItem("rwt-user", JSON.stringify({ ...stored, photoUrl: emp.photoUrl }));
+            } catch (_) {}
+          }
+          if (emp.leaveQuota !== undefined) setLeaveQuota(emp.leaveQuota);
+          if (emp.wfhQuota !== undefined) setWfhQuota(emp.wfhQuota);
         }
       })
       .catch(() => {});
@@ -293,8 +296,8 @@ function EmployeeSidebar({ open, onClose }) {
               </p>
               {quotaLoaded ? (
                 <>
-                  <QuotaBar label="Leave" taken={leaveTaken} total={LEAVE_QUOTA} color="#CC0000" />
-                  <QuotaBar label="WFH"   taken={wfhTaken}   total={WFH_QUOTA}   color="#00B8B8" />
+                  <QuotaBar label="Leave" taken={leaveTaken} total={leaveQuota} color="#CC0000" />
+                  <QuotaBar label="WFH"   taken={wfhTaken}   total={wfhQuota}   color="#00B8B8" />
                 </>
               ) : (
                 <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#444444" : "#888888" }}>

@@ -652,6 +652,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
     email: "", phone: "", joinDate: "", completionDate: "", salary: "",
     workType: "WFO", gender: "Male", employeeType: "Full Time",
     photoUrl: null, photoPublicId: null,
+    leaveQuota: 2, wfhQuota: 2,
   };
   const [form, setForm] = useState(() => {
     if (!initial) return defaults;
@@ -683,6 +684,8 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
     if (!form.phone.trim()) e.phone = "Required";
     if (!form.joinDate)     e.joinDate = "Required";
     if (!form.salary || isNaN(form.salary)) e.salary = "Valid number required";
+    if (form.leaveQuota === undefined || form.leaveQuota === "" || isNaN(form.leaveQuota)) e.leaveQuota = "Required";
+    if (form.wfhQuota === undefined || form.wfhQuota === "" || isNaN(form.wfhQuota)) e.wfhQuota = "Required";
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -691,7 +694,12 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
     if (!validate()) return;
     setSaving(true); setSaveError("");
     try {
-      await onSave({ ...form, salary: Number(form.salary) });
+      await onSave({
+        ...form,
+        salary: Number(form.salary),
+        leaveQuota: Number(form.leaveQuota),
+        wfhQuota: Number(form.wfhQuota)
+      });
     } catch (err) {
       setSaveError(err.message || "Failed to save. Please try again.");
       setSaving(false);
@@ -782,6 +790,10 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
             {field("Employee Type", "employeeType", "text", ["Full Time", "Trainee", "Intern"])}
           </div>
           {field("Monthly Salary (₹)", "salary", "number")}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            {field("Monthly Leave Quota", "leaveQuota", "number")}
+            {field("Monthly WFH Quota", "wfhQuota", "number")}
+          </div>
         </div>
 
         {!isEdit && (
@@ -1001,6 +1013,8 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
           {row("JOIN DATE", emp.joinDate ? new Date(emp.joinDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—")}
           {row("COMPLETION DATE", emp.completionDate ? new Date(emp.completionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "Not set")}
           {row("MONTHLY SALARY", `₹${Number(emp.salary).toLocaleString("en-IN")}`)}
+          {row("MONTHLY LEAVE QUOTA", emp.leaveQuota ?? 2)}
+          {row("MONTHLY WFH QUOTA", emp.wfhQuota ?? 2)}
 
           {/* ── Login Credentials Section ── */}
           <div style={{ marginTop: "20px" }}>

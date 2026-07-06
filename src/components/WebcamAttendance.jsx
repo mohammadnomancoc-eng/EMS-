@@ -24,7 +24,7 @@ import {
   Camera, X, CheckCircle, AlertCircle, RefreshCw,
   Video, VideoOff, MapPin, Navigation, ShieldCheck, ScanFace,
 } from "lucide-react";
-import { upsertAttendance, getCompanySettings, getEmployee, getOwnAttendanceRecord, getProjectsByEmployee, addNotification } from "../firebase/firestoreService";
+import { upsertAttendance, getCompanySettings, getEmployee, getOwnAttendanceRecord, getProjectsByEmployee } from "../firebase/firestoreService";
 import { uploadToCloudinary } from "../cloudinary/cloudinaryService";
 
 const MATCH_THRESHOLD = 0.50;
@@ -248,21 +248,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
           setGeoDistance(roundedDist);
           const allowed = dist <= radius;
           setGeoStatus(allowed ? "allowed" : "blocked");
-          if (!allowed) {
-            try {
-              await addNotification({
-                title: "Attendance Rejected (Geofence)",
-                message: `Your attendance marking failed because you were ${roundedDist}m away from the office, exceeding the geofence limit of ${radius}m.`,
-                type: "employee",
-                targetId: empId,
-                recipientId: empId,
-                priority: "high",
-                actionUrl: "/my-attendance"
-              });
-            } catch (err) {
-              console.error("Failed to add geofence notification:", err);
-            }
-          }
+
         },
         () => setGeoStatus("error"),
         { enableHighAccuracy:true, timeout:10000 }
@@ -357,21 +343,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
       setFaceScore(dist);
       const isMatched = dist <= MATCH_THRESHOLD;
       setFaceStatus(isMatched ? "matched" : "mismatch");
-      if (!isMatched) {
-        try {
-          await addNotification({
-            title: "Attendance Rejected (Face Mismatch)",
-            message: `Your attendance marking was rejected because your face scan did not match the registered profile photo.`,
-            type: "employee",
-            targetId: empId,
-            recipientId: empId,
-            priority: "high",
-            actionUrl: "/my-attendance"
-          });
-        } catch (err) {
-          console.error("Failed to add face mismatch notification:", err);
-        }
-      }
+
     } catch(e) {
       console.warn("Face verify error:", e);
       setFaceStatus("error");

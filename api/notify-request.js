@@ -21,37 +21,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const subject = `New ${requestType} Request - ${employeeName}`;
+    const subject = `New ${requestType} request from ${employeeName}`;
     const dates = from === to ? from : `${from} to ${to}`;
     const html = `
-      <div style="font-family: 'Mulish', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-        <h2 style="font-family: 'Rajdhani', sans-serif; color: #CC0000; margin-top: 0; border-bottom: 2px solid #CC0000; padding-bottom: 10px;">Royals Webtech Pvt. Ltd.</h2>
-        <p>Hello Admin,</p>
-        <p>A new <strong>${requestType}</strong> request has been submitted. Details are below:</p>
-        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-          <tr style="background-color: #f8f8f8;">
-            <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold; width: 150px;">Employee</td>
-            <td style="padding: 10px; border: 1px solid #e8e8e8;">${employeeName}</td>
-          </tr>
-          <tr>
-            <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Request Type</td>
-            <td style="padding: 10px; border: 1px solid #e8e8e8;">${requestType} ${leaveType ? `(${leaveType})` : ''}</td>
-          </tr>
-          <tr style="background-color: #f8f8f8;">
-            <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Dates</td>
-            <td style="padding: 10px; border: 1px solid #e8e8e8;">${dates}</td>
-          </tr>
-          <tr>
-            <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Reason</td>
-            <td style="padding: 10px; border: 1px solid #e8e8e8;">${reason || 'No reason provided'}</td>
-          </tr>
-        </table>
-        <p style="margin-top: 25px;">
-          <a href="https://royals-ems-portal.vercel.app/leave" style="background-color: #CC0000; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Log in to EMS to Review</a>
-        </p>
-        <hr style="border: 0; border-top: 1px solid #e8e8e8; margin-top: 30px;" />
-        <p style="font-size: 11px; color: #888888; text-align: center;">This is an automated notification from the Royals Webtech Employee Management System.</p>
-      </div>
+      <p>Hi Admin,</p>
+      <p>${employeeName} has submitted a new ${requestType}${leaveType ? ` (${leaveType})` : ''} request.</p>
+      <p>Dates: ${dates}</p>
+      <p>Reason: ${reason || 'Not specified'}</p>
+      <p>You can review this request in the <a href="https://royals-ems-portal.vercel.app/leave">EMS Portal</a>.</p>
     `;
 
     // ── Google Apps Script mailer (stopgap until Resend domain is verified) ──

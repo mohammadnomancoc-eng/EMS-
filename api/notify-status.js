@@ -15,32 +15,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    const subject = `Request ${status} - ${requestType}`;
-    const statusColor = status === "Approved" ? "#00B8B8" : "#CC0000";
+    const subject = `Your ${requestType} request has been ${status}`;
 
     const html = `
-      <div style="font-family: 'Mulish', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-        <h2 style="font-family: 'Rajdhani', sans-serif; color: #CC0000; margin-top: 0; border-bottom: 2px solid #CC0000; padding-bottom: 10px;">Royals Webtech Pvt. Ltd.</h2>
-        <p>Hello ${employeeName},</p>
-        <p>Your request for <strong>${requestType}</strong> has been <strong>${status}</strong>.</p>
-        
-        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-          <tr style="background-color: #f8f8f8;">
-            <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold; width: 150px;">Status</td>
-            <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold; color: ${statusColor};">${status}</td>
-          </tr>
-          <tr>
-            <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Dates</td>
-            <td style="padding: 10px; border: 1px solid #e8e8e8;">${dates}</td>
-          </tr>
-        </table>
-
-        <p style="margin-top: 25px;">
-          <a href="https://royals-ems-portal.vercel.app/my-leave" style="background-color: #CC0000; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Request Status in EMS</a>
-        </p>
-        <hr style="border: 0; border-top: 1px solid #e8e8e8; margin-top: 30px;" />
-        <p style="font-size: 11px; color: #888888; text-align: center;">This is an automated notification from the Royals Webtech Employee Management System.</p>
-      </div>
+      <p>Hi ${employeeName},</p>
+      <p>Your ${requestType} request for ${dates} has been ${status}.</p>
+      <p>You can check the details anytime in the <a href="https://royals-ems-portal.vercel.app/my-leave">EMS Portal</a>.</p>
     `;
 
     // ── Google Apps Script mailer (stopgap until Resend domain is verified) ──

@@ -26,8 +26,8 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./config";
-import { sendOneSignalPush } from "../utils/onesignal";
-import { sendEmail } from "../utils/email";
+
+import { notifyStatus } from "../utils/email";
 
 // ── Helpers ───────────────────────────────────────────────────
 const col = (name) => collection(db, name);
@@ -335,67 +335,46 @@ export async function updateLeaveStatus(id, status) {
         actionUrl: "/my-leave"
       });
 
-      // Send email to employee
+      // Send email to employee (fire-and-forget)
       try {
         let employeeEmail = null;
+        let fallbackUsed = false;
         const empSnap = await getDoc(doc(db, "employees", leaveData.empId));
         if (empSnap.exists()) {
-          employeeEmail = empSnap.data().email;
+          const empData = empSnap.data();
+          if (empData.email) {
+            employeeEmail = empData.email;
+          } else if (empData.loginEmail) {
+            employeeEmail = empData.loginEmail;
+            fallbackUsed = true;
+          }
         }
 
         if (!employeeEmail) {
           const uq = query(col("users"), where("empId", "==", leaveData.empId));
           const usnap = await getDocs(uq);
           if (!usnap.empty) {
-            employeeEmail = usnap.docs[0].data().email;
+            const userData = usnap.docs[0].data();
+            if (userData.email) {
+              employeeEmail = userData.email;
+            } else if (userData.loginEmail) {
+              employeeEmail = userData.loginEmail;
+              fallbackUsed = true;
+            }
           }
         }
 
         if (employeeEmail) {
+          if (fallbackUsed) {
+            console.log(`[Email Fallback] Contact email was missing for employee ${leaveData.empId}. Falling back to login email: ${employeeEmail}`);
+          }
           const dates = leaveData.from === leaveData.to ? leaveData.from : `${leaveData.from} to ${leaveData.to}`;
-          const emailSubject = `Your ${leaveData.requestType || "Leave"} Request has been ${status}`;
-          
-          let approverName = "Admin";
-          try {
-            const rawUser = localStorage.getItem("rwt-user");
-            if (rawUser) {
-              approverName = JSON.parse(rawUser).name || "Admin";
-            }
-          } catch (_) {}
-
-          const emailHtml = `
-            <div style="font-family: 'Mulish', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-              <h2 style="font-family: 'Rajdhani', sans-serif; color: #CC0000; margin-top: 0; border-bottom: 2px solid #CC0000; padding-bottom: 10px;">Royals Webtech Pvt. Ltd.</h2>
-              <p>Hello ${leaveData.employeeName || "Employee"},</p>
-              <p>Your request for <strong>${leaveData.requestType || "Leave"}</strong> has been <strong>${status}</strong>.</p>
-              
-              <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-                <tr style="background-color: #f8f8f8;">
-                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold; width: 150px;">Status</td>
-                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold; color: ${status === 'Approved' ? '#00B8B8' : '#CC0000'};">${status}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Dates</td>
-                  <td style="padding: 10px; border: 1px solid #e8e8e8;">${dates}</td>
-                </tr>
-                <tr style="background-color: #f8f8f8;">
-                  <td style="padding: 10px; border: 1px solid #e8e8e8; font-weight: bold;">Approver</td>
-                  <td style="padding: 10px; border: 1px solid #e8e8e8;">${approverName}</td>
-                </tr>
-              </table>
-
-              <p style="margin-top: 25px;">
-                <a href="https://royals-ems-portal.vercel.app/announcements" style="background-color: #CC0000; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Go to EMS Announcements</a>
-              </p>
-              <hr style="border: 0; border-top: 1px solid #e8e8e8; margin-top: 30px;" />
-              <p style="font-size: 11px; color: #888888; text-align: center;">This is an automated notification from the Royals Webtech Employee Management System.</p>
-            </div>
-          `;
-
-          await sendEmail({
-            to: employeeEmail,
-            subject: emailSubject,
-            html: emailHtml
+          notifyStatus({
+            email: employeeEmail,
+            employeeName: leaveData.employeeName || "Employee",
+            requestType: leaveData.requestType || "Leave",
+            status,
+            dates
           });
         }
       } catch (emailErr) {
@@ -834,6 +813,31 @@ export function subscribeNotificationsForEmployee(empId, department, callback) {
   );
 }
 
+/** Real-time listener — notifications visible to the admin. */
+export function subscribeNotificationsForAdmin(adminEmpId, callback) {
+  const q = query(col("notifications"), orderBy("createdAt", "desc"));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const visible = all.filter((n) => {
+        // Admin sees explicitly admin-targeted notifications
+        if (n.recipientRole === "admin") return true;
+        // Admin sees global announcements
+        if (n.type === "all" && n.recipientRole !== "employee") return true;
+        // Admin sees notifications sent specifically to them as an employee
+        if (n.type === "employee" && adminEmpId && (n.recipientId === adminEmpId || n.targetId === adminEmpId)) return true;
+        return false;
+      });
+      callback(visible);
+    },
+    (error) => {
+      console.warn("[Notifications] Admin dropdown snapshot error:", error.code);
+      callback([]);
+    }
+  );
+}
+
 /** Create a new notification. */
 export async function addNotification(data) {
   const ref = await addDoc(col("notifications"), {
@@ -859,23 +863,7 @@ export async function addNotification(data) {
     createdBy: data.createdBy || "System"
   });
 
-  // Dispatch OneSignal Web Push notification asynchronously
-  try {
-    const title = data.title || "EMS Notification";
-    const body = data.message || data.body || "";
-    const actionUrl = data.actionUrl || "/announcements";
 
-    sendOneSignalPush({
-      title,
-      body,
-      actionUrl,
-      targetRole: data.recipientRole === "admin" ? "admin" : null,
-      targetEmpId: data.type === "employee" ? (data.recipientId || data.targetId) : null,
-      targetDepartment: data.type === "department" ? (data.recipientId || data.targetId) : null
-    });
-  } catch (oneSignalErr) {
-    console.warn("[OneSignal] Failed to trigger push notification:", oneSignalErr);
-  }
 
   return ref.id;
 }

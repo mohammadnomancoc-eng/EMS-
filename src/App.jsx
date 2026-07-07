@@ -45,7 +45,7 @@ import AssignedProjects from "./pages/AssignedProjects";
 import Projects from "./pages/Projects";
 import Notifications from "./pages/Notifications";
 import { subscribeAuthState } from "./firebase/authService";
-import { initOneSignal, logoutOneSignal } from "./utils/onesignal";
+
 
 export const ThemeContext = createContext();
 export function useTheme() { return useContext(ThemeContext); }
@@ -139,10 +139,7 @@ function App() {
   useEffect(() => {
     const unsub = subscribeAuthState((user) => {
       if (user) {
-        // Initialize OneSignal for push notifications
-        initOneSignal(user);
       } else {
-        logoutOneSignal();
         localStorage.removeItem("rwt-role");
         localStorage.removeItem("rwt-user");
         const todayStr = new Date().toISOString().slice(0, 10);

@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { logoutUser } from "../firebase/authService";
 import {
-  subscribeAllNotifications,
+  subscribeNotificationsForAdmin,
   deleteNotification,
 } from "../firebase/firestoreService";
 import NotificationPanel from "./NotificationPanel";
@@ -308,11 +308,11 @@ function Header({ onMenuClick }) {
     return () => window.removeEventListener("rwt-user-updated", refresh);
   }, []);
 
-  // Subscribe to all notifications in real-time
+  // Subscribe to notifications for this admin in real-time
   useEffect(() => {
-    const unsub = subscribeAllNotifications((list) => setNotifications(list));
+    const unsub = subscribeNotificationsForAdmin(user.empId || "", (list) => setNotifications(list));
     return unsub;
-  }, []);
+  }, [user.empId]);
 
   // Close panel when clicking outside the bell + panel area
   useEffect(() => {

@@ -21,7 +21,7 @@ import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc, getDoc, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../firebase/config";
-import { initOneSignal } from "../utils/onesignal";
+
 
 export default function AdminSetup() {
   const [email,    setEmail]    = useState("");
@@ -48,18 +48,7 @@ export default function AdminSetup() {
           `✅ Admin doc already exists for UID: ${uid}\n` +
           `Your rules are already set up correctly.`
         );
-        try {
-          await initOneSignal({
-            uid,
-            role: "admin",
-            name: existing.data().name || name.trim() || "Admin",
-            initials: existing.data().initials || "AD",
-            email: existing.data().email || email,
-            empId: null
-          });
-        } catch (oneSignalErr) {
-          console.warn("[OneSignal] Admin initialization failed:", oneSignalErr);
-        }
+
         return;
       }
 
@@ -79,19 +68,7 @@ export default function AdminSetup() {
         createdAt: serverTimestamp(),
       });
 
-      // Explicitly initialize OneSignal for admin
-      try {
-        await initOneSignal({
-          uid,
-          role: "admin",
-          name: name.trim() || "Admin",
-          initials: initials || "AD",
-          email,
-          empId: null
-        });
-      } catch (oneSignalErr) {
-        console.warn("[OneSignal] Admin setup initialization failed:", oneSignalErr);
-      }
+
 
       setStatus("done");
       setMessage(

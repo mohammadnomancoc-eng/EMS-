@@ -241,13 +241,35 @@ function ProjectDetailsModal({ theme, project, employees, onClose, onUpdateProje
           <X size={18} />
         </button>
 
-        {/* Header */}
         <div style={{ borderBottom: `1px solid ${border}`, paddingBottom: "12px", paddingRight: "24px" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
             <span style={{ fontFamily: "Share Tech Mono, monospace", fontSize: "11px", color: "#00B8B8" }}>
               PROJECT DETAILS
             </span>
-            <StatusBadge status={project.status} />
+            <select
+              value={project.status}
+              onChange={async (e) => {
+                const newStatus = e.target.value;
+                await updateTeamProject(project.id, { status: newStatus });
+                onUpdateProject({ ...project, status: newStatus });
+              }}
+              style={{
+                background: project.status === "Ongoing" ? "rgba(0,184,184,0.12)" : project.status === "Completed" ? "rgba(0,200,100,0.12)" : "rgba(201,146,42,0.12)",
+                color: project.status === "Ongoing" ? "#00B8B8" : project.status === "Completed" ? "#00C864" : "#C9922A",
+                border: `1px solid ${project.status === "Ongoing" ? "rgba(0,184,184,0.25)" : project.status === "Completed" ? "rgba(0,200,100,0.25)" : "rgba(201,146,42,0.25)"}`,
+                padding: "3px 8px",
+                borderRadius: "20px",
+                fontSize: "11px",
+                fontWeight: 600,
+                fontFamily: "Mulish, sans-serif",
+                outline: "none",
+                cursor: "pointer",
+              }}
+            >
+              <option value="Ongoing" style={{ background: bg, color: textPri }}>Ongoing</option>
+              <option value="Completed" style={{ background: bg, color: textPri }}>Completed</option>
+              <option value="On Hold" style={{ background: bg, color: textPri }}>On Hold</option>
+            </select>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginTop: "4px" }}>
             <div style={{
@@ -733,12 +755,22 @@ function ProjectModal({ isDark, existing, employees, onClose, onSave }) {
         endDate: form.endDate || "",
         logoUrl: form.logoUrl || "",
       };
+
+      // Auto-assign tech lead as a member of the project
+      let updatedMemberIds = existing?.memberIds ? [...existing.memberIds] : [];
+      if (form.techLead) {
+        const leadEmp = employees.find((e) => e.name === form.techLead);
+        if (leadEmp && !updatedMemberIds.includes(leadEmp.id)) {
+          updatedMemberIds.push(leadEmp.id);
+        }
+      }
+
       if (isEdit) {
-        await updateTeamProject(existing.id, payload);
-        onSave({ id: existing.id, ...existing, ...payload });
+        await updateTeamProject(existing.id, { ...payload, memberIds: updatedMemberIds });
+        onSave({ id: existing.id, ...existing, ...payload, memberIds: updatedMemberIds });
       } else {
-        const newId = await addTeamProject({ ...payload, memberIds: [] });
-        onSave({ id: newId, ...payload, memberIds: [] });
+        const newId = await addTeamProject({ ...payload, memberIds: updatedMemberIds });
+        onSave({ id: newId, ...payload, memberIds: updatedMemberIds });
       }
     } catch (e) {
       setError("Failed to save project. Please try again.");

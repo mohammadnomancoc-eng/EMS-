@@ -11,7 +11,7 @@ import {
   FolderKanban, Clock, CheckCircle2,
   Calendar, CalendarCheck, Loader2,
 } from "lucide-react";
-import { subscribeProjectsByEmployee } from "../../firebase/firestoreService";
+import { subscribeProjectsByEmployee, subscribeTeamProjects } from "../../firebase/firestoreService";
 
 // ── Helpers ───────────────────────────────────────────────────
 function getProfile() {
@@ -64,7 +64,9 @@ function Badge({ status }) {
 // ── Project Card ──────────────────────────────────────────────
 function ProjectCard({ project, isDark }) {
   const isOngoing = project.status === "Ongoing";
-  const dl = isOngoing ? daysLabel(project.expectedEndDate) : null;
+  const isTeam = project._source === "team";
+  const endDateVal = project.expectedEndDate || project.endDate;
+  const dl = isOngoing ? daysLabel(endDateVal) : null;
 
   return (
     <div
@@ -86,30 +88,68 @@ function ProjectCard({ project, isDark }) {
         e.currentTarget.style.boxShadow = "none";
       }}
     >
-      {/* Title row */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <p style={{
-            fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px",
-            color: isDark ? "#F0F0F0" : "#111", margin: 0,
-            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+      {/* Title & Description row */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+        {project.logoUrl ? (
+          <div style={{
+            width: 52, height: 52, borderRadius: 6, flexShrink: 0,
+            background: isDark ? "#121212" : "#F0F0F0",
+            border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "4px", boxSizing: "border-box"
           }}>
-            {project.name}
-          </p>
+            <img src={project.logoUrl} alt={project.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          </div>
+        ) : (
+          <div style={{
+            width: 52, height: 52, borderRadius: 6, flexShrink: 0,
+            background: isDark ? "#121212" : "#F5F5F5",
+            border: `1px solid ${isDark ? "#1E1E1E" : "#E0E0E0"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <FolderKanban size={20} color="#CC0000" />
+          </div>
+        )}
+        
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+            <p style={{
+              fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "16px",
+              color: isDark ? "#F0F0F0" : "#111", margin: 0,
+              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+            }}>
+              {project.name}
+            </p>
+            {isTeam && (
+              <span style={{
+                fontSize: "10px", fontFamily: "Mulish, sans-serif", fontWeight: 700,
+                padding: "1px 6px", borderRadius: "20px",
+                background: "rgba(204,0,0,0.1)", color: "#CC0000",
+                border: "1px solid rgba(204,0,0,0.2)", letterSpacing: "0.04em", whiteSpace: "nowrap",
+              }}>TEAM PROJECT</span>
+            )}
+          </div>
           {project.description && (
             <p style={{
               fontFamily: "Mulish, sans-serif", fontSize: "12px",
-              color: isDark ? "#555" : "#888", margin: "4px 0 0", lineHeight: 1.5,
+              color: isDark ? "#555" : "#888", margin: "4px 0 0", lineHeight: 1.4,
             }}>
               {project.description}
             </p>
           )}
+          {isTeam && project.techLead && (
+            <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: isDark ? "#666" : "#888", margin: "4px 0 0" }}>
+              Tech Lead: <strong style={{ color: isDark ? "#AAA" : "#555" }}>{project.techLead}</strong>
+            </p>
+          )}
         </div>
-        <Badge status={project.status} />
+        <div style={{ flexShrink: 0 }}>
+          <Badge status={project.status} />
+        </div>
       </div>
 
       {/* Date info */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", paddingTop: "4px", borderTop: `1px solid ${isDark ? "#141414" : "#F0F0F0"}` }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", paddingTop: "8px", borderTop: `1px solid ${isDark ? "#141414" : "#F0F0F0"}` }}>
         {/* Start date */}
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <Calendar size={12} color={isDark ? "#444" : "#BBB"} />
@@ -119,11 +159,11 @@ function ProjectCard({ project, isDark }) {
         </div>
 
         {/* Ongoing: expected end + days left */}
-        {isOngoing && project.expectedEndDate && (
+        {isOngoing && endDateVal && (
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <Clock size={12} color="#00B8B8" />
             <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#666" : "#999" }}>
-              Due: <strong style={{ color: "#00B8B8" }}>{fmt(project.expectedEndDate)}</strong>
+              Due: <strong style={{ color: "#00B8B8" }}>{fmt(endDateVal)}</strong>
             </span>
             {dl && (
               <span style={{
@@ -138,11 +178,11 @@ function ProjectCard({ project, isDark }) {
         )}
 
         {/* Completed: completion date */}
-        {!isOngoing && project.completionDate && (
+        {!isOngoing && (project.completionDate || project.endDate) && (
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <CalendarCheck size={12} color="#00C864" />
             <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: isDark ? "#666" : "#999" }}>
-              Completed: <strong style={{ color: "#00C864" }}>{fmt(project.completionDate)}</strong>
+              {isTeam ? "End" : "Completed"}: <strong style={{ color: "#00C864" }}>{fmt(project.completionDate || project.endDate)}</strong>
             </span>
           </div>
         )}
@@ -165,11 +205,43 @@ export default function MyProjects() {
   useEffect(() => {
     if (!empId) { setLoading(false); return; }
     setLoading(true);
-    const unsub = subscribeProjectsByEmployee(empId, (data) => {
-      setProjects(data);
-      setLoading(false);
+    let empLoaded = false;
+    let teamLoaded = false;
+    let empDataList = [];
+    let teamDataList = [];
+
+    const tryCombine = () => {
+      if (empLoaded && teamLoaded) {
+        // Merge: avoid duplicates by project name (team projects take precedence)
+        const combined = [
+          ...teamDataList,
+          ...empDataList.filter(
+            (ep) => !teamDataList.some((tp) => tp.name.trim().toLowerCase() === ep.name.trim().toLowerCase())
+          ),
+        ];
+        setProjects(combined);
+        setLoading(false);
+      }
+    };
+
+    const unsubEmp = subscribeProjectsByEmployee(empId, (data) => {
+      empDataList = data;
+      empLoaded = true;
+      tryCombine();
     });
-    return unsub;
+
+    const unsubTeam = subscribeTeamProjects((data) => {
+      teamDataList = data
+        .filter((p) => (p.memberIds || []).includes(empId))
+        .map((p) => ({ ...p, _source: "team" }));
+      teamLoaded = true;
+      tryCombine();
+    });
+
+    return () => {
+      unsubEmp();
+      unsubTeam();
+    };
   }, [empId]);
 
   const ongoing   = projects.filter((p) => p.status === "Ongoing");

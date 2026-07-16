@@ -22,6 +22,7 @@ import {
   addProject,
   updateProject,
   deleteProject,
+  updateTeamProject,
 } from "../firebase/firestoreService";
 import { getThumbnailUrl } from "../cloudinary/cloudinaryService";
 
@@ -36,21 +37,35 @@ function formatEmpId(id = "") {
   return id.replace(/-/g, "/");
 }
 
-// ── Status badge ──────────────────────────────────────────────
-function Badge({ status }) {
+// ── Status selector / badge ───────────────────────────────────
+function StatusSelector({ status, isDark, onChange }) {
   const cfg = status === "Ongoing"
-    ? { bg: "rgba(0,184,184,0.12)", color: "#00B8B8", border: "rgba(0,184,184,0.25)", dot: "#00B8B8" }
-    : { bg: "rgba(0,200,100,0.12)", color: "#00C864", border: "rgba(0,200,100,0.25)", dot: "#00C864" };
+    ? { bg: "rgba(0,184,184,0.12)", color: "#00B8B8", border: "rgba(0,184,184,0.25)" }
+    : status === "Completed"
+    ? { bg: "rgba(0,200,100,0.12)", color: "#00C864", border: "rgba(0,200,100,0.25)" }
+    : { bg: "rgba(201,146,42,0.12)", color: "#C9922A", border: "rgba(201,146,42,0.25)" };
+
   return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", gap: "5px",
-      padding: "3px 8px", borderRadius: "20px", fontSize: "11px", fontWeight: 600,
-      fontFamily: "Mulish, sans-serif",
-      background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}`,
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: cfg.dot, flexShrink: 0 }} />
-      {status}
-    </span>
+    <select
+      value={status}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        background: cfg.bg,
+        color: cfg.color,
+        border: `1px solid ${cfg.border}`,
+        padding: "3px 8px",
+        borderRadius: "20px",
+        fontSize: "11px",
+        fontWeight: 600,
+        fontFamily: "Mulish, sans-serif",
+        outline: "none",
+        cursor: "pointer",
+      }}
+    >
+      <option value="Ongoing" style={{ background: isDark ? "#0A0A0A" : "#FFF", color: isDark ? "#FFF" : "#000" }}>Ongoing</option>
+      <option value="Completed" style={{ background: isDark ? "#0A0A0A" : "#FFF", color: isDark ? "#FFF" : "#000" }}>Completed</option>
+      <option value="On Hold" style={{ background: isDark ? "#0A0A0A" : "#FFF", color: isDark ? "#FFF" : "#000" }}>On Hold</option>
+    </select>
   );
 }
 
@@ -299,7 +314,21 @@ function ProjectCard({ project, isDark, onEdit, onDelete }) {
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
-          <Badge status={project.status} />
+          <StatusSelector
+            status={project.status}
+            isDark={isDark}
+            onChange={async (newStatus) => {
+              try {
+                if (project._source === "team") {
+                  await updateTeamProject(project.id, { status: newStatus });
+                } else {
+                  await updateProject(project.id, { status: newStatus });
+                }
+              } catch (err) {
+                console.error("Failed to update project status:", err);
+              }
+            }}
+          />
           {!isTeam && (
             <>
               <button onClick={() => onEdit(project)} title="Edit" style={{ background: "none", border: "none", color: isDark ? "#444" : "#BBB", cursor: "pointer", padding: 4, display: "flex" }}>

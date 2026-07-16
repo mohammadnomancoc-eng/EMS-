@@ -28,11 +28,11 @@ function Login() {
       const user = await loginUser(email, password);
       localStorage.setItem("rwt-role", user.role);
       // Fetch employee photo if role is employee
-      let photoUrl = null;
+      let photoUrl = user.photoUrl || null;
       if (user.role === "employee" && user.empId) {
         try {
           const empDoc = await getEmployee(user.empId);
-          photoUrl = empDoc?.photoUrl || null;
+          photoUrl = empDoc?.photoUrl || photoUrl;
         } catch (_) {}
       }
       localStorage.setItem(

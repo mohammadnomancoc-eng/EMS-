@@ -1,7 +1,7 @@
 /**
  * Sends a transactional email using secure Vercel Serverless Function and Resend.
  */
-export async function sendEmail({ to, subject, html }) {
+export async function sendEmail({ to, subject, html, name, replyTo }) {
   try {
     const response = await fetch("/api/sendEmail", {
       method: "POST",
@@ -11,12 +11,24 @@ export async function sendEmail({ to, subject, html }) {
       body: JSON.stringify({
         to,
         subject,
-        html
+        html,
+        name,
+        replyTo
       })
     });
-    const data = await response.json();
-    console.log("[Email] Email send response:", data);
-    return data;
+    if (!response.ok) {
+      console.warn(`[Email] API returned status ${response.status}`);
+      return { success: false, status: response.status };
+    }
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      const data = await response.json();
+      console.log("[Email] Email send response:", data);
+      return data;
+    } else {
+      const text = await response.text();
+      return { success: true, text };
+    }
   } catch (err) {
     console.error("[Email] Failed to send email:", err);
   }
@@ -31,7 +43,17 @@ export async function notifyRequest(data) {
       },
       body: JSON.stringify(data)
     });
-    return await response.json();
+    if (!response.ok) {
+      console.warn(`[Email] Request notification API returned status ${response.status}`);
+      return { success: false, status: response.status };
+    }
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      return await response.json();
+    } else {
+      const text = await response.text();
+      return { success: true, text };
+    }
   } catch (err) {
     console.error("[Email] Failed to notify request:", err);
   }
@@ -46,7 +68,17 @@ export async function notifyStatus(data) {
       },
       body: JSON.stringify(data)
     });
-    return await response.json();
+    if (!response.ok) {
+      console.warn(`[Email] Status notification API returned status ${response.status}`);
+      return { success: false, status: response.status };
+    }
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      return await response.json();
+    } else {
+      const text = await response.text();
+      return { success: true, text };
+    }
   } catch (err) {
     console.error("[Email] Failed to notify status:", err);
   }

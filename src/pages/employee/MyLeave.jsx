@@ -6,9 +6,11 @@ import {
   submitLeaveRequest,
   getAdminEmails,
   getEmployee,
+  submitQuotaRequest,
 } from "../../firebase/firestoreService";
 
-import { notifyRequest } from "../../utils/email";
+import { notifyRequest, sendEmail } from "../../utils/email";
+import { auth } from "../../firebase/config";
 
 // ── Responsive hook ────────────────────────────────────────────
 function useIsMobile() {
@@ -69,7 +71,7 @@ function StatusBadge({ status, theme }) {
 }
 
 // ── Quota Card ─────────────────────────────────────────────────
-function QuotaCard({ label, taken, total, color, icon: Icon, theme, isMobile }) {
+function QuotaCard({ label, taken, total, color, icon: Icon, theme, isMobile, onExhaustedClick }) {
   const remaining = total - taken;
   const pct       = total > 0 ? Math.round((taken / total) * 100) : 0;
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
@@ -135,19 +137,203 @@ function QuotaCard({ label, taken, total, color, icon: Icon, theme, isMobile }) 
         <span style={{ color, fontWeight: 600 }}>{remaining} remaining</span> · {taken} used this month
       </p>
 
-      {/* Quota exhausted warning */}
-      {remaining === 0 && (
-        <div style={{
-          display: "flex", alignItems: "center", gap: "8px",
-          borderRadius: "6px", padding: "8px 12px",
-          background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.2)",
-        }}>
-          <AlertCircle size={12} style={{ color: "#CC0000", flexShrink: 0 }} />
-          <span style={{ fontFamily: "Mulish, sans-serif", fontSize: "11px", color: "#CC0000" }}>
-            Quota exhausted for this month
+      {/* Quota request trigger button */}
+      {remaining <= 0 && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onExhaustedClick) onExhaustedClick();
+          }}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+            borderRadius: "6px", padding: "8px 12px", width: "100%", textAlign: "center",
+            background: "rgba(204,0,0,0.12)",
+            border: "1px solid rgba(204,0,0,0.3)",
+            cursor: "pointer", transition: "all 150ms",
+            outline: "none", boxSizing: "border-box",
+            marginTop: "6px",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "rgba(204,0,0,0.2)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "rgba(204,0,0,0.12)";
+          }}
+        >
+          <AlertCircle size={14} style={{ color: "#CC0000", flexShrink: 0 }} />
+          <span style={{
+            fontFamily: "Mulish, sans-serif", fontSize: "12px",
+            color: "#CC0000", fontWeight: 700
+          }}>
+            Quota Exhausted - Request More
           </span>
-        </div>
+        </button>
       )}
+    </div>
+  );
+}
+
+// ── Quota Request Modal ────────────────────────────────────────
+function QuotaRequestModal({ type, currentQuota, onClose, onSubmit, theme, submitting }) {
+  const [reason,         setReason]         = useState("");
+  const [error,          setError]          = useState("");
+
+  const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
+  const border    = theme === "dark" ? "#1E1E1E" : "#E0E0E0";
+  const textPri   = theme === "dark" ? "#F0F0F0" : "#111111";
+  const textMuted = theme === "dark" ? "#A0A0A0" : "#555555";
+  const inputBg   = theme === "dark" ? "#0A0A0A" : "#FFFFFF";
+  const inputBd   = theme === "dark" ? "#1E1E1E" : "#D0D0D0";
+
+  const inputStyle = {
+    width: "100%", padding: "10px 12px", borderRadius: "6px",
+    outline: "none", fontFamily: "Mulish, sans-serif", fontSize: "13px",
+    background: inputBg, border: `1px solid ${inputBd}`, color: textPri,
+    transition: "border 200ms, box-shadow 200ms", boxSizing: "border-box",
+  };
+
+  const handleFocus = (e) => {
+    e.target.style.border = "1px solid #00B8B8";
+    e.target.style.boxShadow = "0 0 0 3px rgba(0,184,184,0.1)";
+  };
+  const handleBlur = (e) => {
+    e.target.style.border = `1px solid ${inputBd}`;
+    e.target.style.boxShadow = "none";
+  };
+
+  const handleSubmit = () => {
+    if (!reason.trim()) {
+      setError("Please provide a reason for the quota increase.");
+      return;
+    }
+    onSubmit({ type, currentQuota, reason });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: "rgba(0,0,0,0.7)", padding: "16px" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div style={{
+        background: surface, border: `1px solid ${border}`,
+        borderRadius: "12px", width: "100%", maxWidth: "460px",
+        boxShadow: "0 24px 64px rgba(0,0,0,0.5)",
+        overflow: "hidden", animation: "modalIn 200ms ease-out",
+        boxSizing: "border-box",
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: "18px 20px", borderBottom: `1px solid ${border}`,
+          display: "flex", alignItems: "center", justifySpace: "space-between",
+          justifyContent: "space-between",
+        }}>
+          <div>
+            <p style={{
+              fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+              color: "#CC0000", letterSpacing: "0.15em", margin: 0,
+            }}>
+              LIMIT EXHAUSTED
+            </p>
+            <h3 style={{
+              fontFamily: "Rajdhani, sans-serif", fontSize: "18px", fontWeight: 700,
+              color: textPri, margin: "4px 0 0 0",
+            }}>
+              Request More {type} Quota
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none", border: "none", color: textMuted, cursor: "pointer",
+              padding: "4px", display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+          
+          <div>
+            <label style={{
+              display: "block", fontSize: "10px", fontWeight: 700,
+              color: "#CC0000", letterSpacing: "0.1em", marginBottom: "6px",
+              fontFamily: "Rajdhani, sans-serif",
+            }}>
+              CURRENT QUOTA
+            </label>
+            <input
+              type="number"
+              value={currentQuota}
+              readOnly
+              style={{ ...inputStyle, opacity: 0.6, cursor: "not-allowed" }}
+            />
+          </div>
+
+          <div>
+            <label style={{
+              display: "block", fontSize: "10px", fontWeight: 700,
+              color: "#CC0000", letterSpacing: "0.1em", marginBottom: "6px",
+              fontFamily: "Rajdhani, sans-serif",
+            }}>
+              REASON FOR INCREASE
+            </label>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              placeholder="Explain why you need more quota..."
+              rows={4}
+              required
+              style={{ ...inputStyle, resize: "vertical" }}
+            />
+          </div>
+
+          {error && (
+            <div style={{
+              padding: "10px 12px", borderRadius: "6px",
+              background: "rgba(204,0,0,0.08)", border: "1px solid rgba(204,0,0,0.2)",
+              fontSize: "12px", color: "#CC0000", fontFamily: "Mulish, sans-serif",
+            }}>
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: "14px 20px", borderTop: `1px solid ${border}`,
+          display: "flex", justifyContent: "flex-end", gap: "10px",
+          background: theme === "dark" ? "#0E0E0E" : "#FBFBFB",
+        }}>
+          <button
+            onClick={onClose}
+            disabled={submitting}
+            style={{
+              padding: "8px 16px", borderRadius: "6px", cursor: "pointer",
+              fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px",
+              background: "none", border: `1px solid ${border}`, color: textPri,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            style={{
+              padding: "8px 18px", borderRadius: "6px", cursor: submitting ? "not-allowed" : "pointer",
+              fontFamily: "Rajdhani, sans-serif", fontWeight: 700, fontSize: "13px",
+              background: "#CC0000", color: "#FFFFFF", border: "none",
+              display: "flex", alignItems: "center", gap: "6px",
+            }}
+          >
+            {submitting ? "Submitting..." : "Submit Request"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -473,7 +659,11 @@ function MyLeave() {
   const [fetchError,  setFetchError]  = useState("");
 
   const [leaveQuota, setLeaveQuota] = useState(2);
-  const [wfhQuota,   setWfhQuota]   = useState(2);
+  const [wfhQuota,   setWfhQuota]   = useState(4);
+  const [employeeEmail, setEmployeeEmail] = useState("");
+
+  const [quotaRequestType, setQuotaRequestType] = useState(null);
+  const [quotaSubmitting,  setQuotaSubmitting]  = useState(false);
 
   // ── Theme tokens ──
   const surface   = theme === "dark" ? "#111111" : "#FFFFFF";
@@ -502,6 +692,8 @@ function MyLeave() {
         if (emp) {
           if (emp.leaveQuota !== undefined) setLeaveQuota(emp.leaveQuota);
           if (emp.wfhQuota !== undefined) setWfhQuota(emp.wfhQuota);
+          if (emp.email) setEmployeeEmail(emp.email);
+          else if (emp.loginEmail) setEmployeeEmail(emp.loginEmail);
         }
       })
       .catch((err) => console.error("Failed to load employee quota:", err));
@@ -513,7 +705,62 @@ function MyLeave() {
   const wfhThisMonth   = countThisMonth(allRequests, "WFH");
   const leaveQuotaState = { taken: leaveThisMonth, total: leaveQuota };
   const wfhQuotaState   = { taken: wfhThisMonth,   total: wfhQuota   };
-  const quota = activeTab === "Leave" ? leaveQuotaState : wfhQuotaState;
+  const handleQuotaRequestSubmit = async ({ type, currentQuota, reason }) => {
+    if (!empId) return;
+    setQuotaSubmitting(true);
+    try {
+      await submitQuotaRequest({
+        empId,
+        employeeName: profile.name,
+        type,
+        currentQuota,
+        reason,
+        status: "Pending",
+      });
+
+      const subject = `Quota Increase Request (${type}) from ${profile.name}`;
+      const appUrl = window.location.origin;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+          <h2 style="color: #CC0000; border-bottom: 2px solid #CC0000; padding-bottom: 8px;">Quota Increase Request</h2>
+          <p>Hi Admin,</p>
+          <p><strong>${profile.name}</strong> (Employee ID: ${empId}) has requested an increase in their monthly <strong>${type}</strong> quota.</p>
+          <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+            <tr style="background-color: #f9f9f9;">
+              <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Current Quota</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${currentQuota} days</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Reason</td>
+              <td style="padding: 8px; border: 1px solid #ddd;">${reason}</td>
+            </tr>
+          </table>
+          <p>You can review, approve, or reject this request in the <a href="${appUrl}/leave" style="color: #00B8B8; font-weight: bold; text-decoration: none;">EMS Portal</a> under the Quota Requests tab.</p>
+          <p style="color: #888; font-size: 11px; border-top: 1px solid #eee; padding-top: 8px; margin-top: 24px;">This is an automated notification from Royals EMS.</p>
+        </div>
+      `;
+
+      try {
+        await sendEmail({
+          to: "admin",
+          subject,
+          html,
+          name: profile.name,
+          replyTo: employeeEmail || auth.currentUser?.email || profile.email || profile.loginEmail
+        });
+      } catch (emailErr) {
+        console.error("Failed to send quota email to admin:", emailErr);
+      }
+
+      alert("Quota increase request submitted successfully!");
+      setQuotaRequestType(null);
+    } catch (err) {
+      console.error("Failed to submit quota request:", err);
+      alert("Failed to submit request: " + (err.message || "Unknown error"));
+    } finally {
+      setQuotaSubmitting(false);
+    }
+  };
 
   const handleSubmit = async ({ from, to, reason, leaveType, requestType }) => {
     if (!empId) return;
@@ -533,6 +780,7 @@ function MyLeave() {
       try {
         notifyRequest({
           employeeName: profile.name,
+          employeeEmail: employeeEmail || auth.currentUser?.email || profile.email || profile.loginEmail,
           requestType,
           leaveType: requestType === "Leave" ? leaveType : null,
           from,
@@ -572,6 +820,18 @@ function MyLeave() {
           submitting={submitting}
           onClose={() => setShowModal(false)}
           onSubmit={handleSubmit}
+        />
+      )}
+
+      {/* Quota Request Modal */}
+      {quotaRequestType && (
+        <QuotaRequestModal
+          type={quotaRequestType}
+          currentQuota={quotaRequestType === "Leave" ? leaveQuota : wfhQuota}
+          theme={theme}
+          submitting={quotaSubmitting}
+          onClose={() => setQuotaRequestType(null)}
+          onSubmit={handleQuotaRequestSubmit}
         />
       )}
 
@@ -639,12 +899,26 @@ function MyLeave() {
 
       {/* ── Quota Cards — always 2-col (works well on mobile too) ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: isMobile ? "10px" : "16px" }}>
-        <QuotaCard theme={theme} isMobile={isMobile} label="Leave This Month"
-          taken={leaveQuotaState.taken} total={leaveQuotaState.total}
-          color="#C9922A" icon={CalendarOff} />
-        <QuotaCard theme={theme} isMobile={isMobile} label="WFH This Month"
-          taken={wfhQuotaState.taken} total={wfhQuotaState.total}
-          color="#00B8B8" icon={Home} />
+        <QuotaCard
+          theme={theme}
+          isMobile={isMobile}
+          label="Leave This Month"
+          taken={leaveQuotaState.taken}
+          total={leaveQuotaState.total}
+          color="#C9922A"
+          icon={CalendarOff}
+          onExhaustedClick={() => setQuotaRequestType("Leave")}
+        />
+        <QuotaCard
+          theme={theme}
+          isMobile={isMobile}
+          label="WFH This Month"
+          taken={wfhQuotaState.taken}
+          total={wfhQuotaState.total}
+          color="#00B8B8"
+          icon={Home}
+          onExhaustedClick={() => setQuotaRequestType("WFH")}
+        />
       </div>
 
       {/* ── History Section ── */}

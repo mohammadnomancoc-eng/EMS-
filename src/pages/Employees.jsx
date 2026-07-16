@@ -652,7 +652,7 @@ function EmployeeModal({ theme, onClose, onSave, initial, departments }) {
     email: "", phone: "", joinDate: "", completionDate: "", salary: "",
     workType: "WFO", gender: "Male", employeeType: "Full Time",
     photoUrl: null, photoPublicId: null,
-    leaveQuota: 2, wfhQuota: 2,
+    leaveQuota: 2, wfhQuota: 4,
   };
   const [form, setForm] = useState(() => {
     if (!initial) return defaults;
@@ -1014,7 +1014,7 @@ function EmployeeDrawer({ emp, theme, onClose, onEdit, onDelete, onPhotoUpdated,
           {row("COMPLETION DATE", emp.completionDate ? new Date(emp.completionDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "Not set")}
           {row("MONTHLY SALARY", `₹${Number(emp.salary).toLocaleString("en-IN")}`)}
           {row("MONTHLY LEAVE QUOTA", emp.leaveQuota ?? 2)}
-          {row("MONTHLY WFH QUOTA", emp.wfhQuota ?? 2)}
+          {row("MONTHLY WFH QUOTA", emp.wfhQuota ?? 4)}
 
           {/* ── Login Credentials Section ── */}
           <div style={{ marginTop: "20px" }}>

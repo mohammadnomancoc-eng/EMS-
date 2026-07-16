@@ -5,7 +5,7 @@ import {
   Home, TrendingUp, TrendingDown, Camera, FileText, X as XIcon,
 } from "lucide-react";
 import WebcamAttendance from "../../components/WebcamAttendance";
-import { getAttendanceByEmployee, getEmployee } from "../../firebase/firestoreService";
+import { getAttendanceByEmployee, getEmployee, getApprovedWfhForDate } from "../../firebase/firestoreService";
 
 // ── Count-up hook ─────────────────────────────────────
 function useCountUp(target, duration = 800) {
@@ -286,7 +286,9 @@ function MyAttendance() {
   const [viewWorkDesc, setViewWorkDesc] = useState(null);
 
   const [leaveQuota, setLeaveQuota] = useState(2);
-  const [wfhQuota,   setWfhQuota]   = useState(2);
+  const [wfhQuota,   setWfhQuota]   = useState(4);
+  const [workType,   setWorkType]   = useState(null); // "WFO" | "WFH" | "Hybrid"
+  const [todayWfhApproval, setTodayWfhApproval] = useState(null);
 
   useEffect(() => {
     if (!empId) { setLoading(false); setFetchError("Employee ID not found. Please log in again."); return; }
@@ -300,10 +302,21 @@ function MyAttendance() {
       });
 
     getEmployee(empId)
-      .then((emp) => {
+      .then(async (emp) => {
         if (emp) {
           if (emp.leaveQuota !== undefined) setLeaveQuota(emp.leaveQuota);
           if (emp.wfhQuota !== undefined) setWfhQuota(emp.wfhQuota);
+          const wt = (emp.workType || "WFO").toUpperCase();
+          setWorkType(wt);
+          // For WFO employees, check if they have approved WFH for today
+          if (wt === "WFO") {
+            try {
+              const today = new Date();
+              const dateStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+              const approval = await getApprovedWfhForDate(empId, dateStr);
+              setTodayWfhApproval(approval);
+            } catch (_) {}
+          }
         }
       })
       .catch((err) => console.error("Failed to load employee quota:", err));
@@ -431,6 +444,67 @@ function MyAttendance() {
           Open Webcam
         </button>
       </div>
+
+      {/* ── WFO/WFH Info Banner ── */}
+      {workType && (
+        <div
+          className="rounded-xl p-4 sm:p-5"
+          style={{
+            background: surface,
+            border: `1px solid ${border}`,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "12px",
+          }}
+        >
+          <div style={{
+            width: "34px", height: "34px", borderRadius: "8px", flexShrink: 0,
+            background: workType === "WFH" ? "rgba(0,184,184,0.10)" : workType === "WFO" ? "rgba(204,0,0,0.08)" : "rgba(201,146,42,0.08)",
+            border: `1px solid ${workType === "WFH" ? "rgba(0,184,184,0.3)" : workType === "WFO" ? "rgba(204,0,0,0.25)" : "rgba(201,146,42,0.3)"}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <CalendarCheck size={15} style={{ color: workType === "WFH" ? "#00B8B8" : workType === "WFO" ? "#CC0000" : "#C9922A" }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{
+              fontFamily: "Rajdhani, sans-serif", fontSize: "10px", fontWeight: 700,
+              color: workType === "WFH" ? "#00B8B8" : "#CC0000",
+              letterSpacing: "0.18em", marginBottom: "4px",
+            }}>
+              WORK TYPE: {workType}
+            </p>
+            {workType === "WFH" ? (
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted, lineHeight: 1.5 }}>
+                You can mark attendance freely from any location.
+              </p>
+            ) : workType === "WFO" ? (
+              <div>
+                <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted, lineHeight: 1.5 }}>
+                  You must be within office premises to mark attendance.
+                  {!todayWfhApproval && (
+                    <span> To work from home, apply for WFH via <strong style={{ color: "#00B8B8" }}>My Leave → Apply for WFH</strong> and get admin approval first.</span>
+                  )}
+                </p>
+                {todayWfhApproval && (
+                  <p style={{
+                    fontFamily: "Mulish, sans-serif", fontSize: "12px",
+                    color: "#00B8B8", lineHeight: 1.5, marginTop: "6px",
+                    padding: "6px 10px", borderRadius: "6px",
+                    background: "rgba(0,184,184,0.06)",
+                    border: "1px solid rgba(0,184,184,0.2)",
+                  }}>
+                    ✓ WFH approved for today ({todayWfhApproval.from === todayWfhApproval.to ? todayWfhApproval.from : `${todayWfhApproval.from} to ${todayWfhApproval.to}`}) — you can mark attendance from home.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p style={{ fontFamily: "Mulish, sans-serif", fontSize: "12px", color: textMuted, lineHeight: 1.5 }}>
+                Hybrid mode — attendance rules depend on your schedule.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Stat Cards ── */}
       {/* 2-col on mobile → 3-col on sm → 5-col on xl */}

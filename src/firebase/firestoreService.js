@@ -391,6 +391,150 @@ export async function deleteLeaveRequest(id) {
   await deleteDoc(doc(db, "leaveRequests", id));
 }
 
+/**
+ * Check if a WFO employee has an approved WFH request covering a given date.
+ * Used to allow WFO employees to mark attendance remotely when they have
+ * an approved WFH request for that day.
+ *
+ * @param {string} empId – employee doc ID
+ * @param {string} date  – YYYY-MM-DD format
+ * @returns {Promise<object|null>} the approved WFH request, or null
+ */
+export async function getApprovedWfhForDate(empId, date) {
+  const q = query(
+    col("leaveRequests"),
+    where("empId", "==", empId),
+    where("requestType", "==", "WFH"),
+    where("status", "==", "Approved")
+  );
+  const snap = await getDocs(q);
+  // Find a request where `date` falls within [from, to]
+  for (const d of snap.docs) {
+    const data = d.data();
+    if (data.from <= date && data.to >= date) {
+      return { id: d.id, ...data };
+    }
+  }
+  return null;
+}
+
+/**
+ * Check if an employee has an approved regular Leave request covering a given date.
+ * Used to block employees from marking attendance on days they are on leave.
+ *
+ * @param {string} empId – employee doc ID
+ * @param {string} date  – YYYY-MM-DD format
+ * @returns {Promise<object|null>} the approved Leave request, or null
+ */
+export async function getApprovedLeaveForDate(empId, date) {
+  const q = query(
+    col("leaveRequests"),
+    where("empId", "==", empId),
+    where("requestType", "==", "Leave"),
+    where("status", "==", "Approved")
+  );
+  const snap = await getDocs(q);
+  // Find a request where `date` falls within [from, to]
+  for (const d of snap.docs) {
+    const data = d.data();
+    if (data.from <= date && data.to >= date) {
+      return { id: d.id, ...data };
+    }
+  }
+  return null;
+}
+
+// ════════════════════════════════════════════════════════════
+//  QUOTA REQUESTS
+// ════════════════════════════════════════════════════════════
+
+/** Submit a new quota increase request */
+export async function submitQuotaRequest(data) {
+  const ref = doc(collection(db, "quotaRequests"));
+  const id  = ref.id;
+
+  await setDoc(ref, {
+    id,
+    ...data,
+    status: "Pending",
+    adminReply: "",
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  // Notify admins
+  try {
+    await addNotification({
+      title: `New Quota Increase Request`,
+      message: `${data.employeeName || "An employee"} has requested to increase their monthly ${data.type || "leave"} quota from ${data.currentQuota} to ${data.requestedQuota}.`,
+      type: "all",
+      recipientRole: "admin",
+      priority: "normal",
+      actionUrl: "/leave"
+    });
+  } catch (err) {
+    console.error("Failed to add quota request notification:", err);
+  }
+
+  return id;
+}
+
+/** Subscribe to quota requests (real-time) */
+export function subscribeQuotaRequests(callback) {
+  const q = query(collection(db, "quotaRequests"), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+}
+
+/** Subscribe to quota requests for a specific employee */
+export function subscribeQuotaRequestsByEmployee(empId, callback) {
+  const q = query(
+    collection(db, "quotaRequests"),
+    where("empId", "==", empId),
+    orderBy("createdAt", "desc")
+  );
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  });
+}
+
+/** Update quota request status and optionally adjust employee quota */
+export async function updateQuotaRequestStatus(id, status, adminReply = "", empId = null, type = null, requestedQuota = null) {
+  await updateDoc(doc(db, "quotaRequests", id), {
+    status,
+    adminReply,
+    updatedAt: serverTimestamp(),
+  });
+
+  // Send notification to employee
+  if (empId) {
+    try {
+      await addNotification({
+        title: `Quota Increase Request ${status}`,
+        message: `Your request to increase ${type || "leave"} quota has been ${status.toLowerCase()}.${adminReply ? ` Admin note: ${adminReply}` : ""}`,
+        type: "employee",
+        targetId: empId,
+        recipientId: empId,
+        priority: status === "Approved" ? "normal" : "high",
+        actionUrl: "/my-leave"
+      });
+    } catch (err) {
+      console.error("Failed to add quota status notification:", err);
+    }
+  }
+
+  // Update employee quota in Firestore if approved
+  if (status === "Approved" && empId && type && requestedQuota) {
+    const empRef = doc(db, "employees", empId);
+    if (type === "Leave") {
+      await updateDoc(empRef, { leaveQuota: Number(requestedQuota) });
+    } else if (type === "WFH") {
+      await updateDoc(empRef, { wfhQuota: Number(requestedQuota) });
+    }
+  }
+}
+
 // ════════════════════════════════════════════════════════════
 //  ATTENDANCE
 // ════════════════════════════════════════════════════════════

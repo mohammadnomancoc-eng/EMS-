@@ -12,10 +12,19 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
   }
 
-  const { to, subject, html } = req.body || {};
+  let { to, subject, html, name, replyTo } = req.body || {};
 
   if (!to || !subject || !html) {
     return res.status(400).json({ error: "Missing required fields: to, subject, html" });
+  }
+
+  if (to === "admin" || to === "admin@royalswebtech.com") {
+    const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+    if (!ADMIN_EMAIL) {
+      console.error("[Email] Missing ADMIN_EMAIL env var.");
+      return res.status(500).json({ error: "Server admin email is not configured." });
+    }
+    to = ADMIN_EMAIL;
   }
 
   try {
@@ -26,10 +35,14 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Google Script URL is not configured." });
     }
 
+    const payload = { to, subject, html };
+    if (name) payload.name = name;
+    if (replyTo) payload.replyTo = replyTo;
+
     const gasRes = await fetch(GOOGLE_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to, subject, html }),
+      body: JSON.stringify(payload),
     });
     const gasData = await gasRes.json();
 

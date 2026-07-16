@@ -22,9 +22,9 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "../App";
 import {
   Camera, X, CheckCircle, AlertCircle, RefreshCw,
-  Video, VideoOff, MapPin, Navigation, ShieldCheck, ScanFace,
+  Video, VideoOff, MapPin, Navigation, ShieldCheck, ScanFace, Home,
 } from "lucide-react";
-import { upsertAttendance, getCompanySettings, getEmployee, getOwnAttendanceRecord, getProjectsByEmployee } from "../firebase/firestoreService";
+import { upsertAttendance, getCompanySettings, getEmployee, getOwnAttendanceRecord, getProjectsByEmployee, getApprovedWfhForDate, getApprovedLeaveForDate } from "../firebase/firestoreService";
 import { uploadToCloudinary } from "../cloudinary/cloudinaryService";
 
 const MATCH_THRESHOLD = 0.50;
@@ -200,6 +200,82 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   const [geoRequired,     setGeoRequired]     = useState(false);
   const [companySettings, setCompanySettings] = useState(null);
 
+  // WFH approval for WFO employees
+  const [wfhApproval, setWfhApproval] = useState(null); // null | { ...approvedRequest }
+
+  // Leave request for the employee
+  const [todayLeave, setTodayLeave] = useState(null); // null | { ...approvedLeaveRequest }
+
+  // Robust location check implementation
+  const checkGeoLocation = useCallback(async (settings) => {
+    if (!settings?.officeLat || !settings?.officeLng) {
+      setGeoStatus("allowed");
+      return;
+    }
+
+    setGeoStatus("fetching");
+    setGeoDistance(null);
+    setWfhApproval(null);
+
+    if (!navigator.geolocation) {
+      setGeoStatus("error");
+      return;
+    }
+
+    const getPosition = (options) => {
+      return new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, options);
+      });
+    };
+
+    const handleSuccess = async (pos) => {
+      const dist   = haversineMetres(pos.coords.latitude, pos.coords.longitude, settings.officeLat, settings.officeLng);
+      const radius = settings.geoFenceRadius ?? 100;
+      const roundedDist = Math.round(dist);
+      setGeoDistance(roundedDist);
+      const allowed = dist <= radius;
+      if (allowed) {
+        setGeoStatus("allowed");
+      } else {
+        // WFO employee is outside geo-fence — check for approved WFH
+        try {
+          const approvedWfh = await getApprovedWfhForDate(empId, todayString());
+          if (approvedWfh) {
+            setWfhApproval(approvedWfh);
+            setGeoStatus("wfh_approved"); // allowed via WFH approval
+          } else {
+            setGeoStatus("blocked"); // no approval → blocked
+          }
+        } catch (err) {
+          console.error("Failed to check WFH approval:", err);
+          setGeoStatus("blocked");
+        }
+      }
+    };
+
+    try {
+      // Attempt 1: High accuracy with cached location support (essential for mobile reliability)
+      const pos = await getPosition({ enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+      await handleSuccess(pos);
+    } catch (err) {
+      console.warn("High accuracy GPS failed/timed out, attempting low accuracy fallback...", err);
+      try {
+        // Attempt 2: Fallback to low accuracy (uses Wi-Fi / cellular network, much faster and works indoors/without GPS)
+        const pos = await getPosition({ enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
+        await handleSuccess(pos);
+      } catch (err2) {
+        console.error("All geolocation attempts failed:", err2);
+        setGeoStatus("error");
+      }
+    }
+  }, [empId]);
+
+  const retryGeoCheck = useCallback(() => {
+    if (companySettings) {
+      checkGeoLocation(companySettings);
+    }
+  }, [companySettings, checkGeoLocation]);
+
   // ── Mount: load models + data in parallel ────────────────
   useEffect(() => {
     if (!empId) return;
@@ -210,10 +286,12 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
       getOwnAttendanceRecord(empId, todayString()),
       getCompanySettings(),
       getEmployee(empId),
-    ]).then(async ([ownRecord, settings, empData]) => {
+      getApprovedLeaveForDate(empId, todayString()),
+    ]).then(async ([ownRecord, settings, empData, leaveData]) => {
       if (ownRecord)         setTodayRecord(ownRecord);
       if (settings)          setCompanySettings(settings);
       if (empData)           setEmployeeName(empData.name || "");
+      if (leaveData)         setTodayLeave(leaveData);
       if (empData?.photoUrl) {
         const photoUrl = empData.photoUrl.trim();
         if (photoUrl) {
@@ -236,25 +314,14 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
       const isWFO = wt === "WFO";
       setGeoRequired(isTest ? false : isWFO);
       if (isTest || !isWFO)                           { setGeoStatus("wfh_skip"); return; }
-      if (!settings?.officeLat || !settings?.officeLng){ setGeoStatus("allowed");  return; }
-
-      setGeoStatus("fetching");
-      if (!navigator.geolocation) { setGeoStatus("error"); return; }
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const dist   = haversineMetres(pos.coords.latitude, pos.coords.longitude, settings.officeLat, settings.officeLng);
-          const radius = settings.geoFenceRadius ?? 100;
-          const roundedDist = Math.round(dist);
-          setGeoDistance(roundedDist);
-          const allowed = dist <= radius;
-          setGeoStatus(allowed ? "allowed" : "blocked");
-
-        },
-        () => setGeoStatus("error"),
-        { enableHighAccuracy:true, timeout:10000 }
-      );
-    }).catch(() => setGeoStatus("allowed"));
-  }, [empId]);
+      
+      // Perform robust geo-fence check
+      await checkGeoLocation(settings);
+    }).catch((err) => {
+      console.error("Mount initialization error:", err);
+      setGeoStatus("allowed");
+    });
+  }, [empId, checkGeoLocation]);
 
   useEffect(() => {
     if (todayRecord) {
@@ -401,8 +468,10 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
       let logIn=todayRecord?.logIn||"--", logOut=todayRecord?.logOut||"--";
       let status=todayRecord?.status||"Present", hoursWorked=todayRecord?.hoursWorked||"--";
-      if (action==="logIn")  { logIn=timeStr; logOut="--"; status="Present"; hoursWorked="--"; }
-      if (action==="logOut") { logOut=timeStr; status=todayRecord?.status||"Present"; hoursWorked=logIn!=="--"?calcHoursWorked(logIn,timeStr):"--"; }
+      // WFO employee working from home with approved WFH → status = "WFH"
+      const wfhMode = geoStatus === "wfh_approved";
+      if (action==="logIn")  { logIn=timeStr; logOut="--"; status=wfhMode ? "WFH" : "Present"; hoursWorked="--"; }
+      if (action==="logOut") { logOut=timeStr; status=todayRecord?.status||(wfhMode ? "WFH" : "Present"); hoursWorked=logIn!=="--"?calcHoursWorked(logIn,timeStr):"--"; }
 
       await upsertAttendance({
         empId, date, status, logIn, logOut, hoursWorked,
@@ -411,7 +480,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
         webcamSnapshotPublicId,
         webcamTimestamp:       now.toISOString(),
         geoDistance: isTestEmployee ? 0 : geoDistance,
-        geoVerified: isTestEmployee ? true : geoStatus==="allowed",
+        geoVerified: isTestEmployee ? true : (geoStatus==="allowed" || geoStatus==="wfh_approved"),
         faceVerified:  isTestEmployee ? true : faceStatus==="matched",
         faceDistance:  isTestEmployee ? 0 : (faceScore ?? null),
         workDescription: action === "logOut" ? workDescription.trim() : null,
@@ -442,8 +511,13 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   const verificationPassed = faceStatus === "matched";
   const needsDescription   = action === "logOut";
   const descriptionReady   = !needsDescription || workDescription.trim().length > 0;
+  const isGeoAllowed = isTestEmployee || !geoRequired || geoStatus === "allowed" || geoStatus === "wfh_approved";
+
   const canSave = (isTestEmployee || (!!snapshotObjectUrl && !!snapshotBlob && verificationPassed)) && !saving
-    && geoStatus !== "blocked" && geoStatus !== "fetching" && descriptionReady;
+    && isGeoAllowed && !todayLeave && descriptionReady;
+
+  // For WFO employees who are working from home with approval, mark attendance as WFH
+  const isWfhApprovedMode = geoStatus === "wfh_approved" && wfhApproval;
 
   // Banner config for each face status
   const FACE_BANNERS = {
@@ -807,14 +881,24 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
             </div>
           </div>
 
+          {/* Leave banner */}
+          {todayLeave && (
+            <div className="wc-banner" style={{ background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)" }}>
+              <AlertCircle size={14} style={{ color:"#CC0000", flexShrink:0, marginTop:"1.5px" }}/>
+              <p style={{ fontFamily:"Mulish,sans-serif", color:"#CC0000", fontSize:"12px", lineHeight:1.5 }}>
+                You have taken leave today ({todayLeave.from === todayLeave.to ? todayLeave.from : `from ${todayLeave.from} to ${todayLeave.to}`}). You cannot mark attendance.
+              </p>
+            </div>
+          )}
+
           {/* Geo banners */}
-          {geoRequired && geoStatus==="fetching" && (
+          {!todayLeave && geoRequired && geoStatus==="fetching" && (
             <div className="wc-banner" style={{ background:"rgba(201,146,42,0.08)", border:"1px solid rgba(201,146,42,0.3)" }}>
               <Navigation size={14} style={{ color:"#C9922A", flexShrink:0, marginTop:"1px" }}/>
               <p style={{ fontFamily:"Mulish,sans-serif", color:"#C9922A" }}>Verifying your location…</p>
             </div>
           )}
-          {geoRequired && geoStatus==="blocked" && (
+          {!todayLeave && geoRequired && geoStatus==="blocked" && (
             <div style={{ padding:"12px 14px", borderRadius:"8px", background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)" }}>
               <div style={{ display:"flex", alignItems:"center", gap:"7px", marginBottom:"5px" }}>
                 <MapPin size={13} style={{ color:"#CC0000", flexShrink:0 }}/>
@@ -823,23 +907,57 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
               <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"12px", color:isDark?"#888888":"#666666", lineHeight:1.5 }}>
                 You are <strong style={{ color:"#CC0000" }}>{geoDistance}m</strong> away. WFO employees must be within <strong>{companySettings?.geoFenceRadius??100}m</strong>.
               </p>
+              <p style={{ fontFamily:"Mulish,sans-serif", fontSize:"11px", color:"#C9922A", lineHeight:1.5, marginTop:"8px" }}>
+                💡 To mark attendance from home, apply for WFH and get admin approval first via <strong>My Leave → Apply for WFH</strong>.
+              </p>
             </div>
           )}
-          {geoRequired && geoStatus==="allowed" && geoDistance!==null && (
+          {!todayLeave && geoRequired && geoStatus==="wfh_approved" && (
+            <div className="wc-banner" style={{ background:"rgba(0,184,184,0.07)", border:"1px solid rgba(0,184,184,0.25)" }}>
+              <Home size={14} style={{ color:"#00B8B8", flexShrink:0, marginTop:"1px" }}/>
+              <div style={{ flex:1 }}>
+                <p style={{ fontFamily:"Mulish,sans-serif", color:"#00B8B8", fontSize:"12px", lineHeight:1.5 }}>
+                  WFH approved ✓ — You are working from home today ({wfhApproval?.from === wfhApproval?.to ? wfhApproval?.from : `${wfhApproval?.from} to ${wfhApproval?.to}`})
+                </p>
+                <p style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"10px", color:isDark?"#555555":"#999999", marginTop:"2px" }}>
+                  Location: {geoDistance}m from office · Attendance allowed via WFH approval
+                </p>
+              </div>
+            </div>
+          )}
+          {!todayLeave && geoRequired && geoStatus==="allowed" && geoDistance!==null && (
             <div className="wc-banner" style={{ background:"rgba(0,184,184,0.07)", border:"1px solid rgba(0,184,184,0.25)" }}>
               <ShieldCheck size={14} style={{ color:"#00B8B8", flexShrink:0, marginTop:"1px" }}/>
               <p style={{ fontFamily:"Mulish,sans-serif", color:"#00B8B8" }}>Location verified — <strong>{geoDistance}m</strong> from office ✓</p>
             </div>
           )}
-          {geoRequired && geoStatus==="error" && (
-            <div className="wc-banner" style={{ background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)" }}>
-              <AlertCircle size={14} style={{ color:"#CC0000", flexShrink:0, marginTop:"1px" }}/>
-              <p style={{ fontFamily:"Mulish,sans-serif", color:"#CC0000" }}>Could not access your location. Please enable GPS and try again.</p>
+          {!todayLeave && geoRequired && geoStatus==="error" && (
+            <div className="wc-banner" style={{ background:"rgba(204,0,0,0.08)", border:"1px solid rgba(204,0,0,0.3)", flexDirection:"column", alignItems:"flex-start", gap:"8px" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"7px" }}>
+                <AlertCircle size={14} style={{ color:"#CC0000", flexShrink:0 }}/>
+                <p style={{ fontFamily:"Mulish,sans-serif", color:"#CC0000", margin:0 }}>Could not access your location. Please enable GPS and try again.</p>
+              </div>
+              <button
+                onClick={retryGeoCheck}
+                style={{
+                  padding: "5px 12px",
+                  borderRadius: "5px",
+                  background: "rgba(204,0,0,0.12)",
+                  border: "1px solid rgba(204,0,0,0.3)",
+                  color: "#CC0000",
+                  fontFamily: "Rajdhani, sans-serif",
+                  fontWeight: 700,
+                  fontSize: "11px",
+                  cursor: "pointer",
+                }}
+              >
+                Retry Location Verification
+              </button>
             </div>
           )}
 
           {/* Camera area */}
-          {geoStatus!=="blocked" && geoStatus!=="fetching" && (
+          {(isGeoAllowed && geoStatus !== "fetching" && !todayLeave) && (
             <div
               className="wc-camera-wrap"
               style={{ background:isDark?"#0D0D0D":"#F0F0F0", border:`1px solid ${border}` }}

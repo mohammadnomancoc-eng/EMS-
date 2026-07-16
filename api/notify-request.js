@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: `Method ${req.method} Not Allowed` });
   }
 
-  const { employeeName, requestType, leaveType, from, to, reason } = req.body || {};
+  const { employeeName, employeeEmail, requestType, leaveType, from, to, reason } = req.body || {};
 
   if (!employeeName || !requestType || !from || !to) {
     return res.status(400).json({ error: "Missing required fields" });
@@ -38,10 +38,20 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Google Script URL is not configured." });
     }
 
+    const payload = {
+      to: ADMIN_EMAIL,
+      subject,
+      html,
+      name: employeeName
+    };
+    if (employeeEmail) {
+      payload.replyTo = employeeEmail;
+    }
+
     const gasRes = await fetch(GOOGLE_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: ADMIN_EMAIL, subject, html }),
+      body: JSON.stringify(payload),
     });
     const gasData = await gasRes.json();
 

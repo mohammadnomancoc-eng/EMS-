@@ -83,6 +83,15 @@ service cloud.firestore {
                         && resource.data.status == "Pending");
       allow delete: if isAdmin();
     }
+ 
+    // ── /quotaRequests ────────────────────────────────────────
+    match /quotaRequests/{reqId} {
+      allow read:   if isAdmin() ||
+                       (isEmployee() && resource.data.empId == myEmpId());
+      allow create: if isEmployee() && request.resource.data.empId == myEmpId();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
 
     // ── /settings ─────────────────────────────────────────────
     match /settings/{docId} {

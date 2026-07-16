@@ -30,10 +30,21 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Google Script URL is not configured." });
     }
 
+    const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+    const payload = {
+      to: email,
+      subject,
+      html,
+      name: "Royals EMS"
+    };
+    if (ADMIN_EMAIL) {
+      payload.replyTo = ADMIN_EMAIL;
+    }
+
     const gasRes = await fetch(GOOGLE_SCRIPT_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: email, subject, html }),
+      body: JSON.stringify(payload),
     });
     const gasData = await gasRes.json();
 

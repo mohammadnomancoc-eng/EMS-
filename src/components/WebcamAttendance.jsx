@@ -35,6 +35,9 @@ function todayString() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
+function isTodaySaturday() {
+  return new Date().getDay() === 6; // 0=Sun, 6=Sat
+}
 function formatTime12(date) {
   let h = date.getHours();
   const m = String(date.getMinutes()).padStart(2,"0");
@@ -312,6 +315,14 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
       const wt    = (empData?.workType || "WFO").toUpperCase();
       const isWFO = wt === "WFO";
+
+      // Saturday: all employees (WFO + WFH) can mark attendance from home without location
+      if (isTodaySaturday()) {
+        setGeoRequired(false);
+        setGeoStatus("saturday_wfh");
+        return;
+      }
+
       setGeoRequired(isTest ? false : isWFO);
       if (isTest || !isWFO)                           { setGeoStatus("wfh_skip"); return; }
       
@@ -468,8 +479,8 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
 
       let logIn=todayRecord?.logIn||"--", logOut=todayRecord?.logOut||"--";
       let status=todayRecord?.status||"Present", hoursWorked=todayRecord?.hoursWorked||"--";
-      // WFO employee working from home with approved WFH → status = "WFH"
-      const wfhMode = geoStatus === "wfh_approved";
+      // WFO employee working from home with approved WFH or Saturday → status = "WFH"
+      const wfhMode = geoStatus === "wfh_approved" || geoStatus === "saturday_wfh";
       if (action==="logIn")  { logIn=timeStr; logOut="--"; status=wfhMode ? "WFH" : "Present"; hoursWorked="--"; }
       if (action==="logOut") { logOut=timeStr; status=todayRecord?.status||(wfhMode ? "WFH" : "Present"); hoursWorked=logIn!=="--"?calcHoursWorked(logIn,timeStr):"--"; }
 
@@ -480,7 +491,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
         webcamSnapshotPublicId,
         webcamTimestamp:       now.toISOString(),
         geoDistance: isTestEmployee ? 0 : geoDistance,
-        geoVerified: isTestEmployee ? true : (geoStatus==="allowed" || geoStatus==="wfh_approved"),
+        geoVerified: isTestEmployee ? true : (geoStatus==="allowed" || geoStatus==="wfh_approved" || geoStatus==="saturday_wfh"),
         faceVerified:  isTestEmployee ? true : faceStatus==="matched",
         faceDistance:  isTestEmployee ? 0 : (faceScore ?? null),
         workDescription: action === "logOut" ? workDescription.trim() : null,
@@ -511,7 +522,7 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
   const verificationPassed = faceStatus === "matched";
   const needsDescription   = action === "logOut";
   const descriptionReady   = !needsDescription || workDescription.trim().length > 0;
-  const isGeoAllowed = isTestEmployee || !geoRequired || geoStatus === "allowed" || geoStatus === "wfh_approved";
+  const isGeoAllowed = isTestEmployee || !geoRequired || geoStatus === "allowed" || geoStatus === "wfh_approved" || geoStatus === "saturday_wfh";
 
   const canSave = (isTestEmployee || (!!snapshotObjectUrl && !!snapshotBlob && verificationPassed)) && !saving
     && isGeoAllowed && !todayLeave && descriptionReady;
@@ -921,6 +932,19 @@ export default function WebcamAttendance({ empId, empName, onClose, onSuccess })
                 </p>
                 <p style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"10px", color:isDark?"#555555":"#999999", marginTop:"2px" }}>
                   Location: {geoDistance}m from office · Attendance allowed via WFH approval
+                </p>
+              </div>
+            </div>
+          )}
+          {!todayLeave && geoStatus==="saturday_wfh" && (
+            <div className="wc-banner" style={{ background:"rgba(0,184,184,0.07)", border:"1px solid rgba(0,184,184,0.25)" }}>
+              <Home size={14} style={{ color:"#00B8B8", flexShrink:0, marginTop:"1px" }}/>
+              <div style={{ flex:1 }}>
+                <p style={{ fontFamily:"Mulish,sans-serif", color:"#00B8B8", fontSize:"12px", lineHeight:1.5 }}>
+                  Saturday — WFH day ✓ Location verification is not required today.
+                </p>
+                <p style={{ fontFamily:"Share Tech Mono,monospace", fontSize:"10px", color:isDark?"#555555":"#999999", marginTop:"2px" }}>
+                  All employees can mark attendance from home on Saturdays.
                 </p>
               </div>
             </div>
